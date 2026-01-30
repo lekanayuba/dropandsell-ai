@@ -1,0 +1,408 @@
+🔧 MASTER PROMPT FOR REPLIT AI
+(Dropshipping Automation SaaS Platform)
+ROLE & OBJECTIVE
+
+You are a Senior Full-Stack SaaS Engineer, Systems Architect, and DevOps Lead.
+
+Your task is to design and build a production-ready, scalable, cloud-native SaaS application for automating dropshipping across multiple e-commerce platforms and online vendors, following modern enterprise standards.
+
+The system must be modular, secure, compliant, and extensible.
+
+You must produce working code, schemas, APIs, and configuration, not pseudocode.
+
+APPLICATION OVERVIEW
+
+Build a Dropshipping Automation Platform that enables sellers to:
+
+Connect multiple e-commerce marketplaces
+
+Source products from multiple online vendors
+
+Automatically sync inventory and pricing
+
+Detect and block VERO-restricted products
+
+Remove forbidden marketplace wording automatically
+
+Automatically fulfil orders using seller wallet balances (optional)
+
+Track orders, shipments, and margins
+
+Earn 20% referral bonuses from platform subscriptions
+
+Pay for subscriptions through secure payment rails
+
+The system must support multi-tenant SaaS architecture.
+
+CORE FUNCTIONAL REQUIREMENTS
+1. User & Account Management
+
+Multi-tenant architecture (each seller is isolated)
+
+Roles: Admin, Manager, Staff
+
+OAuth2 authentication
+
+Secure session handling
+
+Audit logs for all actions
+
+2. Marketplace Integrations
+
+Support:
+
+Shopify
+
+WooCommerce
+
+Amazon (SP-API)
+
+eBay
+
+Etsy
+
+Walmart Marketplace
+
+Features:
+
+OAuth connection
+
+Webhook ingestion
+
+Product listing sync
+
+Order ingestion
+
+Shipment updates
+
+3. Vendor Integrations
+
+Support:
+
+Next
+
+Adidas
+
+Nike
+
+Costco
+
+Walmart
+
+Other vendors via:
+
+API
+
+CSV
+
+Feed URL
+
+Approved automation connectors
+
+Sellers must be able to add custom vendors.
+
+4. Product & Catalog Management
+
+Unified internal product schema
+
+Variants, SKUs, images, attributes
+
+Bulk operations
+
+Category mapping
+
+Product deduplication
+
+5. Compliance & Marketplace Safety
+VERO Detection
+
+Scan products against known VERO lists
+
+Flag, block, or restrict listings
+
+Maintain compliance logs
+
+Forbidden Wording Removal
+
+Automatically sanitize titles and descriptions
+
+Maintain marketplace-specific dictionaries
+
+Log all changes
+
+6. Inventory Synchronisation
+
+Near real-time stock sync
+
+Buffer stock rules
+
+Threshold alerts
+
+Event-driven + scheduled updates
+
+7. Pricing & Rules Engine
+
+Cost + margin pricing
+
+Marketplace fee inclusion
+
+Min/max price limits
+
+Scheduled repricing
+
+8. Order Management & Auto-Fulfilment
+
+Unified order dashboard
+
+Optional auto-fulfilment:
+
+Pull buyer info from marketplaces
+
+Place supplier orders automatically
+
+Pay using seller wallet balance
+
+Manual approval fallback
+
+Shipment tracking and updates
+
+9. Wallet & Payments
+Seller Wallet
+
+Pre-funded wallet system
+
+Real-time balance checks
+
+Transaction history
+
+Audit logging
+
+Subscription Payments
+
+Stripe + PayPal integration
+
+Cards + bank transfer
+
+Auto-renewals
+
+Invoices & receipts
+
+10. Referral System
+
+20% recurring referral commission
+
+Unique referral links
+
+Earnings dashboard
+
+Wallet crediting
+
+Fraud prevention
+
+11. Analytics & Reporting
+
+Revenue
+
+Profit margins
+
+Channel performance
+
+Vendor performance
+
+CSV export
+
+NON-FUNCTIONAL REQUIREMENTS
+Performance
+
+API latency < 300ms (95%)
+
+Inventory sync < 60 seconds
+
+Scalability
+
+Support 100,000+ SKUs per tenant
+
+Horizontal scaling
+
+Stateless services
+
+Security
+
+OAuth2
+
+RBAC
+
+AES-256 encryption at rest
+
+TLS 1.2+ in transit
+
+GDPR compliance
+
+Reliability
+
+99.9% uptime
+
+Automatic backups
+
+Disaster recovery support
+
+TECH STACK (MANDATORY)
+Backend
+
+Node.js (TypeScript)
+
+Express or NestJS
+
+REST + GraphQL APIs
+
+Frontend
+
+React (TypeScript)
+
+Clean admin dashboard UI
+
+Database
+
+PostgreSQL (primary)
+
+Redis (cache)
+
+Message queue (RabbitMQ or BullMQ)
+
+Infrastructure
+
+Docker
+
+Environment-based config
+
+Ready for AWS / GCP deployment
+
+DATA MODELS (MUST IMPLEMENT)
+
+User
+
+Store
+
+Vendor
+
+CustomVendor
+
+Product
+
+Inventory
+
+PricingRule
+
+Order
+
+Shipment
+
+Wallet
+
+Transaction
+
+Subscription
+
+Referral
+
+ComplianceFlag
+
+AuditLog
+
+Use migrations and proper indexing.
+
+API REQUIREMENTS
+
+Versioned APIs (/v1)
+
+Idempotent order creation
+
+Secure payment endpoints
+
+Webhook verification
+
+OpenAPI / Swagger documentation
+
+DEVELOPMENT INSTRUCTIONS
+
+Generate:
+
+Backend project structure
+
+Database schemas
+
+API routes
+
+Services
+
+Middleware
+
+Implement:
+
+Auth
+
+Marketplace connectors
+
+Vendor ingestion
+
+Compliance scanning
+
+Wallet logic
+
+Subscription billing
+
+Include:
+
+Error handling
+
+Logging
+
+Configuration files
+
+Provide:
+
+Setup instructions
+
+Environment variables
+
+Sample seed data
+
+OUTPUT FORMAT
+
+Fully runnable Replit project
+
+Clear folder structure
+
+Comments explaining complex logic
+
+No placeholders or TODOs
+
+Production-grade code only
+
+IMPORTANT CONSTRAINTS
+
+Auto-fulfilment MUST be optional
+
+No hard-coded secrets
+
+No scraping unless explicitly marked compliant
+
+Follow marketplace policies
+
+Think like a real SaaS founder building for scale
+
+FINAL INSTRUCTION
+
+Build this application as if it will be:
+
+Used by thousands of sellers
+
+Audited by payment providers
+
+Reviewed by enterprise clients
+
+Scaled globally
+
+Do not simplify.
+Do not skip features.
+Deliver production-ready output.
