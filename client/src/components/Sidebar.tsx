@@ -7,6 +7,7 @@ import {
   Package, 
   ShoppingCart, 
   Wallet, 
+  CreditCard,
   LogOut,
   Settings,
   Menu
@@ -27,6 +28,7 @@ export function Sidebar() {
     { href: "/inventory", label: "Inventory", icon: Package },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/wallet", label: "Wallet", icon: Wallet },
+    { href: "/subscription", label: "Subscription", icon: CreditCard },
   ];
 
   const NavContent = () => (

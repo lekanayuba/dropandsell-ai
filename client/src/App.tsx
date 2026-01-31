@@ -13,6 +13,7 @@ import Vendors from "@/pages/Vendors";
 import Inventory from "@/pages/Inventory";
 import Orders from "@/pages/Orders";
 import Wallet from "@/pages/Wallet";
+import Subscription from "@/pages/Subscription";
 import Login from "@/pages/Login";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/inventory" component={() => <ProtectedRoute component={Inventory} />} />
       <Route path="/orders" component={() => <ProtectedRoute component={Orders} />} />
       <Route path="/wallet" component={() => <ProtectedRoute component={Wallet} />} />
+      <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route component={NotFound} />
     </Switch>
   );
