@@ -1,8 +1,9 @@
 import { 
-  stores, vendors, products, orders, wallet, transactions, subscriptions, users,
+  stores, vendors, products, orders, wallet, transactions, subscriptions,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
-  type InsertTransaction, type User
+  type InsertTransaction
 } from "@shared/schema";
+import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
 
@@ -179,6 +180,20 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
+  }
+
+  async updateUserStripeCustomerId(userId: string, stripeCustomerId: string) {
+    const [user] = await db.update(users)
+      .set({ stripeCustomerId })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  // Subscriptions
+  async getSubscription(userId: string) {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    return sub;
   }
 }
 

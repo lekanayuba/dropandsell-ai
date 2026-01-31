@@ -1,0 +1,108 @@
+import { Link, useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
+import { 
+  LayoutDashboard, 
+  Store, 
+  Users, 
+  Package, 
+  ShoppingCart, 
+  Wallet, 
+  LogOut,
+  Settings,
+  Menu
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+export function Sidebar() {
+  const [location] = useLocation();
+  const { user, logout } = useAuth();
+
+  const links = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/stores", label: "Stores", icon: Store },
+    { href: "/vendors", label: "Vendors", icon: Users },
+    { href: "/inventory", label: "Inventory", icon: Package },
+    { href: "/orders", label: "Orders", icon: ShoppingCart },
+    { href: "/wallet", label: "Wallet", icon: Wallet },
+  ];
+
+  const NavContent = () => (
+    <div className="flex flex-col h-full bg-card border-r border-border/50">
+      <div className="p-6 border-b border-border/50">
+        <h1 className="text-xl font-bold font-display bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+          DropFlow
+        </h1>
+        <p className="text-xs text-muted-foreground mt-1">Automation Platform</p>
+      </div>
+
+      <div className="flex-1 py-6 px-4 space-y-1">
+        {links.map((link) => {
+          const Icon = link.icon;
+          const isActive = location === link.href;
+          return (
+            <Link key={link.href} href={link.href}>
+              <div
+                className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer group",
+                  isActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                {link.label}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="p-4 border-t border-border/50">
+        <div className="flex items-center gap-3 px-4 py-3 mb-2">
+          <Avatar className="h-9 w-9 border border-border">
+            <AvatarImage src={user?.profileImageUrl} />
+            <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{user?.firstName} {user?.lastName}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+          </div>
+        </div>
+        <Button 
+          variant="outline" 
+          className="w-full justify-start gap-2 text-muted-foreground hover:text-destructive"
+          onClick={() => logout()}
+        >
+          <LogOut className="w-4 h-4" />
+          Sign Out
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Mobile Sidebar */}
+      <div className="lg:hidden fixed top-4 left-4 z-50">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="icon">
+              <Menu className="w-5 h-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="p-0 w-72">
+            <NavContent />
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden lg:block w-72 fixed inset-y-0 left-0 z-30">
+        <NavContent />
+      </div>
+    </>
+  );
+}

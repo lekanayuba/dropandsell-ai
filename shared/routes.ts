@@ -51,6 +51,54 @@ export const api = {
     },
   },
 
+  // Subscriptions
+  subscription: {
+    plans: {
+      method: 'GET' as const,
+      path: '/api/subscription/plans',
+      responses: {
+        200: z.array(z.object({
+          id: z.string(),
+          name: z.string(),
+          description: z.string(),
+          priceId: z.string().nullable(),
+          amount: z.number(),
+          currency: z.string(),
+          listingsLimit: z.number(),
+          interval: z.string(),
+        })),
+      },
+    },
+    current: {
+      method: 'GET' as const,
+      path: '/api/subscription/current',
+      responses: {
+        200: z.custom<typeof subscriptions.$inferSelect>().nullable(),
+      },
+    },
+    checkout: {
+      method: 'POST' as const,
+      path: '/api/subscription/checkout',
+      input: z.object({
+        priceId: z.string(),
+      }),
+      responses: {
+        200: z.object({
+          url: z.string(),
+        }),
+      },
+    },
+    portal: {
+      method: 'POST' as const,
+      path: '/api/subscription/portal',
+      responses: {
+        200: z.object({
+          url: z.string(),
+        }),
+      },
+    },
+  },
+
   // Stores (Marketplaces)
   stores: {
     list: {
