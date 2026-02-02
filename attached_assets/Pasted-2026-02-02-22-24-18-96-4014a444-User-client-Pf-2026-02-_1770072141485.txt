@@ -1,0 +1,212 @@
+2026-02-02 22:24:18.96
+4014a444
+User
+client: Pf {
+2026-02-02 22:24:18.96
+4014a444
+User
+at TLSSocket. (/home/runner/workspace/dist/index.cjs:69:120541)
+2026-02-02 22:24:18.96
+4014a444
+User
+file: 'postgres.c',
+2026-02-02 22:24:18.96
+4014a444
+User
+Emitted 'error' event on instance at:
+2026-02-02 22:24:18.96
+4014a444
+User
+client_encoding: '',
+2026-02-02 22:24:18.96
+4014a444
+User
+at Xb.emit (node:events:524:28)
+2026-02-02 22:24:18.96
+4014a444
+User
+secure: [Function: onConnectSecure],
+2026-02-02 22:24:18.96
+4014a444
+User
+at Pf._handleErrorEvent (/home/runner/workspace/dist/index.cjs:70:8569)
+2026-02-02 22:24:18.96
+4014a444
+User
+routine: 'ProcessInterrupts',
+2026-02-02 22:24:18.96
+4014a444
+User
+code: '57P01',
+2026-02-02 22:24:18.96
+4014a444
+User
+at addChunk (node:internal/streams/readable:561:12)
+2026-02-02 22:24:18.96
+4014a444
+User
+_events: [Object: null prototype] { error: [Function (anonymous)] },
+2026-02-02 22:24:20.26
+4014a444
+System
+command finished with error [node ./dist/index.cjs]: exit status 1
+2026-02-02 22:25:08.56
+4014a444
+User
+10:25:03 PM [express] serving on port 5000
+2026-02-02 22:25:17.23
+4014a444
+User
+[Email] Getting Resend client...
+2026-02-02 22:25:17.50
+4014a444
+User
+[Email] Sending verification email to lokoayuba87@gmail.com from no-reply@dropandsell.online
+2026-02-02 22:25:17.79
+4014a444
+User
+"data": {
+2026-02-02 22:25:17.79
+4014a444
+User
+[Email] Verification email sent successfully to lokoayuba87@gmail.com
+2026-02-02 22:25:17.79
+4014a444
+User
+"error": null
+2026-02-02 22:25:17.79
+4014a444
+User
+[Email] Resend response: {
+2026-02-02 22:25:17.79
+4014a444
+User
+},
+2026-02-02 22:25:17.79
+4014a444
+User
+"id": "6b9345e2-80d1-4722-a19e-9e0910846df1"
+2026-02-02 22:25:17.79
+4014a444
+User
+}
+2026-02-02 22:25:17.82
+4014a444
+User
+10:25:17 PM [express] POST /api/auth/resend-verification 200 in 5526ms :: {"success":true,"message":"Verification email sent"}
+2026-02-02 22:25:19.36
+4014a444
+User
+[Email] Getting Resend client...
+2026-02-02 22:25:19.36
+4014a444
+User
+Attempting to send verification email to tosin10@yahoo.com
+2026-02-02 22:25:19.36
+4014a444
+User
+Verification URL: https://4014a444-c635-4b8d-8b2c-0d06b06e432b-00-3an7h31zuq9ws.riker.replit.dev/verify-email?token=62eb3515-96ac-4720-af25-1af4bbabfae6
+2026-02-02 22:25:19.68
+4014a444
+User
+[Email] Sending verification email to tosin10@yahoo.com from no-reply@dropandsell.online
+2026-02-02 22:25:19.82
+4014a444
+User
+[Email] Resend response: {
+2026-02-02 22:25:19.82
+4014a444
+User
+[Email] Verification email sent successfully to tosin10@yahoo.com
+2026-02-02 22:25:19.82
+4014a444
+User
+"error": null
+2026-02-02 22:25:19.82
+4014a444
+User
+}
+2026-02-02 22:25:19.82
+4014a444
+User
+"id": "c9acbb5e-a04f-4b2a-afa3-2330dca77a83"
+2026-02-02 22:25:19.82
+4014a444
+User
+Verification email successfully sent to tosin10@yahoo.com
+2026-02-02 22:25:19.82
+4014a444
+User
+"data": {
+2026-02-02 22:25:19.82
+4014a444
+User
+},
+2026-02-02 22:25:19.88
+4014a444
+User
+10:25:19 PM [express] POST /api/auth/register 200 in 682ms :: {"success":true,"message":"Account created. Please check your email to verify your account.","user":{"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE "}}
+2026-02-02 22:25:20.17
+4014a444
+User
+10:25:20 PM [express] GET /api/auth/me 200 in 112ms :: {"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE ","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DSHVY9ETFNHX"}
+2026-02-02 22:25:23.18
+4014a444
+User
+10:25:23 PM [express] GET /api/auth/me 200 in 68ms :: {"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE ","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DSHVY9ETFNHX"}
+2026-02-02 22:33:12.27
+5d57419b
+System
+starting up user application
+2026-02-02 22:33:12.27
+5d57419b
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+2026-02-02 22:33:12.27
+5d57419b
+System
+metasidecar: loaded enterprise status from environment is_enterprise=false
+2026-02-02 22:33:13.37
+5d57419b
+User
+10:33:13 PM [express] serving on port 5000
+2026-02-02 22:34:00.76
+5d57419b
+User
+[Email] Getting Resend client...
+2026-02-02 22:34:01.11
+5d57419b
+User
+[Email] Sending verification email to lokoayuba87@gmail.com from no-reply@dropandsell.online
+2026-02-02 22:34:01.33
+5d57419b
+User
+}
+2026-02-02 22:34:01.33
+5d57419b
+User
+[Email] Verification email sent successfully to lokoayuba87@gmail.com
+2026-02-02 22:34:01.33
+5d57419b
+User
+"id": "2b808380-3f9d-4331-b530-6d13caf63c77"
+2026-02-02 22:34:01.33
+5d57419b
+User
+"data": {
+2026-02-02 22:34:01.33
+5d57419b
+User
+"error": null
+2026-02-02 22:34:01.33
+5d57419b
+User
+[Email] Resend response: {
+2026-02-02 22:34:01.33
+5d57419b
+User
+},
+2026-02-02 22:34:01.35
+5d57419b
+User
+10:34:01 PM [express] POST /api/auth/resend-verification 200 in 5588ms :: {"success":true,"message":"Verification email sent"}
