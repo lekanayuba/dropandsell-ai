@@ -8,6 +8,7 @@ import {
   ShoppingCart, 
   Wallet, 
   CreditCard,
+  Zap,
   LogOut,
   Settings,
   Menu
@@ -27,6 +28,7 @@ export function Sidebar() {
     { href: "/vendors", label: "Vendors", icon: Users },
     { href: "/inventory", label: "Inventory", icon: Package },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
+    { href: "/automation", label: "Automation", icon: Zap },
     { href: "/wallet", label: "Wallet", icon: Wallet },
     { href: "/subscription", label: "Subscription", icon: CreditCard },
   ];
