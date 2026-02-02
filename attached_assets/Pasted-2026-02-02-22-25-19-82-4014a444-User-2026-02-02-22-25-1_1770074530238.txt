@@ -1,0 +1,212 @@
+2026-02-02 22:25:19.82
+4014a444
+User
+}
+2026-02-02 22:25:19.82
+4014a444
+User
+"error": null
+2026-02-02 22:25:19.82
+4014a444
+User
+[Email] Verification email sent successfully to tosin10@yahoo.com
+2026-02-02 22:25:19.82
+4014a444
+User
+[Email] Resend response: {
+2026-02-02 22:25:19.88
+4014a444
+User
+10:25:19 PM [express] POST /api/auth/register 200 in 682ms :: {"success":true,"message":"Account created. Please check your email to verify your account.","user":{"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE "}}
+2026-02-02 22:25:20.17
+4014a444
+User
+10:25:20 PM [express] GET /api/auth/me 200 in 112ms :: {"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE ","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DSHVY9ETFNHX"}
+2026-02-02 22:25:23.18
+4014a444
+User
+10:25:23 PM [express] GET /api/auth/me 200 in 68ms :: {"id":"c5e83490-1646-4132-abcd-6a6391e19e92","email":"tosin10@yahoo.com","firstName":"Tosin","lastName":"AKINYOSOYE ","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DSHVY9ETFNHX"}
+2026-02-02 22:33:12.27
+5d57419b
+System
+starting up user application
+2026-02-02 22:33:12.27
+5d57419b
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+2026-02-02 22:33:12.27
+5d57419b
+System
+metasidecar: loaded enterprise status from environment is_enterprise=false
+2026-02-02 22:33:13.37
+5d57419b
+User
+10:33:13 PM [express] serving on port 5000
+2026-02-02 22:34:00.76
+5d57419b
+User
+[Email] Getting Resend client...
+2026-02-02 22:34:01.11
+5d57419b
+User
+[Email] Sending verification email to lokoayuba87@gmail.com from no-reply@dropandsell.online
+2026-02-02 22:34:01.33
+5d57419b
+User
+}
+2026-02-02 22:34:01.33
+5d57419b
+User
+[Email] Resend response: {
+2026-02-02 22:34:01.33
+5d57419b
+User
+[Email] Verification email sent successfully to lokoayuba87@gmail.com
+2026-02-02 22:34:01.33
+5d57419b
+User
+"id": "2b808380-3f9d-4331-b530-6d13caf63c77"
+2026-02-02 22:34:01.33
+5d57419b
+User
+},
+2026-02-02 22:34:01.33
+5d57419b
+User
+"data": {
+2026-02-02 22:34:01.33
+5d57419b
+User
+"error": null
+2026-02-02 22:34:01.35
+5d57419b
+User
+10:34:01 PM [express] POST /api/auth/resend-verification 200 in 5588ms :: {"success":true,"message":"Verification email sent"}
+2026-02-02 22:37:43.99
+4014a444
+System
+system: received signal terminated
+2026-02-02 22:37:44.00
+4014a444
+System
+command finished with error [node ./dist/index.cjs]: signal: terminated
+2026-02-02 22:37:44.00
+4014a444
+System
+main done, exiting
+2026-02-02 22:47:00.23
+5d57419b
+User
+[Email] Getting Resend client...
+2026-02-02 22:47:00.58
+5d57419b
+User
+[Email] Sending verification email to lokoayuba87@gmail.com from no-reply@dropandsell.online
+2026-02-02 22:47:00.87
+5d57419b
+User
+}
+2026-02-02 22:47:00.87
+5d57419b
+User
+},
+2026-02-02 22:47:00.87
+5d57419b
+User
+"error": null
+2026-02-02 22:47:00.87
+5d57419b
+User
+[Email] Verification email sent successfully to lokoayuba87@gmail.com
+2026-02-02 22:47:00.87
+5d57419b
+User
+"data": {
+2026-02-02 22:47:00.87
+5d57419b
+User
+[Email] Resend response: {
+2026-02-02 22:47:00.87
+5d57419b
+User
+"id": "4d47f0cc-e293-45ab-b9db-8011111016b2"
+2026-02-02 22:47:00.89
+5d57419b
+User
+10:47:00 PM [express] POST /api/auth/resend-verification 200 in 1047ms :: {"success":true,"message":"Verification email sent"}
+2026-02-02 22:48:53.22
+5d57419b
+User
+10:48:53 PM [express] GET /api/auth/me 304 in 1187ms :: {"id":"0a1cbe97-c766-4411-b51b-55f6535a6c18","email":"lokoayuba87@gmail.com","firstName":"Olalekan","lastName":"Ayuba","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DS86U9SSQTGQ"}
+2026-02-02 23:06:48.74
+96aba10a
+System
+starting up user application
+2026-02-02 23:06:48.74
+96aba10a
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+2026-02-02 23:06:48.74
+96aba10a
+System
+metasidecar: loaded enterprise status from environment is_enterprise=false
+2026-02-02 23:06:50.21
+96aba10a
+User
+11:06:50 PM [express] serving on port 5000
+2026-02-02 23:07:37.98
+96aba10a
+User
+[Email] Getting Resend client...
+2026-02-02 23:07:38.31
+96aba10a
+User
+[Email] Sending verification email to lokoayuba87@gmail.com from no-reply@dropandsell.online
+2026-02-02 23:07:38.59
+96aba10a
+User
+[Email] Verification email sent successfully to lokoayuba87@gmail.com
+2026-02-02 23:07:38.59
+96aba10a
+User
+[Email] Resend response: {
+2026-02-02 23:07:38.59
+96aba10a
+User
+},
+2026-02-02 23:07:38.59
+96aba10a
+User
+}
+2026-02-02 23:07:38.59
+96aba10a
+User
+"id": "8cf56148-3bb5-4e5f-8238-092799ce3f48"
+2026-02-02 23:07:38.59
+96aba10a
+User
+"data": {
+2026-02-02 23:07:38.59
+96aba10a
+User
+"error": null
+2026-02-02 23:07:38.62
+96aba10a
+User
+11:07:38 PM [express] POST /api/auth/resend-verification 200 in 5749ms :: {"success":true,"message":"Verification email sent"}
+2026-02-02 23:09:11.50
+5d57419b
+System
+system: received signal terminated
+2026-02-02 23:09:11.51
+5d57419b
+System
+command finished with error [node ./dist/index.cjs]: signal: terminated
+2026-02-02 23:09:11.60
+5d57419b
+System
+main done, exiting
+2026-02-02 23:16:12.98
+96aba10a
+User
+11:16:12 PM [express] GET /api/auth/me 304 in 896ms :: {"id":"0a1cbe97-c766-4411-b51b-55f6535a6c18","email":"lokoayuba87@gmail.com","firstName":"Olalekan","lastName":"Ayuba","emailVerified":null,"policiesAccepted":null,"onboardingCompleted":null,"subscriptionPlan":null,"referralCode":"DS86U9SSQTGQ"}
