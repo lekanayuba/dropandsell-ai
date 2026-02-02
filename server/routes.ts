@@ -890,6 +890,81 @@ Return only the description text, no additional formatting.`;
     }
   });
 
+  // === VERO LIST (Restricted Products) ===
+  protectedApi.get('/vero-list', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const items = await storage.getVeroList(userId);
+    res.json(items);
+  });
+
+  protectedApi.post('/vero-list', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { type, value, platform, reason, isActive } = req.body;
+      
+      if (!value || !type) {
+        return res.status(400).json({ message: 'Type and value are required' });
+      }
+      
+      const item = await storage.createVeroItem({
+        userId,
+        type,
+        value,
+        platform: platform || null,
+        reason: reason || null,
+        isActive: isActive !== false,
+      });
+      res.json(item);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to add VERO item' });
+    }
+  });
+
+  protectedApi.put('/vero-list/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = parseInt(req.params.id);
+      const updates = req.body;
+      
+      const updated = await storage.updateVeroItem(id, userId, updates);
+      if (!updated) {
+        return res.status(404).json({ message: 'VERO item not found' });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update VERO item' });
+    }
+  });
+
+  protectedApi.delete('/vero-list/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = parseInt(req.params.id);
+      
+      await storage.deleteVeroItem(id, userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to delete VERO item' });
+    }
+  });
+
+  // Check product for VERO violations
+  protectedApi.post('/vero-check', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { title, sku, platform } = req.body;
+      
+      if (!title) {
+        return res.status(400).json({ message: 'Product title is required' });
+      }
+      
+      const result = await storage.checkVeroViolation(userId, title, sku || '', platform);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to check VERO violations' });
+    }
+  });
+
   // === AUTOMATION: PUBLISH TO MARKETPLACE ===
   protectedApi.post('/automation/publish', async (req: any, res) => {
     try {
@@ -919,6 +994,13 @@ Return only the description text, no additional formatting.`;
           
           if (!product || !store) {
             throw new Error('Product or store not found');
+          }
+          
+          // Check for VERO violations before publishing
+          const veroCheck = await storage.checkVeroViolation(userId, product.title, product.sku, store.platform);
+          if (veroCheck.isBlocked) {
+            const violationNames = veroCheck.violations.map(v => v.value).join(', ');
+            throw new Error(`VERO violation detected: ${violationNames}. This product cannot be listed.`);
           }
           
           // Simulate marketplace API call (in real implementation, this would call Shopify/eBay/Amazon API)
