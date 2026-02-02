@@ -78,3 +78,32 @@ Preferred communication style: Simple, everyday language.
 - **Node.js**: ES modules (type: "module" in package.json)
 - **TypeScript**: Strict mode enabled, bundler module resolution
 - **Build Process**: Custom build script using esbuild for server, Vite for client
+
+## Automation Engine
+
+### Pricing Rules
+- Three pricing types: markup_percent, margin_percent, fixed_amount
+- Rules can target specific vendors or apply globally (vendorId = null)
+- Priority-based application: higher priority rules take precedence
+- Optional min/max price constraints to prevent under/over-pricing
+- Calculation: costPrice × (1 + markup%) or costPrice / (1 - margin%) or costPrice + fixed
+
+### CSV Import
+- Upload vendor product catalogs with automatic field detection
+- Field mapping UI allows matching CSV columns to database fields
+- Preview before import shows first 5 rows
+- Batch processing with error tracking per row
+- Creates products linked to selected vendor with import job tracking
+
+### Publish Queue
+- Staging area for products before marketplace publishing
+- Add products individually or bulk from Inventory page
+- Automatic pricing rule application based on vendor and priority
+- Batch publish to connected marketplace stores
+- Simulates marketplace API calls (Shopify, eBay, Amazon) - production-ready structure
+
+### Security Model
+- All automation data (pricing rules, import jobs, publish queue) filtered by userId
+- Storage layer enforces ownership on all CRUD operations
+- Single-record getters accept optional userId for secure access
+- Routes pass authenticated user ID to all storage operations
