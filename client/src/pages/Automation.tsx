@@ -120,7 +120,7 @@ function ImportSection() {
     try {
       const result = await importCSV.mutateAsync({
         file,
-        vendorId: vendorId ? Number(vendorId) : undefined,
+        vendorId: vendorId && vendorId !== "none" ? Number(vendorId) : undefined,
       });
 
       toast({
@@ -156,7 +156,7 @@ function ImportSection() {
                 <SelectValue placeholder="Choose a vendor" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No vendor</SelectItem>
+                <SelectItem value="none">No vendor</SelectItem>
                 {vendors?.map((v) => (
                   <SelectItem key={v.id} value={v.id.toString()}>
                     {v.name}
@@ -300,7 +300,7 @@ function PricingRulesSection() {
     value: "",
     minPrice: "",
     maxPrice: "",
-    applyToVendor: "",
+    applyToVendor: "all",
     priority: "0",
     isActive: true,
   });
@@ -312,7 +312,7 @@ function PricingRulesSection() {
       value: "",
       minPrice: "",
       maxPrice: "",
-      applyToVendor: "",
+      applyToVendor: "all",
       priority: "0",
       isActive: true,
     });
@@ -327,7 +327,7 @@ function PricingRulesSection() {
         value: parseFloat(formData.value),
         minPrice: formData.minPrice ? parseFloat(formData.minPrice) : null,
         maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
-        applyToVendor: formData.applyToVendor ? Number(formData.applyToVendor) : null,
+        applyToVendor: formData.applyToVendor && formData.applyToVendor !== "all" ? Number(formData.applyToVendor) : null,
         priority: parseInt(formData.priority),
         isActive: formData.isActive,
       };
@@ -355,7 +355,7 @@ function PricingRulesSection() {
       value: rule.value?.toString() || "",
       minPrice: rule.minPrice?.toString() || "",
       maxPrice: rule.maxPrice?.toString() || "",
-      applyToVendor: rule.applyToVendor?.toString() || "",
+      applyToVendor: rule.applyToVendor?.toString() || "all",
       priority: rule.priority?.toString() || "0",
       isActive: rule.isActive,
     });
@@ -460,7 +460,7 @@ function PricingRulesSection() {
                       <SelectValue placeholder="All vendors" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All vendors</SelectItem>
+                      <SelectItem value="all">All vendors</SelectItem>
                       {vendors?.map((v) => (
                         <SelectItem key={v.id} value={v.id.toString()}>
                           {v.name}

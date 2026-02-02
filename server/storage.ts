@@ -14,21 +14,21 @@ export interface IStorage {
   getStores(userId: string): Promise<typeof stores.$inferSelect[]>;
   getStore(id: number): Promise<typeof stores.$inferSelect | undefined>;
   createStore(store: InsertStore & { userId: string }): Promise<typeof stores.$inferSelect>;
-  updateStore(id: number, updates: Partial<InsertStore>): Promise<typeof stores.$inferSelect>;
-  deleteStore(id: number): Promise<void>;
+  updateStore(id: number, userId: string, updates: Partial<InsertStore>): Promise<typeof stores.$inferSelect>;
+  deleteStore(id: number, userId: string): Promise<void>;
 
   // Vendors
   getVendors(userId: string): Promise<typeof vendors.$inferSelect[]>;
   createVendor(vendor: InsertVendor & { userId: string }): Promise<typeof vendors.$inferSelect>;
-  updateVendor(id: number, updates: Partial<InsertVendor>): Promise<typeof vendors.$inferSelect>;
-  deleteVendor(id: number): Promise<void>;
+  updateVendor(id: number, userId: string, updates: Partial<InsertVendor>): Promise<typeof vendors.$inferSelect>;
+  deleteVendor(id: number, userId: string): Promise<void>;
 
   // Products
   getProducts(userId: string): Promise<typeof products.$inferSelect[]>;
   getProduct(id: number): Promise<typeof products.$inferSelect | undefined>;
   createProduct(product: InsertProduct & { userId: string }): Promise<typeof products.$inferSelect>;
-  updateProduct(id: number, updates: Partial<InsertProduct>): Promise<typeof products.$inferSelect>;
-  deleteProduct(id: number): Promise<void>;
+  updateProduct(id: number, userId: string, updates: Partial<InsertProduct>): Promise<typeof products.$inferSelect>;
+  deleteProduct(id: number, userId: string): Promise<void>;
 
   // Orders
   getOrders(userId: string): Promise<typeof orders.$inferSelect[]>;
@@ -53,7 +53,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(stores).where(eq(stores.userId, userId));
   }
 
-  async getStore(id: number) {
+  async getStore(id: number, userId?: string) {
+    if (userId) {
+      const [store] = await db.select().from(stores).where(and(eq(stores.id, id), eq(stores.userId, userId)));
+      return store;
+    }
     const [store] = await db.select().from(stores).where(eq(stores.id, id));
     return store;
   }
@@ -63,13 +67,15 @@ export class DatabaseStorage implements IStorage {
     return newStore;
   }
 
-  async updateStore(id: number, updates: Partial<InsertStore>) {
-    const [updated] = await db.update(stores).set(updates).where(eq(stores.id, id)).returning();
+  async updateStore(id: number, userId: string, updates: Partial<InsertStore>) {
+    const [updated] = await db.update(stores).set(updates)
+      .where(and(eq(stores.id, id), eq(stores.userId, userId)))
+      .returning();
     return updated;
   }
 
-  async deleteStore(id: number) {
-    await db.delete(stores).where(eq(stores.id, id));
+  async deleteStore(id: number, userId: string) {
+    await db.delete(stores).where(and(eq(stores.id, id), eq(stores.userId, userId)));
   }
 
   // Vendors
@@ -82,13 +88,15 @@ export class DatabaseStorage implements IStorage {
     return newVendor;
   }
 
-  async updateVendor(id: number, updates: Partial<InsertVendor>) {
-    const [updated] = await db.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
+  async updateVendor(id: number, userId: string, updates: Partial<InsertVendor>) {
+    const [updated] = await db.update(vendors).set(updates)
+      .where(and(eq(vendors.id, id), eq(vendors.userId, userId)))
+      .returning();
     return updated;
   }
 
-  async deleteVendor(id: number) {
-    await db.delete(vendors).where(eq(vendors.id, id));
+  async deleteVendor(id: number, userId: string) {
+    await db.delete(vendors).where(and(eq(vendors.id, id), eq(vendors.userId, userId)));
   }
 
   // Products
@@ -96,7 +104,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(products).where(eq(products.userId, userId));
   }
 
-  async getProduct(id: number) {
+  async getProduct(id: number, userId?: string) {
+    if (userId) {
+      const [product] = await db.select().from(products).where(and(eq(products.id, id), eq(products.userId, userId)));
+      return product;
+    }
     const [product] = await db.select().from(products).where(eq(products.id, id));
     return product;
   }
@@ -106,13 +118,15 @@ export class DatabaseStorage implements IStorage {
     return newProduct;
   }
 
-  async updateProduct(id: number, updates: Partial<InsertProduct>) {
-    const [updated] = await db.update(products).set(updates).where(eq(products.id, id)).returning();
+  async updateProduct(id: number, userId: string, updates: Partial<InsertProduct>) {
+    const [updated] = await db.update(products).set(updates)
+      .where(and(eq(products.id, id), eq(products.userId, userId)))
+      .returning();
     return updated;
   }
 
-  async deleteProduct(id: number) {
-    await db.delete(products).where(eq(products.id, id));
+  async deleteProduct(id: number, userId: string) {
+    await db.delete(products).where(and(eq(products.id, id), eq(products.userId, userId)));
   }
 
   // Orders
@@ -120,7 +134,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(orders).where(eq(orders.userId, userId));
   }
 
-  async getOrder(id: number) {
+  async getOrder(id: number, userId?: string) {
+    if (userId) {
+      const [order] = await db.select().from(orders).where(and(eq(orders.id, id), eq(orders.userId, userId)));
+      return order;
+    }
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
     return order;
   }
@@ -207,7 +225,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(pricingRules.priority));
   }
 
-  async getPricingRule(id: number) {
+  async getPricingRule(id: number, userId?: string) {
+    if (userId) {
+      const [rule] = await db.select().from(pricingRules).where(and(eq(pricingRules.id, id), eq(pricingRules.userId, userId)));
+      return rule;
+    }
     const [rule] = await db.select().from(pricingRules).where(eq(pricingRules.id, id));
     return rule;
   }
@@ -217,13 +239,15 @@ export class DatabaseStorage implements IStorage {
     return newRule;
   }
 
-  async updatePricingRule(id: number, updates: Partial<InsertPricingRule>) {
-    const [updated] = await db.update(pricingRules).set(updates).where(eq(pricingRules.id, id)).returning();
+  async updatePricingRule(id: number, userId: string, updates: Partial<InsertPricingRule>) {
+    const [updated] = await db.update(pricingRules).set(updates)
+      .where(and(eq(pricingRules.id, id), eq(pricingRules.userId, userId)))
+      .returning();
     return updated;
   }
 
-  async deletePricingRule(id: number) {
-    await db.delete(pricingRules).where(eq(pricingRules.id, id));
+  async deletePricingRule(id: number, userId: string) {
+    await db.delete(pricingRules).where(and(eq(pricingRules.id, id), eq(pricingRules.userId, userId)));
   }
 
   // Import Jobs
@@ -233,7 +257,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(importJobs.createdAt));
   }
 
-  async getImportJob(id: number) {
+  async getImportJob(id: number, userId?: string) {
+    if (userId) {
+      const [job] = await db.select().from(importJobs).where(and(eq(importJobs.id, id), eq(importJobs.userId, userId)));
+      return job;
+    }
     const [job] = await db.select().from(importJobs).where(eq(importJobs.id, id));
     return job;
   }
@@ -255,7 +283,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(publishQueue.createdAt));
   }
 
-  async getPublishQueueItem(id: number) {
+  async getPublishQueueItem(id: number, userId?: string) {
+    if (userId) {
+      const [item] = await db.select().from(publishQueue).where(and(eq(publishQueue.id, id), eq(publishQueue.userId, userId)));
+      return item;
+    }
     const [item] = await db.select().from(publishQueue).where(eq(publishQueue.id, id));
     return item;
   }
@@ -270,8 +302,8 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async deletePublishQueueItem(id: number) {
-    await db.delete(publishQueue).where(eq(publishQueue.id, id));
+  async deletePublishQueueItem(id: number, userId: string) {
+    await db.delete(publishQueue).where(and(eq(publishQueue.id, id), eq(publishQueue.userId, userId)));
   }
 
   async bulkCreatePublishQueue(items: (InsertPublishQueue & { userId: string })[]) {

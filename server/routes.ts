@@ -81,9 +81,13 @@ export async function registerRoutes(
 
   protectedApi.put('/stores/:id', async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const id = Number(req.params.id);
       const input = api.stores.update.input.parse(req.body);
-      const store = await storage.updateStore(id, input);
+      const store = await storage.updateStore(id, userId, input);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
       res.json(store);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -93,9 +97,10 @@ export async function registerRoutes(
     }
   });
 
-  protectedApi.delete('/stores/:id', async (req, res) => {
+  protectedApi.delete('/stores/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    await storage.deleteStore(id);
+    await storage.deleteStore(id, userId);
     res.status(204).send();
   });
 
@@ -121,9 +126,13 @@ export async function registerRoutes(
 
   protectedApi.put('/vendors/:id', async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const id = Number(req.params.id);
       const input = api.vendors.update.input.parse(req.body);
-      const vendor = await storage.updateVendor(id, input);
+      const vendor = await storage.updateVendor(id, userId, input);
+      if (!vendor) {
+        return res.status(404).json({ message: 'Vendor not found' });
+      }
       res.json(vendor);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -133,9 +142,10 @@ export async function registerRoutes(
     }
   });
 
-  protectedApi.delete('/vendors/:id', async (req, res) => {
+  protectedApi.delete('/vendors/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    await storage.deleteVendor(id);
+    await storage.deleteVendor(id, userId);
     res.status(204).send();
   });
 
@@ -147,8 +157,9 @@ export async function registerRoutes(
   });
 
   protectedApi.get('/products/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    const product = await storage.getProduct(id);
+    const product = await storage.getProduct(id, userId);
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
@@ -170,9 +181,13 @@ export async function registerRoutes(
 
   protectedApi.put('/products/:id', async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const id = Number(req.params.id);
       const input = api.products.update.input.parse(req.body);
-      const product = await storage.updateProduct(id, input);
+      const product = await storage.updateProduct(id, userId, input);
+      if (!product) {
+        return res.status(404).json({ message: 'Product not found' });
+      }
       res.json(product);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -182,9 +197,10 @@ export async function registerRoutes(
     }
   });
 
-  protectedApi.delete('/products/:id', async (req, res) => {
+  protectedApi.delete('/products/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    await storage.deleteProduct(id);
+    await storage.deleteProduct(id, userId);
     res.status(204).send();
   });
 
@@ -196,8 +212,9 @@ export async function registerRoutes(
   });
 
   protectedApi.get('/orders/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    const order = await storage.getOrder(id);
+    const order = await storage.getOrder(id, userId);
     if (!order) {
       return res.status(404).json({ message: 'Order not found' });
     }
@@ -372,22 +389,27 @@ export async function registerRoutes(
 
   protectedApi.put('/pricing-rules/:id', async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const id = Number(req.params.id);
       const updates = req.body;
       if (updates.value !== undefined) updates.value = updates.value.toString();
       if (updates.minPrice !== undefined) updates.minPrice = updates.minPrice?.toString();
       if (updates.maxPrice !== undefined) updates.maxPrice = updates.maxPrice?.toString();
       
-      const rule = await storage.updatePricingRule(id, updates);
+      const rule = await storage.updatePricingRule(id, userId, updates);
+      if (!rule) {
+        return res.status(404).json({ message: 'Pricing rule not found' });
+      }
       res.json(rule);
     } catch (err: any) {
       res.status(400).json({ message: err.message || 'Failed to update pricing rule' });
     }
   });
 
-  protectedApi.delete('/pricing-rules/:id', async (req, res) => {
+  protectedApi.delete('/pricing-rules/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    await storage.deletePricingRule(id);
+    await storage.deletePricingRule(id, userId);
     res.status(204).send();
   });
 
@@ -399,8 +421,9 @@ export async function registerRoutes(
   });
 
   protectedApi.get('/import-jobs/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    const job = await storage.getImportJob(id);
+    const job = await storage.getImportJob(id, userId);
     if (!job) {
       return res.status(404).json({ message: 'Import job not found' });
     }
@@ -468,9 +491,10 @@ export async function registerRoutes(
     }
   });
 
-  protectedApi.delete('/publish-queue/:id', async (req, res) => {
+  protectedApi.delete('/publish-queue/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
     const id = Number(req.params.id);
-    await storage.deletePublishQueueItem(id);
+    await storage.deletePublishQueueItem(id, userId);
     res.status(204).send();
   });
 
@@ -730,8 +754,8 @@ export async function registerRoutes(
       const results: any[] = [];
       
       for (const itemId of queueItemIds) {
-        const item = await storage.getPublishQueueItem(itemId);
-        if (!item || item.userId !== userId) {
+        const item = await storage.getPublishQueueItem(itemId, userId);
+        if (!item) {
           results.push({ id: itemId, status: 'error', message: 'Item not found' });
           continue;
         }
@@ -740,9 +764,9 @@ export async function registerRoutes(
         await storage.updatePublishQueueItem(itemId, { status: 'publishing' });
         
         try {
-          // Get product and store details
-          const product = await storage.getProduct(item.productId);
-          const store = await storage.getStore(item.storeId);
+          // Get product and store details (verified via userId for security)
+          const product = await storage.getProduct(item.productId, userId);
+          const store = await storage.getStore(item.storeId, userId);
           
           if (!product || !store) {
             throw new Error('Product or store not found');

@@ -274,8 +274,8 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
     defaultValues: {
       title: "",
       sku: "",
-      costPrice: 0,
-      sellingPrice: 0,
+      costPrice: "0",
+      sellingPrice: "0",
       quantity: 0,
       veroStatus: "clean"
     }
@@ -337,7 +337,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
               <FormItem>
                 <FormLabel>Cost Price ($)</FormLabel>
                 <FormControl>
-                  <Input type="number" step="0.01" {...field} onChange={e => field.onChange(Number(e.target.value))} />
+                  <Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -350,7 +350,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
               <FormItem>
                 <FormLabel>Selling Price ($)</FormLabel>
                 <FormControl>
-                  <Input type="number" step="0.01" {...field} onChange={e => field.onChange(Number(e.target.value))} />
+                  <Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
