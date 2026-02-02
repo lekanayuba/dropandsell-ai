@@ -1,13 +1,13 @@
 import { 
   stores, vendors, products, orders, wallet, transactions, subscriptions, referrals,
-  pricingRules, importJobs, publishQueue, marketplaceListings,
+  pricingRules, importJobs, publishQueue, marketplaceListings, veroList,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
-  type InsertPublishQueue, type InsertMarketplaceListing
+  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or, ilike } from "drizzle-orm";
 
 export interface IStorage {
   // Stores
@@ -49,6 +49,13 @@ export interface IStorage {
   getUserByVerificationToken(token: string): Promise<User | undefined>;
   getUserByReferralCode(referralCode: string): Promise<User | undefined>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
+
+  // VERO List
+  getVeroList(userId: string): Promise<typeof veroList.$inferSelect[]>;
+  createVeroItem(item: InsertVeroItem & { userId: string }): Promise<typeof veroList.$inferSelect>;
+  updateVeroItem(id: number, userId: string, updates: Partial<InsertVeroItem>): Promise<typeof veroList.$inferSelect>;
+  deleteVeroItem(id: number, userId: string): Promise<void>;
+  checkVeroViolation(userId: string, title: string, sku: string, platform?: string): Promise<{ isBlocked: boolean; violations: typeof veroList.$inferSelect[] }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -403,6 +410,71 @@ export class DatabaseStorage implements IStorage {
   async bulkCreateProducts(productsList: (InsertProduct & { userId: string })[]) {
     if (productsList.length === 0) return [];
     return await db.insert(products).values(productsList).returning();
+  }
+
+  // VERO List
+  async getVeroList(userId: string) {
+    return await db.select().from(veroList)
+      .where(eq(veroList.userId, userId))
+      .orderBy(desc(veroList.createdAt));
+  }
+
+  async createVeroItem(item: InsertVeroItem & { userId: string }) {
+    const [newItem] = await db.insert(veroList).values(item).returning();
+    return newItem;
+  }
+
+  async updateVeroItem(id: number, userId: string, updates: Partial<InsertVeroItem>) {
+    const [updated] = await db.update(veroList)
+      .set(updates)
+      .where(and(eq(veroList.id, id), eq(veroList.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteVeroItem(id: number, userId: string) {
+    await db.delete(veroList).where(and(eq(veroList.id, id), eq(veroList.userId, userId)));
+  }
+
+  async checkVeroViolation(userId: string, title: string, sku: string, platform?: string) {
+    // Get all active VERO items for this user
+    const items = await db.select().from(veroList)
+      .where(and(
+        eq(veroList.userId, userId),
+        eq(veroList.isActive, true)
+      ));
+
+    const violations: typeof items = [];
+    const titleLower = title.toLowerCase();
+    const skuLower = sku.toLowerCase();
+
+    for (const item of items) {
+      // Skip if platform-specific and doesn't match
+      if (item.platform && platform && item.platform !== platform) {
+        continue;
+      }
+
+      const valueLower = item.value.toLowerCase();
+
+      if (item.type === 'brand' || item.type === 'keyword') {
+        // Check if the brand/keyword appears in the title
+        if (titleLower.includes(valueLower)) {
+          violations.push(item);
+        }
+      } else if (item.type === 'sku') {
+        // Check if SKU matches (supports wildcards with *)
+        const pattern = valueLower.replace(/\*/g, '.*');
+        const regex = new RegExp(`^${pattern}$`, 'i');
+        if (regex.test(skuLower)) {
+          violations.push(item);
+        }
+      }
+    }
+
+    return {
+      isBlocked: violations.length > 0,
+      violations
+    };
   }
 }
 

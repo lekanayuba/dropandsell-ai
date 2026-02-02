@@ -181,6 +181,18 @@ export const publishQueue = pgTable("publish_queue", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// VERO List - Restricted brands/keywords that cannot be listed
+export const veroList = pgTable("vero_list", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: text("type").notNull().default("brand"), // 'brand', 'keyword', 'sku'
+  value: text("value").notNull(), // The brand name, keyword, or SKU pattern
+  platform: text("platform"), // Optional: 'ebay', 'amazon', null = all platforms
+  reason: text("reason"), // Why this item is on VERO list
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one, many }) => ({
   stores: many(stores),
@@ -257,6 +269,11 @@ export type PublishQueueItem = typeof publishQueue.$inferSelect;
 export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true });
 export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
 export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
+
+// VERO List
+export const insertVeroListSchema = createInsertSchema(veroList).omit({ id: true, userId: true, createdAt: true });
+export type InsertVeroItem = z.infer<typeof insertVeroListSchema>;
+export type VeroItem = typeof veroList.$inferSelect;
 
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
