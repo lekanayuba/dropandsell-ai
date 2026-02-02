@@ -1,22 +1,96 @@
 import { useProducts, useCreateProduct, useDeleteProduct } from "@/hooks/use-products";
+import { useStores } from "@/hooks/use-stores";
+import { useBulkAddToPublishQueue, usePricingRules } from "@/hooks/use-automation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Filter, MoreHorizontal, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProductSchema, type InsertProduct } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Inventory() {
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const { data, isLoading } = useProducts({ search });
+  const { data: stores } = useStores();
+  const { data: pricingRules } = usePricingRules();
   const deleteProduct = useDeleteProduct();
+  const bulkAddToQueue = useBulkAddToPublishQueue();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<string>("");
+
+  const toggleProductSelection = (id: number) => {
+    setSelectedProducts((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAll = () => {
+    if (selectedProducts.length === data?.items.length) {
+      setSelectedProducts([]);
+    } else {
+      setSelectedProducts(data?.items.map((p) => p.id) || []);
+    }
+  };
+
+  const handleAddToPublishQueue = async () => {
+    if (selectedProducts.length === 0 || !selectedStore) {
+      toast({ title: "Missing selection", description: "Please select products and a store", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const activeRule = pricingRules?.find((r) => r.isActive);
+      const items = selectedProducts.map((productId) => {
+        const product = data?.items.find((p) => p.id === productId);
+        const costPrice = Number(product?.costPrice || 0);
+        let calculatedPrice = Number(product?.sellingPrice || costPrice);
+
+        if (activeRule) {
+          const ruleValue = Number(activeRule.value);
+          switch (activeRule.ruleType) {
+            case "markup":
+              calculatedPrice = costPrice * (1 + ruleValue / 100);
+              break;
+            case "margin":
+              calculatedPrice = costPrice / (1 - ruleValue / 100);
+              break;
+            case "fixed":
+              calculatedPrice = costPrice + ruleValue;
+              break;
+          }
+        }
+
+        return {
+          productId,
+          storeId: Number(selectedStore),
+          calculatedPrice: Math.round(calculatedPrice * 100) / 100,
+          pricingRuleId: activeRule?.id,
+        };
+      });
+
+      await bulkAddToQueue.mutateAsync(items);
+      toast({ title: "Added to Queue", description: `${items.length} products added to publish queue` });
+
+      setIsPublishDialogOpen(false);
+      setSelectedProducts([]);
+      setSelectedStore("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -55,12 +129,66 @@ export default function Inventory() {
           <Filter className="w-4 h-4" />
           Filters
         </Button>
+        {selectedProducts.length > 0 && (
+          <Dialog open={isPublishDialogOpen} onOpenChange={setIsPublishDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" data-testid="button-publish-selected">
+                <Send className="w-4 h-4" />
+                Publish {selectedProducts.length} to Store
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add to Publish Queue</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Select Store</Label>
+                  <Select value={selectedStore} onValueChange={setSelectedStore}>
+                    <SelectTrigger data-testid="select-store-for-publish">
+                      <SelectValue placeholder="Choose a store" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stores?.map((s) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>
+                          {s.name} ({s.platform})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {selectedProducts.length} products will be added to the publish queue with pricing rules applied.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsPublishDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddToPublishQueue}
+                  disabled={!selectedStore || bulkAddToQueue.isPending}
+                  data-testid="button-confirm-publish"
+                >
+                  {bulkAddToQueue.isPending ? "Adding..." : "Add to Queue"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="rounded-xl border border-border/50 bg-card overflow-hidden shadow-sm">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <TableHead className="w-[50px]">
+                <Checkbox
+                  checked={data?.items.length ? selectedProducts.length === data.items.length : false}
+                  onCheckedChange={toggleAll}
+                  data-testid="checkbox-select-all"
+                />
+              </TableHead>
               <TableHead>Product</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Cost</TableHead>
@@ -73,17 +201,24 @@ export default function Inventory() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
               </TableRow>
             ) : data?.items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12">
+                <TableCell colSpan={8} className="text-center py-12">
                   <p className="text-lg font-medium text-muted-foreground">No products found</p>
                 </TableCell>
               </TableRow>
             ) : (
               data?.items.map((product) => (
-                <TableRow key={product.id}>
+                <TableRow key={product.id} className={selectedProducts.includes(product.id) ? "bg-primary/5" : ""}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedProducts.includes(product.id)}
+                      onCheckedChange={() => toggleProductSelection(product.id)}
+                      data-testid={`checkbox-product-${product.id}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium">{product.title}</div>
                     {product.description && (
