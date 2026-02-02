@@ -1035,7 +1035,7 @@ Return only the description text, no additional formatting.`;
       let user = await storage.getUser(userId);
       
       if (!user?.referralCode) {
-        const code = 'DF' + userId.substring(0, 6).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+        const code = 'DS' + userId.substring(0, 6).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
         await storage.updateUser(userId, { referralCode: code });
         user = await storage.getUser(userId);
       }
@@ -1238,7 +1238,7 @@ Return only the description text, no additional formatting.`;
         vendorId: parseInt(vendorId),
         title: name,
         description: description || '',
-        sku: sku || 'DF-' + Date.now().toString(36).toUpperCase(),
+        sku: sku || 'DS-' + Date.now().toString(36).toUpperCase(),
         costPrice: costPrice || '0',
         sellingPrice: sellingPrice || '0',
         quantity: stockQuantity || 0,

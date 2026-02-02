@@ -22,14 +22,14 @@ import {
 const steps = [
   {
     id: 1,
-    title: "Welcome to DropFlow",
+    title: "Welcome to DropandSell AI",
     description: "Your all-in-one dropshipping automation platform",
     content: (
       <div className="space-y-6">
         <div className="text-center">
           <h3 className="text-2xl font-bold mb-4">Let's get you started!</h3>
           <p className="text-muted-foreground max-w-md mx-auto">
-            DropFlow helps you automate your dropshipping business across multiple marketplaces. 
+            DropandSell AI helps you automate your dropshipping business across multiple marketplaces. 
             This quick guide will show you how to make the most of the platform.
           </p>
         </div>
@@ -72,7 +72,7 @@ const steps = [
           <div>
             <h3 className="text-xl font-semibold mb-2">Connect Your Marketplace Stores</h3>
             <p className="text-muted-foreground mb-4">
-              Start by connecting your existing marketplace accounts. DropFlow supports:
+              Start by connecting your existing marketplace accounts. DropandSell AI supports:
             </p>
             <div className="flex flex-wrap gap-2 mb-4">
               <Badge variant="secondary">Shopify</Badge>
@@ -100,7 +100,7 @@ const steps = [
               </li>
               <li className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs shrink-0">4</span>
-                <span>DropFlow will verify and sync your store data</span>
+                <span>DropandSell AI will verify and sync your store data</span>
               </li>
             </ol>
           </CardContent>
@@ -313,7 +313,7 @@ const steps = [
         <div>
           <h3 className="text-2xl font-bold mb-4">You're All Set!</h3>
           <p className="text-muted-foreground max-w-md mx-auto mb-6">
-            You now know the basics of DropFlow. Start by connecting your first store 
+            You now know the basics of DropandSell AI. Start by connecting your first store 
             and importing your product catalog.
           </p>
         </div>

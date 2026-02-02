@@ -81,7 +81,7 @@ export default function Settings() {
               <li>Open Chrome and go to <code className="bg-muted px-1 rounded">chrome://extensions</code></li>
               <li>Enable Developer mode (toggle in top right)</li>
               <li>Click Load unpacked and select the extension folder</li>
-              <li>The DropFlow icon will appear in your browser toolbar</li>
+              <li>The DropandSell AI icon will appear in your browser toolbar</li>
             </ol>
           </div>
 

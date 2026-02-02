@@ -1,8 +1,8 @@
-# DropFlow - Dropshipping Automation SaaS Platform
+# DropandSell AI - Dropshipping Automation SaaS Platform
 
 ## Overview
 
-DropFlow is a multi-tenant SaaS platform for automating dropshipping operations across multiple e-commerce marketplaces. The platform enables sellers to connect marketplace stores, manage product inventory from multiple vendors, track orders, and handle payments through an integrated wallet system. Built with a modern full-stack architecture using React, Express, and PostgreSQL.
+DropandSell AI is a multi-tenant SaaS platform for automating dropshipping operations across multiple e-commerce marketplaces. The platform enables sellers to connect marketplace stores, manage product inventory from multiple vendors, track orders, and handle payments through an integrated wallet system. Built with a modern full-stack architecture using React, Express, and PostgreSQL.
 
 ## User Preferences
 
@@ -111,7 +111,7 @@ Preferred communication style: Simple, everyday language.
 - Delivery settings carry over to publish queue automatically
 
 ### Referral System
-- Users get unique referral codes (format: "DF" + userId(6 chars) + random(4 chars))
+- Users get unique referral codes (format: "DS" + userId(6 chars) + random(4 chars))
 - 10% commission on referred user subscriptions
 - Commission credited instantly to referrer's wallet
 - URL parameter handling (?ref=CODE) stores code in localStorage

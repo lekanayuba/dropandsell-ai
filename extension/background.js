@@ -1,5 +1,5 @@
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('DropFlow extension installed');
+  console.log('DropandSell AI extension installed');
 });
 
 chrome.action.onClicked.addListener((tab) => {

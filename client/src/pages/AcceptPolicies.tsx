@@ -36,7 +36,7 @@ export default function AcceptPolicies() {
           </div>
           <h1 className="text-3xl font-bold font-display mb-2">Review Our Policies</h1>
           <p className="text-muted-foreground">
-            Please read and accept our policies to continue using DropFlow
+            Please read and accept our policies to continue using DropandSell AI
           </p>
         </div>
 
@@ -61,7 +61,7 @@ export default function AcceptPolicies() {
                   Privacy Policy
                 </label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  I have read and agree to the Privacy Policy, which explains how DropFlow collects, uses, and protects my personal data.
+                  I have read and agree to the Privacy Policy, which explains how DropandSell AI collects, uses, and protects my personal data.
                 </p>
                 <a
                   href="/policies?tab=privacy"
@@ -88,7 +88,7 @@ export default function AcceptPolicies() {
                   User Agreement (Terms of Service)
                 </label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  I agree to the Terms of Service and understand my responsibilities when using DropFlow.
+                  I agree to the Terms of Service and understand my responsibilities when using DropandSell AI.
                 </p>
                 <a
                   href="/policies?tab=terms"

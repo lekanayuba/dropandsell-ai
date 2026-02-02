@@ -1,1 +1,1 @@
-console.log('DropFlow extension loaded on:', window.location.href);
+console.log('DropandSell AI extension loaded on:', window.location.href);

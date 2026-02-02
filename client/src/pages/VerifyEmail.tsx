@@ -136,7 +136,7 @@ export default function VerifyEmail() {
               <p className="font-medium">Next steps:</p>
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                 <li>Open your email inbox</li>
-                <li>Find the email from DropFlow</li>
+                <li>Find the email from DropandSell AI</li>
                 <li>Click the verification link</li>
                 <li>Return here to access your dashboard</li>
               </ol>

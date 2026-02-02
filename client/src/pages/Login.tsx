@@ -24,7 +24,7 @@ export default function Login() {
             <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
               <div className="w-3 h-3 bg-primary rounded-full" />
             </div>
-            DropFlow
+            DropandSell AI
           </div>
 
           <div className="space-y-8 max-w-lg">
@@ -46,7 +46,7 @@ export default function Login() {
           </div>
 
           <div className="text-sm text-slate-500">
-            © 2024 DropFlow Inc. All rights reserved.
+            © 2024 DropandSell AI Inc. All rights reserved.
           </div>
         </div>
       </div>

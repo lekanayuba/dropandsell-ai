@@ -163,7 +163,7 @@ export default function PaymentSetup() {
                 data-testid="checkbox-direct-debit"
               />
               <Label htmlFor="direct-debit-agree" className="text-sm leading-relaxed cursor-pointer">
-                I authorize DropFlow to set up a recurring payment using my payment method. 
+                I authorize DropandSell AI to set up a recurring payment using my payment method. 
                 I understand that I will be charged monthly and can cancel at any time. 
                 I have read and agree to the{" "}
                 <a href="/policies" target="_blank" className="text-primary underline">Direct Debit terms</a>.

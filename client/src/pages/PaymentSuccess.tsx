@@ -34,7 +34,7 @@ export default function PaymentSuccess() {
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-muted-foreground">
-            Thank you for subscribing to DropFlow. Your account has been activated 
+            Thank you for subscribing to DropandSell AI. Your account has been activated 
             and you now have full access to all features.
           </p>
           

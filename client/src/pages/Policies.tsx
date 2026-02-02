@@ -45,10 +45,10 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Introduction</h3>
                     <p className="text-muted-foreground mb-2">
-                      DropFlow ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our dropshipping automation platform.
+                      DropandSell AI ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our dropshipping automation platform.
                     </p>
                     <p className="text-muted-foreground">
-                      By using DropFlow, you agree to the collection and use of information in accordance with this policy. If you do not agree with the terms of this Privacy Policy, please do not access the platform.
+                      By using DropandSell AI, you agree to the collection and use of information in accordance with this policy. If you do not agree with the terms of this Privacy Policy, please do not access the platform.
                     </p>
                   </section>
 
@@ -158,14 +158,14 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Acceptance of Terms</h3>
                     <p className="text-muted-foreground">
-                      By creating an account and using DropFlow, you agree to be bound by these Terms of Service. If you do not agree to these terms, you may not use our platform. These terms constitute a legally binding agreement between you and DropFlow Ltd.
+                      By creating an account and using DropandSell AI, you agree to be bound by these Terms of Service. If you do not agree to these terms, you may not use our platform. These terms constitute a legally binding agreement between you and DropandSell AI Ltd.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Description of Service</h3>
                     <p className="text-muted-foreground">
-                      DropFlow provides a software-as-a-service (SaaS) platform for automating dropshipping operations, including marketplace integration, inventory management, pricing automation, order processing, and wallet-based auto-fulfillment.
+                      DropandSell AI provides a software-as-a-service (SaaS) platform for automating dropshipping operations, including marketplace integration, inventory management, pricing automation, order processing, and wallet-based auto-fulfillment.
                     </p>
                   </section>
 
@@ -184,7 +184,7 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">4. Subscription and Payments</h3>
                     <p className="text-muted-foreground mb-2">
-                      Access to DropFlow features requires a paid subscription. By subscribing, you agree that:
+                      Access to DropandSell AI features requires a paid subscription. By subscribing, you agree that:
                     </p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>Subscription fees are billed monthly in advance</li>
@@ -211,28 +211,28 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">6. Marketplace Compliance</h3>
                     <p className="text-muted-foreground">
-                      You are solely responsible for complying with the terms of service of any marketplace you connect to DropFlow. We provide VERO compliance detection as a tool, but this does not guarantee compliance. You accept full responsibility for the products you list and sell.
+                      You are solely responsible for complying with the terms of service of any marketplace you connect to DropandSell AI. We provide VERO compliance detection as a tool, but this does not guarantee compliance. You accept full responsibility for the products you list and sell.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">7. Intellectual Property</h3>
                     <p className="text-muted-foreground">
-                      DropFlow and its original content, features, and functionality are owned by DropFlow Ltd and are protected by international copyright, trademark, and other intellectual property laws. Your product data remains your property.
+                      DropandSell AI and its original content, features, and functionality are owned by DropandSell AI Ltd and are protected by international copyright, trademark, and other intellectual property laws. Your product data remains your property.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">8. Limitation of Liability</h3>
                     <p className="text-muted-foreground">
-                      To the maximum extent permitted by law, DropFlow shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues. Our total liability shall not exceed the amount paid by you in the 12 months preceding the claim.
+                      To the maximum extent permitted by law, DropandSell AI shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues. Our total liability shall not exceed the amount paid by you in the 12 months preceding the claim.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">9. Indemnification</h3>
                     <p className="text-muted-foreground">
-                      You agree to indemnify and hold harmless DropFlow and its officers, directors, and employees from any claims, damages, or expenses arising from your use of the platform, violation of these terms, or infringement of any third-party rights.
+                      You agree to indemnify and hold harmless DropandSell AI and its officers, directors, and employees from any claims, damages, or expenses arising from your use of the platform, violation of these terms, or infringement of any third-party rights.
                     </p>
                   </section>
 
@@ -268,14 +268,14 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Our Commitment</h3>
                     <p className="text-muted-foreground">
-                      DropFlow is committed to protecting the personal data of our users in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018. This policy outlines how we process and protect your personal data.
+                      DropandSell AI is committed to protecting the personal data of our users in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018. This policy outlines how we process and protect your personal data.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Data Controller</h3>
                     <p className="text-muted-foreground">
-                      DropFlow Ltd is the data controller responsible for your personal data. If you have questions about how we handle your data, contact our Data Protection Officer at dpo@dropflow.com.
+                      DropandSell AI Ltd is the data controller responsible for your personal data. If you have questions about how we handle your data, contact our Data Protection Officer at dpo@dropflow.com.
                     </p>
                   </section>
 
@@ -387,13 +387,13 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Introduction</h3>
                     <p className="text-muted-foreground">
-                      This Direct Debit Policy explains how recurring payments work for your DropFlow subscription and wallet top-ups. We use Stripe as our payment processor to ensure secure, reliable payment handling.
+                      This Direct Debit Policy explains how recurring payments work for your DropandSell AI subscription and wallet top-ups. We use Stripe as our payment processor to ensure secure, reliable payment handling.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Payment Authorization</h3>
-                    <p className="text-muted-foreground mb-2">By providing your payment details and subscribing, you authorize DropFlow to:</p>
+                    <p className="text-muted-foreground mb-2">By providing your payment details and subscribing, you authorize DropandSell AI to:</p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>Charge your payment method for monthly subscription fees</li>
                       <li>Charge your payment method for wallet top-ups you initiate</li>
@@ -426,7 +426,7 @@ export default function Policies() {
                     <p className="text-muted-foreground mb-2">We prioritize the security of your payment information:</p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>All payments are processed through Stripe, a PCI-DSS Level 1 certified provider</li>
-                      <li>DropFlow never stores your full card number</li>
+                      <li>DropandSell AI never stores your full card number</li>
                       <li>Strong Customer Authentication (SCA) is used where required</li>
                       <li>Encrypted communication protects all transactions</li>
                     </ul>

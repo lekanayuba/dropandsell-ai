@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DropFlow - Product Importer",
+  "name": "DropandSell AI - Product Importer",
   "version": "1.0.0",
-  "description": "Import products from vendor websites directly to your DropFlow store",
+  "description": "Import products from vendor websites directly to your DropandSell AI store",
   "permissions": [
     "activeTab",
     "storage"

@@ -5,6 +5,7 @@ import {
   Store, 
   Users, 
   Package, 
+  PackageOpen,
   ShoppingCart, 
   Wallet, 
   CreditCard,
@@ -43,9 +44,12 @@ export function Sidebar() {
   const NavContent = () => (
     <div className="flex flex-col h-full bg-card border-r border-border/50">
       <div className="p-6 border-b border-border/50">
-        <h1 className="text-xl font-bold font-display bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-          DropFlow
-        </h1>
+        <div className="flex items-center gap-2">
+          <PackageOpen className="h-6 w-6 text-primary" />
+          <h1 className="text-xl font-bold font-display bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+            DropandSell AI
+          </h1>
+        </div>
         <p className="text-xs text-muted-foreground mt-1">Automation Platform</p>
       </div>
 

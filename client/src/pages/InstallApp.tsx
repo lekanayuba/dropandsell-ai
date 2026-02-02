@@ -51,7 +51,7 @@ export default function InstallApp() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <Badge variant="outline" className="mb-4">Optional</Badge>
-          <h1 className="text-3xl font-bold mb-2">Install DropFlow App</h1>
+          <h1 className="text-3xl font-bold mb-2">Install DropandSell AI App</h1>
           <p className="text-muted-foreground max-w-lg mx-auto">
             Get the full app experience on your desktop or smartphone for faster access and automation.
           </p>
@@ -67,7 +67,7 @@ export default function InstallApp() {
                     App Installed Successfully!
                   </h3>
                   <p className="text-muted-foreground">
-                    You can now access DropFlow from your home screen or app launcher.
+                    You can now access DropandSell AI from your home screen or app launcher.
                   </p>
                 </div>
               </div>
@@ -114,7 +114,7 @@ export default function InstallApp() {
                     <p className="font-medium mb-1">How to install:</p>
                     <ol className="list-decimal list-inside space-y-1">
                       <li>Click the install icon in your browser's address bar</li>
-                      <li>Or use menu → "Install DropFlow"</li>
+                      <li>Or use menu → "Install DropandSell AI"</li>
                     </ol>
                   </div>
                 )}

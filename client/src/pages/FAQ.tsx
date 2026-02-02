@@ -11,8 +11,8 @@ const faqData = [
         a: "Navigate to the Stores page from the sidebar, click 'Add Store', select your marketplace (Shopify, eBay, Amazon, etc.), and enter your API credentials. You can find these credentials in your marketplace's developer or settings section."
       },
       {
-        q: "What marketplaces does DropFlow support?",
-        a: "DropFlow currently supports Shopify, eBay, Amazon, and WooCommerce. We're continuously adding more marketplace integrations. Contact support if you need a specific marketplace."
+        q: "What marketplaces does DropandSell AI support?",
+        a: "DropandSell AI currently supports Shopify, eBay, Amazon, and WooCommerce. We're continuously adding more marketplace integrations. Contact support if you need a specific marketplace."
       },
       {
         q: "How do I import products from my vendor?",
@@ -42,11 +42,11 @@ const faqData = [
     questions: [
       {
         q: "How do orders sync from my stores?",
-        a: "DropFlow automatically syncs orders from your connected marketplace stores. Orders appear in the Orders page with customer details, shipping address, and fulfillment status."
+        a: "DropandSell AI automatically syncs orders from your connected marketplace stores. Orders appear in the Orders page with customer details, shipping address, and fulfillment status."
       },
       {
         q: "What is auto-fulfillment?",
-        a: "Auto-fulfillment uses your wallet balance to automatically process orders with your vendors. When an order comes in, DropFlow can automatically place the order with your supplier and update tracking information."
+        a: "Auto-fulfillment uses your wallet balance to automatically process orders with your vendors. When an order comes in, DropandSell AI can automatically place the order with your supplier and update tracking information."
       },
       {
         q: "How do I track order status?",
@@ -59,7 +59,7 @@ const faqData = [
     questions: [
       {
         q: "How does the wallet work?",
-        a: "Your DropFlow wallet is used for auto-fulfillment. Deposit funds via card payment, and the balance is used to automatically pay vendors when processing orders. You can view all transactions and current balance on the Wallet page."
+        a: "Your DropandSell AI wallet is used for auto-fulfillment. Deposit funds via card payment, and the balance is used to automatically pay vendors when processing orders. You can view all transactions and current balance on the Wallet page."
       },
       {
         q: "What payment methods are accepted?",
@@ -76,7 +76,7 @@ const faqData = [
     questions: [
       {
         q: "What subscription plans are available?",
-        a: "DropFlow offers 6 tiers from Starter (£12/month) to Enterprise (£100/month). Each tier includes different product limits, connected stores, and feature access. Visit the Subscription page to compare plans."
+        a: "DropandSell AI offers 6 tiers from Starter (£12/month) to Enterprise (£100/month). Each tier includes different product limits, connected stores, and feature access. Visit the Subscription page to compare plans."
       },
       {
         q: "Can I upgrade or downgrade my plan?",
@@ -101,7 +101,7 @@ const faqData = [
       },
       {
         q: "What is VERO compliance?",
-        a: "VERO (Verified Rights Owner Program) helps prevent listing trademarked or restricted products. DropFlow scans product titles and descriptions to flag potential VERO violations before publishing."
+        a: "VERO (Verified Rights Owner Program) helps prevent listing trademarked or restricted products. DropandSell AI scans product titles and descriptions to flag potential VERO violations before publishing."
       }
     ]
   },
@@ -131,7 +131,7 @@ export default function FAQ() {
         <HelpCircle className="h-8 w-8 text-primary" />
         <div>
           <h2 className="text-3xl font-bold font-display tracking-tight">Frequently Asked Questions</h2>
-          <p className="text-muted-foreground">Find answers to common questions about DropFlow</p>
+          <p className="text-muted-foreground">Find answers to common questions about DropandSell AI</p>
         </div>
       </div>
 
