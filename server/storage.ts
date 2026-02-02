@@ -42,13 +42,15 @@ export interface IStorage {
   createTransaction(transaction: InsertTransaction & { walletId: number }): Promise<typeof transactions.$inferSelect>;
   updateWalletBalance(walletId: number, amount: number): Promise<void>;
 
-  // Auth/Users (Required for Replit Auth integration)
+  // Auth/Users
   getUser(id: string): Promise<User | undefined>;
-  upsertUser(user: any): Promise<User>; // Typed as any to match auth implementation flexibility
+  getUserByEmail(email: string): Promise<User | undefined>;
+  upsertUser(user: any): Promise<User>;
   getUserByApiKey(apiKey: string): Promise<User | undefined>;
   getUserByVerificationToken(token: string): Promise<User | undefined>;
   getUserByReferralCode(referralCode: string): Promise<User | undefined>;
   updateUser(id: string, updates: Partial<User>): Promise<User>;
+  createUser(user: { email: string; password: string; firstName?: string; lastName?: string }): Promise<User>;
 
   // VERO List
   getVeroList(userId: string): Promise<typeof veroList.$inferSelect[]>;
@@ -215,6 +217,23 @@ export class DatabaseStorage implements IStorage {
   // Auth Users
   async getUser(id: string) {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByEmail(email: string) {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createUser(userData: { email: string; password: string; firstName?: string; lastName?: string }) {
+    const referralCode = 'DS' + Math.random().toString(36).substring(2, 8).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+    const [user] = await db.insert(users).values({
+      email: userData.email,
+      password: userData.password,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      referralCode,
+    }).returning();
     return user;
   }
 

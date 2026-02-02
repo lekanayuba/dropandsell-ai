@@ -2,6 +2,7 @@ import type { Express, Router } from "express";
 import type { Server } from "http";
 import express from "express";
 import multer from "multer";
+import bcrypt from "bcrypt";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -34,6 +35,150 @@ export async function registerRoutes(
   // Auth setup
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  // === STANDALONE EMAIL/PASSWORD AUTH ===
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const { email, password, firstName, lastName } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+      
+      if (password.length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      }
+      
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: 'An account with this email already exists' });
+      }
+      
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+      });
+      
+      // Generate verification token
+      const crypto = await import('crypto');
+      const verificationToken = crypto.randomUUID();
+      const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      
+      await storage.updateUser(user.id, {
+        verificationToken,
+        verificationTokenExpiry,
+      });
+      
+      // Send verification email
+      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL 
+        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+        : process.env.REPLIT_DEV_DOMAIN 
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+          : '';
+      const verifyUrl = `${baseUrl}/verify-email?token=${verificationToken}`;
+      
+      try {
+        const { sendVerificationEmail } = await import('./email.js');
+        await sendVerificationEmail(email, verifyUrl);
+      } catch (emailErr) {
+        console.log(`Verification link for ${email}: ${verifyUrl}`);
+      }
+      
+      // Create wallet for user
+      await storage.createWallet(user.id);
+      
+      // Set session
+      (req.session as any).userId = user.id;
+      
+      res.json({ 
+        success: true, 
+        message: 'Account created. Please check your email to verify your account.',
+        user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName }
+      });
+    } catch (err: any) {
+      console.error('Registration error:', err);
+      res.status(500).json({ message: err.message || 'Registration failed' });
+    }
+  });
+  
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: 'Invalid email or password' });
+      }
+      
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Invalid email or password' });
+      }
+      
+      // Set session
+      (req.session as any).userId = user.id;
+      
+      res.json({ 
+        success: true,
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          firstName: user.firstName, 
+          lastName: user.lastName,
+          emailVerified: user.emailVerified,
+          policiesAccepted: user.policiesAccepted,
+          onboardingCompleted: user.onboardingCompleted
+        }
+      });
+    } catch (err: any) {
+      console.error('Login error:', err);
+      res.status(500).json({ message: err.message || 'Login failed' });
+    }
+  });
+  
+  app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Failed to logout' });
+      }
+      res.json({ success: true });
+    });
+  });
+  
+  app.get('/api/auth/me', async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+      
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        emailVerified: user.emailVerified,
+        policiesAccepted: user.policiesAccepted,
+        onboardingCompleted: user.onboardingCompleted,
+        subscriptionPlan: user.subscriptionPlan,
+        referralCode: user.referralCode,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // Protected router for API routes
   const protectedApi: Router = express.Router();
