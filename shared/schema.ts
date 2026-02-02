@@ -7,6 +7,9 @@ import { users } from "./models/auth";
 // Export auth models so they are available
 export * from "./models/auth";
 
+// Export chat models for AI integrations
+export * from "./models/chat";
+
 // === TABLE DEFINITIONS ===
 
 // Stores (Marketplace connections)
@@ -165,6 +168,10 @@ export const publishQueue = pgTable("publish_queue", {
   storeId: integer("store_id").notNull().references(() => stores.id),
   calculatedPrice: decimal("calculated_price", { precision: 10, scale: 2 }).notNull(),
   pricingRuleId: integer("pricing_rule_id").references(() => pricingRules.id),
+  quantity: integer("quantity").notNull().default(1),
+  aiDescription: text("ai_description"),
+  postageType: text("postage_type").default("store_default"), // 'store_default', 'free', 'seller_pays'
+  postageCost: decimal("postage_cost", { precision: 10, scale: 2 }),
   status: text("status").notNull().default("pending"), // 'pending', 'approved', 'publishing', 'published', 'failed'
   errorMessage: text("error_message"),
   scheduledAt: timestamp("scheduled_at"),

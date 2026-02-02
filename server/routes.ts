@@ -9,6 +9,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integra
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import OpenAI from "openai";
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -382,6 +383,71 @@ export async function registerRoutes(
     res.json({ publishableKey: key });
   });
 
+  // Stripe subscription products for payment setup (public endpoint)
+  protectedApi.get('/stripe/products', async (req, res) => {
+    res.json(SUBSCRIPTION_PLANS);
+  });
+
+  // Create Stripe checkout session for subscription
+  protectedApi.post('/stripe/create-checkout-session', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { planId, successUrl, cancelUrl } = req.body;
+      
+      const user = await storage.getUser(userId);
+      const plan = SUBSCRIPTION_PLANS.find(p => p.name.toLowerCase().replace(/\s+/g, '-').replace('-plan', '') === planId);
+      
+      if (!plan) {
+        return res.status(400).json({ message: 'Invalid plan selected' });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      
+      let customerId = user?.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user?.email || undefined,
+          metadata: { userId },
+        });
+        customerId = customer.id;
+        await storage.updateUserStripeCustomerId(userId, customerId);
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        mode: 'subscription',
+        line_items: [
+          {
+            price_data: {
+              currency: 'gbp',
+              product_data: {
+                name: plan.name,
+                description: `Up to ${plan.listings.toLocaleString()} active listings`,
+              },
+              unit_amount: plan.priceGbp * 100,
+              recurring: { interval: 'month' },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl || `${req.protocol}://${req.get('host')}/payment-success`,
+        cancel_url: cancelUrl || `${req.protocol}://${req.get('host')}/payment-setup`,
+        metadata: {
+          userId,
+          planId,
+          planName: plan.name,
+        },
+      });
+
+      await storage.updateUser(userId, { subscriptionPlan: plan.name, subscriptionStatus: 'pending' });
+      res.json({ url: session.url, sessionId: session.id });
+    } catch (error: any) {
+      console.error('Checkout session error:', error);
+      res.status(500).json({ message: error.message || 'Failed to create checkout session' });
+    }
+  });
+
   // === AUTOMATION: PRICING RULES ===
   protectedApi.get('/pricing-rules', async (req: any, res) => {
     const userId = req.user.claims.sub;
@@ -465,7 +531,7 @@ export async function registerRoutes(
   protectedApi.post('/publish-queue', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { productId, storeId, calculatedPrice, pricingRuleId } = req.body;
+      const { productId, storeId, calculatedPrice, pricingRuleId, quantity, postageType, postageCost } = req.body;
       
       const item = await storage.createPublishQueueItem({
         userId,
@@ -473,6 +539,9 @@ export async function registerRoutes(
         storeId,
         calculatedPrice: calculatedPrice?.toString() || '0',
         pricingRuleId,
+        quantity: quantity || 1,
+        postageType: postageType || 'store_default',
+        postageCost: postageCost?.toString(),
         status: 'pending',
       });
       res.status(201).json(item);
@@ -521,6 +590,51 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     await storage.deletePublishQueueItem(id, userId);
     res.status(204).send();
+  });
+
+  // === AI: GENERATE PRODUCT DESCRIPTION ===
+  const openai = new OpenAI({
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+
+  protectedApi.post('/ai/generate-description', async (req: any, res) => {
+    try {
+      const { productTitle, productSku, vendorName, costPrice, category } = req.body;
+      
+      if (!productTitle) {
+        return res.status(400).json({ message: 'Product title is required' });
+      }
+
+      const prompt = `Generate a compelling e-commerce product description for the following product:
+
+Product Title: ${productTitle}
+${productSku ? `SKU: ${productSku}` : ''}
+${vendorName ? `Vendor/Brand: ${vendorName}` : ''}
+${costPrice ? `Price Range: £${costPrice}` : ''}
+${category ? `Category: ${category}` : ''}
+
+Write a professional, SEO-optimized product description that:
+1. Highlights key features and benefits
+2. Uses persuasive language to encourage purchases
+3. Is between 100-200 words
+4. Includes relevant keywords for marketplace search
+5. Maintains a professional yet engaging tone
+
+Return only the description text, no additional formatting.`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-5-mini',
+        messages: [{ role: 'user', content: prompt }],
+        max_completion_tokens: 500,
+      });
+
+      const description = response.choices[0]?.message?.content || '';
+      res.json({ description: description.trim() });
+    } catch (err: any) {
+      console.error('AI description generation error:', err);
+      res.status(500).json({ message: 'Failed to generate description' });
+    }
   });
 
   // === AUTOMATION: CALCULATE PRICE ===
@@ -839,6 +953,26 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to complete onboarding' });
+    }
+  });
+
+  protectedApi.post('/user/skip-payment', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.updateUser(userId, { paymentSkipped: new Date() });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to skip payment' });
+    }
+  });
+
+  protectedApi.post('/user/confirm-payment', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.updateUser(userId, { subscriptionStatus: 'active' });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to confirm payment' });
     }
   });
 

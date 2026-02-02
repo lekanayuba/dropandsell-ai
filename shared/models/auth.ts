@@ -27,6 +27,9 @@ export const users = pgTable("users", {
   verificationTokenExpiry: timestamp("verification_token_expiry"),
   policiesAccepted: timestamp("policies_accepted"),
   onboardingCompleted: timestamp("onboarding_completed"),
+  paymentSkipped: timestamp("payment_skipped"),
+  subscriptionPlan: varchar("subscription_plan"),
+  subscriptionStatus: varchar("subscription_status"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

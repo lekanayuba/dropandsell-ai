@@ -21,6 +21,9 @@ import FAQ from "@/pages/FAQ";
 import Policies from "@/pages/Policies";
 import AcceptPolicies from "@/pages/AcceptPolicies";
 import VerifyEmail from "@/pages/VerifyEmail";
+import PaymentSetup from "@/pages/PaymentSetup";
+import InstallApp from "@/pages/InstallApp";
+import PaymentSuccess from "@/pages/PaymentSuccess";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -114,6 +117,9 @@ function Router() {
       <Route path="/onboarding" component={() => {
         return <Onboarding />;
       }} />
+      <Route path="/payment-setup" component={() => <PaymentSetup />} />
+      <Route path="/payment-success" component={() => <PaymentSuccess />} />
+      <Route path="/install-app" component={() => <InstallApp />} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stores} />} />
       <Route path="/vendors" component={() => <ProtectedRoute component={Vendors} />} />
