@@ -45,6 +45,12 @@ import {
   RefreshCw,
   ShieldAlert,
   AlertTriangle,
+  Filter,
+  Mail,
+  Phone,
+  Globe,
+  AtSign,
+  Code,
 } from "lucide-react";
 
 export default function Automation() {
@@ -63,7 +69,7 @@ export default function Automation() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[625px]">
           <TabsTrigger value="import" className="gap-2" data-testid="tab-import">
             <Upload className="w-4 h-4" />
             Import
@@ -79,6 +85,10 @@ export default function Automation() {
           <TabsTrigger value="vero" className="gap-2" data-testid="tab-vero">
             <ShieldAlert className="w-4 h-4" />
             VERO
+          </TabsTrigger>
+          <TabsTrigger value="filters" className="gap-2" data-testid="tab-filters">
+            <Filter className="w-4 h-4" />
+            Filters
           </TabsTrigger>
         </TabsList>
 
@@ -96,6 +106,10 @@ export default function Automation() {
 
         <TabsContent value="vero">
           <VEROSection />
+        </TabsContent>
+
+        <TabsContent value="filters">
+          <ContentFiltersSection />
         </TabsContent>
       </Tabs>
     </div>
@@ -1196,6 +1210,301 @@ function VEROSection() {
                         onClick={() => deleteMutation.mutate(item.id)}
                         className="text-destructive hover:text-destructive"
                         data-testid={`button-delete-vero-${item.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ContentFiltersSection() {
+  const { toast } = useToast();
+  const [isCustomDialogOpen, setIsCustomDialogOpen] = useState(false);
+  const [customPattern, setCustomPattern] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
+
+  const { data: filters, isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/content-filters"],
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (data: { type: string; description?: string; pattern?: string }) => {
+      const res = await fetch("/api/content-filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add filter");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Content filter enabled" });
+    },
+    onError: () => {
+      toast({ title: "Failed to enable filter", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/content-filters/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Content filter removed" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove filter", variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/content-filters/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+    },
+    onError: () => {
+      toast({ title: "Failed to update filter", variant: "destructive" });
+    },
+  });
+
+  const filterTypes = [
+    { type: "email", label: "Email Addresses", icon: Mail, description: "Detects email addresses like name@domain.com" },
+    { type: "phone", label: "Phone Numbers", icon: Phone, description: "Detects phone numbers in various formats" },
+    { type: "url", label: "Website URLs", icon: Globe, description: "Detects website links and URLs" },
+    { type: "social", label: "Social Media Handles", icon: AtSign, description: "Detects @username mentions" },
+  ];
+
+  const getActiveFilter = (type: string) => filters?.find(f => f.type === type && f.isActive);
+  const getFilter = (type: string) => filters?.find(f => f.type === type);
+
+  const handleToggleFilter = (type: string) => {
+    const existingFilter = getFilter(type);
+    if (existingFilter) {
+      toggleMutation.mutate({ id: existingFilter.id, isActive: !existingFilter.isActive });
+    } else {
+      addMutation.mutate({ type, description: filterTypes.find(f => f.type === type)?.label });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card data-testid="card-content-filters">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2" data-testid="text-filters-title">
+            <Filter className="h-5 w-5 text-primary" />
+            Content Filters
+          </CardTitle>
+          <CardDescription data-testid="text-filters-description">
+            Prevent personal information from being shared in product listings
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border bg-blue-500/10 border-blue-200 p-4 mb-6" data-testid="alert-filters-info">
+            <div className="flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-blue-600 shrink-0" />
+              <div>
+                <p className="font-medium text-blue-800">Why filter personal information?</p>
+                <p className="text-sm text-blue-700 mt-1">
+                  Marketplaces like eBay and Amazon prohibit sharing seller or vendor contact information
+                  in product listings to prevent off-platform transactions. Products with personal info
+                  will be blocked from publishing.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {filterTypes.map(({ type, label, icon: Icon, description }) => {
+                const filter = getFilter(type);
+                const isActive = filter?.isActive ?? false;
+                
+                return (
+                  <div
+                    key={type}
+                    className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                      isActive ? 'bg-primary/5 border-primary/20' : 'bg-muted/50'
+                    }`}
+                    data-testid={`card-filter-${type}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`p-2 rounded-lg ${isActive ? 'bg-primary/10' : 'bg-muted'}`}>
+                        <Icon className={`h-5 w-5 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                      </div>
+                      <div>
+                        <h4 className="font-medium" data-testid={`text-filter-label-${type}`}>{label}</h4>
+                        <p className="text-sm text-muted-foreground">{description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {isActive && (
+                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-green-200">
+                          Active
+                        </Badge>
+                      )}
+                      <Switch
+                        checked={isActive}
+                        onCheckedChange={() => handleToggleFilter(type)}
+                        disabled={toggleMutation.isPending || addMutation.isPending}
+                        data-testid={`switch-filter-${type}`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-custom-filters">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2" data-testid="text-custom-filters-title">
+              <Code className="h-5 w-5" />
+              Custom Filters
+            </CardTitle>
+            <CardDescription>
+              Add custom patterns to detect specific text you want to block
+            </CardDescription>
+          </div>
+          <Dialog open={isCustomDialogOpen} onOpenChange={setIsCustomDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-custom-filter">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Custom
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Custom Filter</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Pattern (Regex)</Label>
+                  <Input
+                    value={customPattern}
+                    onChange={(e) => setCustomPattern(e.target.value)}
+                    placeholder="e.g. \b(company|business)\s*name\b"
+                    className="font-mono"
+                    data-testid="input-custom-pattern"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter a regular expression pattern to match text you want to block
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Input
+                    value={customDescription}
+                    onChange={(e) => setCustomDescription(e.target.value)}
+                    placeholder="e.g. Block company name mentions"
+                    data-testid="input-custom-description"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCustomDialogOpen(false)} data-testid="button-cancel-custom">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!customPattern.trim()) {
+                      toast({ title: "Please enter a pattern", variant: "destructive" });
+                      return;
+                    }
+                    addMutation.mutate({
+                      type: "custom",
+                      pattern: customPattern,
+                      description: customDescription || undefined,
+                    });
+                    setCustomPattern("");
+                    setCustomDescription("");
+                    setIsCustomDialogOpen(false);
+                  }}
+                  disabled={addMutation.isPending}
+                  data-testid="button-confirm-add-custom"
+                >
+                  {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Filter
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          {filters?.filter(f => f.type === 'custom').length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="text-custom-empty">
+              <Code className="h-10 w-10 mx-auto mb-4 opacity-20" />
+              <p>No custom filters added yet</p>
+              <p className="text-sm mt-1">Click "Add Custom" to create a regex pattern filter</p>
+            </div>
+          ) : (
+            <Table data-testid="table-custom-filters">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filters?.filter(f => f.type === 'custom').map((filter: any) => (
+                  <TableRow key={filter.id} data-testid={`row-custom-filter-${filter.id}`}>
+                    <TableCell className="font-mono text-sm" data-testid={`text-custom-pattern-${filter.id}`}>
+                      {filter.pattern}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground" data-testid={`text-custom-desc-${filter.id}`}>
+                      {filter.description || "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={filter.isActive}
+                        onCheckedChange={(checked) =>
+                          toggleMutation.mutate({ id: filter.id, isActive: checked })
+                        }
+                        data-testid={`switch-custom-active-${filter.id}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteMutation.mutate(filter.id)}
+                        className="text-destructive hover:text-destructive"
+                        data-testid={`button-delete-custom-${filter.id}`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>

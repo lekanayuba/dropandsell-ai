@@ -140,6 +140,14 @@ Preferred communication style: Simple, everyday language.
 - UI in Automation page VERO tab for full CRUD management
 - Toggle items active/inactive without deleting
 
+### Content Filters (Personal Info Protection)
+- Prevents sharing personal seller/vendor information in product listings
+- Built-in detection for: email addresses, phone numbers, website URLs, social media handles
+- Custom regex patterns supported for advanced filtering
+- Products with personal info are blocked from publishing with detailed error messages
+- UI in Automation page Filters tab with toggle switches per filter type
+- Helps prevent marketplace policy violations and off-platform transactions
+
 ### Security Model
 - All automation data (pricing rules, import jobs, publish queue) filtered by userId
 - Storage layer enforces ownership on all CRUD operations
