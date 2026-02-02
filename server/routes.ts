@@ -69,7 +69,20 @@ export async function registerRoutes(
   protectedApi.post('/stores', async (req: any, res) => {
     try {
       const input = api.stores.create.input.parse(req.body);
-      const store = await storage.createStore({ ...input, userId: req.user.claims.sub });
+      const userEmail = req.user.claims.email;
+      
+      // Enforce store email must match user's account email
+      if (input.email && input.email.toLowerCase() !== userEmail?.toLowerCase()) {
+        return res.status(400).json({ 
+          message: 'Store email must match your account email. Please use: ' + userEmail 
+        });
+      }
+      
+      const store = await storage.createStore({ 
+        ...input, 
+        email: userEmail, // Always use user's account email
+        userId: req.user.claims.sub 
+      });
       res.status(201).json(store);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -82,9 +95,21 @@ export async function registerRoutes(
   protectedApi.put('/stores/:id', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const userEmail = req.user.claims.email;
       const id = Number(req.params.id);
       const input = api.stores.update.input.parse(req.body);
-      const store = await storage.updateStore(id, userId, input);
+      
+      // Prevent changing store email to a different email
+      if (input.email && input.email.toLowerCase() !== userEmail?.toLowerCase()) {
+        return res.status(400).json({ 
+          message: 'Store email must match your account email' 
+        });
+      }
+      
+      // If email is being updated, force it to user's email
+      const updateData = input.email ? { ...input, email: userEmail } : input;
+      
+      const store = await storage.updateStore(id, userId, updateData);
       if (!store) {
         return res.status(404).json({ message: 'Store not found' });
       }
