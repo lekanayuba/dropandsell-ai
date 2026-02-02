@@ -1,5 +1,5 @@
 import { 
-  stores, vendors, products, orders, wallet, transactions, subscriptions,
+  stores, vendors, products, orders, wallet, transactions, subscriptions, referrals,
   pricingRules, importJobs, publishQueue, marketplaceListings,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
@@ -216,6 +216,11 @@ export class DatabaseStorage implements IStorage {
     verificationTokenExpiry: Date | null;
     policiesAccepted: Date | null;
     onboardingCompleted: Date | null;
+    paymentSkipped: Date | null;
+    subscriptionPlan: string | null;
+    subscriptionStatus: string | null;
+    referralCode: string | null;
+    referredBy: string | null;
   }>) {
     const [user] = await db.update(users)
       .set({ ...updates, updatedAt: new Date() })
@@ -228,6 +233,43 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users)
       .where(eq(users.verificationToken, token));
     return user;
+  }
+
+  async getUserByReferralCode(referralCode: string) {
+    const [user] = await db.select().from(users)
+      .where(eq(users.referralCode, referralCode));
+    return user;
+  }
+
+  async createReferral(referrerId: string, referredUserId: string) {
+    const [referral] = await db.insert(referrals).values({
+      referrerId,
+      referredUserId,
+      status: 'pending',
+    }).returning();
+    return referral;
+  }
+
+  async getReferralByReferredUser(referredUserId: string) {
+    const [referral] = await db.select().from(referrals)
+      .where(eq(referrals.referredUserId, referredUserId));
+    return referral;
+  }
+
+  async updateReferralEarnings(referrerId: string, referredUserId: string, amount: number) {
+    const [referral] = await db.select().from(referrals)
+      .where(and(eq(referrals.referrerId, referrerId), eq(referrals.referredUserId, referredUserId)));
+    if (referral) {
+      const currentEarnings = Number(referral.totalEarnings || 0);
+      await db.update(referrals)
+        .set({ totalEarnings: String(currentEarnings + amount), status: 'active' })
+        .where(eq(referrals.id, referral.id));
+    }
+    return referral;
+  }
+
+  async getReferrals(userId: string) {
+    return await db.select().from(referrals).where(eq(referrals.referrerId, userId));
   }
 
   // Subscriptions

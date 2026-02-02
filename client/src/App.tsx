@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Sidebar } from "@/components/Sidebar";
 import { useAuth } from "@/hooks/use-auth";
+import { useReferralHandler } from "@/hooks/use-referral";
 import { Loader2 } from "lucide-react";
 
 import NotFound from "@/pages/not-found";
@@ -24,9 +25,11 @@ import VerifyEmail from "@/pages/VerifyEmail";
 import PaymentSetup from "@/pages/PaymentSetup";
 import InstallApp from "@/pages/InstallApp";
 import PaymentSuccess from "@/pages/PaymentSuccess";
+import Referrals from "@/pages/Referrals";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
+  useReferralHandler();
 
   if (isLoading) {
     return (
@@ -128,6 +131,7 @@ function Router() {
       <Route path="/wallet" component={() => <ProtectedRoute component={Wallet} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/automation" component={() => <ProtectedRoute component={Automation} />} />
+      <Route path="/referrals" component={() => <ProtectedRoute component={Referrals} />} />
       <Route component={NotFound} />
     </Switch>
   );

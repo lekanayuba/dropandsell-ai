@@ -13,7 +13,8 @@ import {
   Settings,
   Menu,
   HelpCircle,
-  Shield
+  Shield,
+  Gift
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -32,6 +33,7 @@ export function Sidebar() {
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/automation", label: "Automation", icon: Zap },
     { href: "/wallet", label: "Wallet", icon: Wallet },
+    { href: "/referrals", label: "Referrals", icon: Gift },
     { href: "/subscription", label: "Subscription", icon: CreditCard },
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },

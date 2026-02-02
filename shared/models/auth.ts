@@ -30,6 +30,8 @@ export const users = pgTable("users", {
   paymentSkipped: timestamp("payment_skipped"),
   subscriptionPlan: varchar("subscription_plan"),
   subscriptionStatus: varchar("subscription_status"),
+  referralCode: varchar("referral_code").unique(),
+  referredBy: varchar("referred_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

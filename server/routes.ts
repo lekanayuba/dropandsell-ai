@@ -623,17 +623,27 @@ Write a professional, SEO-optimized product description that:
 
 Return only the description text, no additional formatting.`;
 
+      console.log('AI Description - Starting generation for:', productTitle);
+      
       const response = await openai.chat.completions.create({
         model: 'gpt-5-mini',
         messages: [{ role: 'user', content: prompt }],
-        max_completion_tokens: 500,
+        max_completion_tokens: 1024,
       });
 
-      const description = response.choices[0]?.message?.content || '';
+      console.log('AI Description - Response received:', JSON.stringify(response.choices[0]));
+      
+      let description = response.choices[0]?.message?.content || '';
+      
+      if (!description || description.trim().length < 50) {
+        console.warn('AI Description - Short/empty response, generating fallback');
+        description = `Discover the ${productTitle}${vendorName ? ` from ${vendorName}` : ''} - a premium quality product designed for modern needs. ${category ? `Perfect for ${category} enthusiasts,` : 'Perfect for all users,'} this item combines exceptional quality with outstanding value. Features include premium construction, reliable performance, and excellent durability. Whether for personal use or as a gift, this product delivers on its promise of quality and satisfaction. Order today and experience the difference quality makes.`;
+      }
+      
       res.json({ description: description.trim() });
     } catch (err: any) {
-      console.error('AI description generation error:', err);
-      res.status(500).json({ message: 'Failed to generate description' });
+      console.error('AI description generation error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to generate description: ' + (err?.message || 'Unknown error') });
     }
   });
 
@@ -969,9 +979,39 @@ Return only the description text, no additional formatting.`;
   protectedApi.post('/user/confirm-payment', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
       await storage.updateUser(userId, { subscriptionStatus: 'active' });
+      
+      // Process 10% referral commission if user was referred
+      if (user?.referredBy && user?.subscriptionPlan) {
+        const plan = SUBSCRIPTION_PLANS.find(p => p.name === user.subscriptionPlan);
+        if (plan) {
+          const commissionAmount = plan.priceGbp * 0.10;
+          
+          // Get or create referrer's wallet
+          let referrerWallet = await storage.getWallet(user.referredBy);
+          if (!referrerWallet) {
+            referrerWallet = await storage.createWallet(user.referredBy);
+          }
+          
+          // Credit 10% commission immediately
+          await storage.updateWalletBalance(referrerWallet.id, Number(referrerWallet.balance) + commissionAmount);
+          await storage.createTransaction({
+            walletId: referrerWallet.id,
+            type: 'referral_bonus',
+            amount: String(commissionAmount),
+            description: `10% referral commission for ${user.firstName || 'new user'}'s ${plan.name} subscription`,
+          });
+          
+          // Update referral earnings
+          await storage.updateReferralEarnings(user.referredBy, userId, commissionAmount);
+        }
+      }
+      
       res.json({ success: true });
     } catch (err: any) {
+      console.error('Confirm payment error:', err);
       res.status(500).json({ message: err.message || 'Failed to confirm payment' });
     }
   });
@@ -983,6 +1023,75 @@ Return only the description text, no additional formatting.`;
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to accept policies' });
+    }
+  });
+
+  // === REFERRAL SYSTEM ===
+  
+  // Get user's referral code (generate if doesn't exist)
+  protectedApi.get('/referral/code', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      let user = await storage.getUser(userId);
+      
+      if (!user?.referralCode) {
+        const code = 'DF' + userId.substring(0, 6).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+        await storage.updateUser(userId, { referralCode: code });
+        user = await storage.getUser(userId);
+      }
+      
+      res.json({ 
+        referralCode: user?.referralCode,
+        referralLink: `${req.protocol}://${req.get('host')}/signup?ref=${user?.referralCode}`
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get referral code' });
+    }
+  });
+
+  // Apply referral code during signup
+  protectedApi.post('/referral/apply', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { referralCode } = req.body;
+      
+      if (!referralCode) {
+        return res.status(400).json({ message: 'Referral code is required' });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (user?.referredBy) {
+        return res.status(400).json({ message: 'Referral code already applied' });
+      }
+      
+      const referrer = await storage.getUserByReferralCode(referralCode);
+      if (!referrer) {
+        return res.status(404).json({ message: 'Invalid referral code' });
+      }
+      
+      if (referrer.id === userId) {
+        return res.status(400).json({ message: 'Cannot use your own referral code' });
+      }
+      
+      await storage.updateUser(userId, { referredBy: referrer.id });
+      await storage.createReferral(referrer.id, userId);
+      
+      res.json({ success: true, referrerName: referrer.firstName || 'A friend' });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to apply referral code' });
+    }
+  });
+
+  // Get user's referrals and earnings
+  protectedApi.get('/referrals', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const referrals = await storage.getReferrals(userId);
+      const totalEarnings = referrals.reduce((sum, r) => sum + Number(r.totalEarnings || 0), 0);
+      
+      res.json({ referrals, totalEarnings, totalReferrals: referrals.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get referrals' });
     }
   });
 
