@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,9 +16,14 @@ import Wallet from "@/pages/Wallet";
 import Subscription from "@/pages/Subscription";
 import Automation from "@/pages/Automation";
 import Login from "@/pages/Login";
+import Onboarding from "@/pages/Onboarding";
+import FAQ from "@/pages/FAQ";
+import Policies from "@/pages/Policies";
+import AcceptPolicies from "@/pages/AcceptPolicies";
+import VerifyEmail from "@/pages/VerifyEmail";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -32,6 +37,21 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     return <Login />;
   }
 
+  // Check if email is verified
+  if (!user?.emailVerified) {
+    return <VerifyEmail />;
+  }
+
+  // Check if policies are accepted
+  if (!user?.policiesAccepted) {
+    return <AcceptPolicies />;
+  }
+
+  // Check if onboarding is completed
+  if (!user?.onboardingCompleted) {
+    return <Onboarding />;
+  }
+
   return (
     <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
       <Sidebar />
@@ -42,12 +62,57 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   );
 }
 
+function PublicPolicyRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-background p-6 lg:p-10">
+        <Component />
+      </div>
+    );
+  }
+
+  if (user?.emailVerified && user?.policiesAccepted && user?.onboardingCompleted) {
+    return (
+      <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
+        <Sidebar />
+        <main className="flex-1 lg:ml-72 p-6 lg:p-10 transition-all duration-300">
+          <Component />
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background p-6 lg:p-10">
+      <Component />
+    </div>
+  );
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/api/login" component={() => {
         window.location.href = "/api/login";
         return null;
+      }} />
+      <Route path="/verify-email" component={() => {
+        return <VerifyEmail />;
+      }} />
+      <Route path="/policies" component={() => <PublicPolicyRoute component={Policies} />} />
+      <Route path="/faq" component={() => <ProtectedRoute component={FAQ} />} />
+      <Route path="/onboarding" component={() => {
+        return <Onboarding />;
       }} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stores} />} />

@@ -11,7 +11,9 @@ import {
   Zap,
   LogOut,
   Settings,
-  Menu
+  Menu,
+  HelpCircle,
+  Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -31,6 +33,8 @@ export function Sidebar() {
     { href: "/automation", label: "Automation", icon: Zap },
     { href: "/wallet", label: "Wallet", icon: Wallet },
     { href: "/subscription", label: "Subscription", icon: CreditCard },
+    { href: "/faq", label: "FAQ", icon: HelpCircle },
+    { href: "/policies", label: "Policies", icon: Shield },
   ];
 
   const NavContent = () => (

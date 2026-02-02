@@ -806,6 +806,91 @@ export async function registerRoutes(
     }
   });
 
+  // === USER MANAGEMENT ===
+  protectedApi.post('/user/complete-onboarding', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.updateUser(userId, { onboardingCompleted: new Date() });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to complete onboarding' });
+    }
+  });
+
+  protectedApi.post('/user/accept-policies', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      await storage.updateUser(userId, { policiesAccepted: new Date() });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to accept policies' });
+    }
+  });
+
+  // Email verification routes (also protected since user must be logged in)
+  protectedApi.post('/auth/resend-verification', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user || !user.email) {
+        return res.status(400).json({ message: 'User email not found' });
+      }
+      
+      if (user.emailVerified) {
+        return res.status(400).json({ message: 'Email already verified' });
+      }
+      
+      // Generate verification token
+      const verificationToken = crypto.randomUUID();
+      const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+      await storage.updateUser(userId, {
+        verificationToken,
+        verificationTokenExpiry
+      });
+      
+      // TODO: Send actual email via email service integration
+      // For now, log the verification link
+      const verifyUrl = `${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : ''}/verify-email?token=${verificationToken}`;
+      console.log(`Verification email for ${user.email}: ${verifyUrl}`);
+      
+      res.json({ success: true, message: 'Verification email sent' });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to send verification email' });
+    }
+  });
+
+  protectedApi.post('/auth/verify-email', async (req: any, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ message: 'Verification token required' });
+      }
+      
+      const user = await storage.getUserByVerificationToken(token);
+      
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid verification token' });
+      }
+      
+      if (user.verificationTokenExpiry && new Date(user.verificationTokenExpiry) < new Date()) {
+        return res.status(400).json({ message: 'Verification token expired' });
+      }
+      
+      await storage.updateUser(user.id, {
+        emailVerified: new Date(),
+        verificationToken: null,
+        verificationTokenExpiry: null
+      });
+      
+      res.json({ success: true, message: 'Email verified successfully' });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to verify email' });
+    }
+  });
+
   // Register protected routes
   app.use('/api', protectedApi);
 

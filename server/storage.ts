@@ -210,6 +210,26 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUser(userId: string, updates: Partial<{
+    emailVerified: Date | null;
+    verificationToken: string | null;
+    verificationTokenExpiry: Date | null;
+    policiesAccepted: Date | null;
+    onboardingCompleted: Date | null;
+  }>) {
+    const [user] = await db.update(users)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async getUserByVerificationToken(token: string) {
+    const [user] = await db.select().from(users)
+      .where(eq(users.verificationToken, token));
+    return user;
+  }
+
   // Subscriptions
   async getSubscription(userId: string) {
     const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
