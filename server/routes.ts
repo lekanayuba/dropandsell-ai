@@ -1489,10 +1489,19 @@ Guidelines:
         verificationTokenExpiry
       });
       
-      // TODO: Send actual email via email service integration
-      // For now, log the verification link
-      const verifyUrl = `${process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : ''}/verify-email?token=${verificationToken}`;
-      console.log(`Verification email for ${user.email}: ${verifyUrl}`);
+      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL 
+        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+        : process.env.REPLIT_DEV_DOMAIN 
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+          : '';
+      const verifyUrl = `${baseUrl}/verify-email?token=${verificationToken}`;
+      
+      const { sendVerificationEmail } = await import('./email.js');
+      const emailSent = await sendVerificationEmail(user.email, verifyUrl);
+      
+      if (!emailSent) {
+        console.log(`Verification link for ${user.email}: ${verifyUrl}`);
+      }
       
       res.json({ success: true, message: 'Verification email sent' });
     } catch (err: any) {
