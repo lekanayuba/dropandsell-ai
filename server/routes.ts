@@ -1,6 +1,7 @@
 import type { Express, Router } from "express";
 import type { Server } from "http";
 import express from "express";
+import multer from "multer";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -8,6 +9,12 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integra
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
 // Subscription plan metadata for reference
 const SUBSCRIPTION_PLANS = [
@@ -331,6 +338,448 @@ export async function registerRoutes(
   protectedApi.get('/stripe/publishable-key', async (req, res) => {
     const key = await getStripePublishableKey();
     res.json({ publishableKey: key });
+  });
+
+  // === AUTOMATION: PRICING RULES ===
+  protectedApi.get('/pricing-rules', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const rules = await storage.getPricingRules(userId);
+    res.json(rules);
+  });
+
+  protectedApi.post('/pricing-rules', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { name, ruleType, value, minPrice, maxPrice, applyToVendor, applyToCategory, priority, isActive } = req.body;
+      
+      const rule = await storage.createPricingRule({
+        userId,
+        name,
+        ruleType: ruleType || 'markup',
+        value: value?.toString() || '0',
+        minPrice: minPrice?.toString(),
+        maxPrice: maxPrice?.toString(),
+        applyToVendor,
+        applyToCategory,
+        priority: priority || 0,
+        isActive: isActive !== false,
+      });
+      res.status(201).json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to create pricing rule' });
+    }
+  });
+
+  protectedApi.put('/pricing-rules/:id', async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const updates = req.body;
+      if (updates.value !== undefined) updates.value = updates.value.toString();
+      if (updates.minPrice !== undefined) updates.minPrice = updates.minPrice?.toString();
+      if (updates.maxPrice !== undefined) updates.maxPrice = updates.maxPrice?.toString();
+      
+      const rule = await storage.updatePricingRule(id, updates);
+      res.json(rule);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to update pricing rule' });
+    }
+  });
+
+  protectedApi.delete('/pricing-rules/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    await storage.deletePricingRule(id);
+    res.status(204).send();
+  });
+
+  // === AUTOMATION: IMPORT JOBS ===
+  protectedApi.get('/import-jobs', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const jobs = await storage.getImportJobs(userId);
+    res.json(jobs);
+  });
+
+  protectedApi.get('/import-jobs/:id', async (req: any, res) => {
+    const id = Number(req.params.id);
+    const job = await storage.getImportJob(id);
+    if (!job) {
+      return res.status(404).json({ message: 'Import job not found' });
+    }
+    res.json(job);
+  });
+
+  // === AUTOMATION: PUBLISH QUEUE ===
+  protectedApi.get('/publish-queue', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const queue = await storage.getPublishQueue(userId);
+    res.json(queue);
+  });
+
+  protectedApi.post('/publish-queue', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { productId, storeId, calculatedPrice, pricingRuleId } = req.body;
+      
+      const item = await storage.createPublishQueueItem({
+        userId,
+        productId,
+        storeId,
+        calculatedPrice: calculatedPrice?.toString() || '0',
+        pricingRuleId,
+        status: 'pending',
+      });
+      res.status(201).json(item);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to add to publish queue' });
+    }
+  });
+
+  protectedApi.post('/publish-queue/bulk', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { items } = req.body; // Array of { productId, storeId, calculatedPrice, pricingRuleId }
+      
+      const queueItems = items.map((item: any) => ({
+        userId,
+        productId: item.productId,
+        storeId: item.storeId,
+        calculatedPrice: item.calculatedPrice?.toString() || '0',
+        pricingRuleId: item.pricingRuleId,
+        status: 'pending',
+      }));
+      
+      const created = await storage.bulkCreatePublishQueue(queueItems);
+      res.status(201).json(created);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to bulk add to publish queue' });
+    }
+  });
+
+  protectedApi.put('/publish-queue/:id', async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const updates = req.body;
+      if (updates.calculatedPrice !== undefined) {
+        updates.calculatedPrice = updates.calculatedPrice.toString();
+      }
+      const item = await storage.updatePublishQueueItem(id, updates);
+      res.json(item);
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to update queue item' });
+    }
+  });
+
+  protectedApi.delete('/publish-queue/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    await storage.deletePublishQueueItem(id);
+    res.status(204).send();
+  });
+
+  // === AUTOMATION: CALCULATE PRICE ===
+  protectedApi.post('/automation/calculate-price', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { costPrice, vendorId } = req.body;
+      
+      const rules = await storage.getPricingRules(userId);
+      const activeRules = rules.filter(r => r.isActive);
+      
+      // Find applicable rule (by vendor or default)
+      let applicableRule = activeRules.find(r => r.applyToVendor === vendorId);
+      if (!applicableRule) {
+        applicableRule = activeRules.find(r => !r.applyToVendor); // Default rule
+      }
+      
+      let sellingPrice = Number(costPrice);
+      
+      if (applicableRule) {
+        const ruleValue = Number(applicableRule.value);
+        
+        switch (applicableRule.ruleType) {
+          case 'markup':
+            // Add percentage markup
+            sellingPrice = sellingPrice * (1 + ruleValue / 100);
+            break;
+          case 'margin':
+            // Target margin percentage
+            sellingPrice = sellingPrice / (1 - ruleValue / 100);
+            break;
+          case 'fixed':
+            // Add fixed amount
+            sellingPrice = sellingPrice + ruleValue;
+            break;
+        }
+        
+        // Apply min/max constraints
+        if (applicableRule.minPrice && sellingPrice < Number(applicableRule.minPrice)) {
+          sellingPrice = Number(applicableRule.minPrice);
+        }
+        if (applicableRule.maxPrice && sellingPrice > Number(applicableRule.maxPrice)) {
+          sellingPrice = Number(applicableRule.maxPrice);
+        }
+      }
+      
+      res.json({ 
+        costPrice: Number(costPrice),
+        sellingPrice: Math.round(sellingPrice * 100) / 100,
+        ruleApplied: applicableRule ? applicableRule.name : null,
+        ruleId: applicableRule?.id || null,
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to calculate price' });
+    }
+  });
+
+  // === AUTOMATION: CSV IMPORT ===
+  protectedApi.post('/import/csv', upload.single('file'), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const file = req.file;
+      const vendorId = req.body.vendorId ? Number(req.body.vendorId) : null;
+      const fieldMapping = req.body.fieldMapping ? JSON.parse(req.body.fieldMapping) : null;
+      
+      if (!file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+      
+      // Create import job
+      const job = await storage.createImportJob({
+        userId,
+        vendorId,
+        source: 'csv',
+        fileName: file.originalname,
+        fieldMapping,
+        status: 'processing',
+        totalRows: 0,
+        processedRows: 0,
+        successCount: 0,
+        errorCount: 0,
+        errors: [],
+      });
+      
+      // Parse CSV
+      const csvContent = file.buffer.toString('utf-8');
+      const lines = csvContent.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        await storage.updateImportJob(job.id, { status: 'failed', errors: ['File is empty or has no data rows'] });
+        return res.status(400).json({ message: 'File is empty or has no data rows' });
+      }
+      
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+      const dataRows = lines.slice(1);
+      
+      await storage.updateImportJob(job.id, { totalRows: dataRows.length });
+      
+      // Default field mapping
+      const mapping = fieldMapping || {
+        title: headers.includes('title') ? 'title' : headers.includes('name') ? 'name' : headers[0],
+        sku: headers.includes('sku') ? 'sku' : headers.includes('item_number') ? 'item_number' : null,
+        costPrice: headers.includes('cost') ? 'cost' : headers.includes('cost_price') ? 'cost_price' : headers.includes('price') ? 'price' : null,
+        description: headers.includes('description') ? 'description' : null,
+        quantity: headers.includes('quantity') ? 'quantity' : headers.includes('stock') ? 'stock' : null,
+      };
+      
+      // Get pricing rules for auto-calculation
+      const rules = await storage.getPricingRules(userId);
+      const activeRule = rules.find(r => r.isActive && (r.applyToVendor === vendorId || !r.applyToVendor));
+      
+      const productsToCreate: any[] = [];
+      const errors: string[] = [];
+      let processedRows = 0;
+      
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        const values = row.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+        
+        try {
+          const getField = (fieldName: string) => {
+            const mappedHeader = mapping[fieldName];
+            if (!mappedHeader) return null;
+            const idx = headers.indexOf(mappedHeader.toLowerCase());
+            return idx >= 0 ? values[idx] : null;
+          };
+          
+          const title = getField('title');
+          const sku = getField('sku') || `SKU-${Date.now()}-${i}`;
+          const costPrice = parseFloat(getField('costPrice') || '0') || 0;
+          const description = getField('description') || '';
+          const quantity = parseInt(getField('quantity') || '0') || 0;
+          
+          if (!title) {
+            errors.push(`Row ${i + 2}: Missing title`);
+            continue;
+          }
+          
+          // Calculate selling price using pricing rules
+          let sellingPrice = costPrice;
+          if (activeRule) {
+            const ruleValue = Number(activeRule.value);
+            switch (activeRule.ruleType) {
+              case 'markup':
+                sellingPrice = costPrice * (1 + ruleValue / 100);
+                break;
+              case 'margin':
+                sellingPrice = costPrice / (1 - ruleValue / 100);
+                break;
+              case 'fixed':
+                sellingPrice = costPrice + ruleValue;
+                break;
+            }
+            if (activeRule.minPrice && sellingPrice < Number(activeRule.minPrice)) {
+              sellingPrice = Number(activeRule.minPrice);
+            }
+            if (activeRule.maxPrice && sellingPrice > Number(activeRule.maxPrice)) {
+              sellingPrice = Number(activeRule.maxPrice);
+            }
+          }
+          
+          productsToCreate.push({
+            userId,
+            vendorId,
+            title,
+            sku,
+            description,
+            costPrice: costPrice.toString(),
+            sellingPrice: Math.round(sellingPrice * 100) / 100,
+            quantity,
+            veroStatus: 'clean',
+          });
+          
+          processedRows++;
+        } catch (err: any) {
+          errors.push(`Row ${i + 2}: ${err.message}`);
+        }
+      }
+      
+      // Bulk insert products
+      let successCount = 0;
+      if (productsToCreate.length > 0) {
+        try {
+          await storage.bulkCreateProducts(productsToCreate);
+          successCount = productsToCreate.length;
+        } catch (err: any) {
+          errors.push(`Bulk insert failed: ${err.message}`);
+        }
+      }
+      
+      // Update job status
+      await storage.updateImportJob(job.id, {
+        status: 'completed',
+        processedRows,
+        successCount,
+        errorCount: errors.length,
+        errors,
+        completedAt: new Date(),
+      });
+      
+      res.json({
+        jobId: job.id,
+        status: 'completed',
+        totalRows: dataRows.length,
+        successCount,
+        errorCount: errors.length,
+        errors: errors.slice(0, 10), // Return first 10 errors
+      });
+    } catch (err: any) {
+      console.error('CSV import error:', err);
+      res.status(500).json({ message: err.message || 'Failed to import CSV' });
+    }
+  });
+
+  // Get import preview (parse CSV headers)
+  protectedApi.post('/import/preview', upload.single('file'), async (req: any, res) => {
+    try {
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+      
+      const csvContent = file.buffer.toString('utf-8');
+      const lines = csvContent.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 1) {
+        return res.status(400).json({ message: 'File is empty' });
+      }
+      
+      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+      const previewRows = lines.slice(1, 6).map(row => 
+        row.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+      );
+      
+      res.json({
+        headers,
+        previewRows,
+        totalRows: lines.length - 1,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to preview file' });
+    }
+  });
+
+  // === AUTOMATION: PUBLISH TO MARKETPLACE ===
+  protectedApi.post('/automation/publish', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { queueItemIds } = req.body; // Array of publish queue item IDs
+      
+      if (!queueItemIds || queueItemIds.length === 0) {
+        return res.status(400).json({ message: 'No items to publish' });
+      }
+      
+      const results: any[] = [];
+      
+      for (const itemId of queueItemIds) {
+        const item = await storage.getPublishQueueItem(itemId);
+        if (!item || item.userId !== userId) {
+          results.push({ id: itemId, status: 'error', message: 'Item not found' });
+          continue;
+        }
+        
+        // Update status to publishing
+        await storage.updatePublishQueueItem(itemId, { status: 'publishing' });
+        
+        try {
+          // Get product and store details
+          const product = await storage.getProduct(item.productId);
+          const store = await storage.getStore(item.storeId);
+          
+          if (!product || !store) {
+            throw new Error('Product or store not found');
+          }
+          
+          // Simulate marketplace API call (in real implementation, this would call Shopify/eBay/Amazon API)
+          const externalId = `EXT-${store.platform.toUpperCase()}-${Date.now()}-${product.id}`;
+          
+          // Create marketplace listing
+          await storage.createMarketplaceListing({
+            storeId: item.storeId,
+            productId: item.productId,
+            externalId,
+            status: 'active',
+            syncStatus: 'synced',
+          });
+          
+          // Update queue item
+          await storage.updatePublishQueueItem(itemId, {
+            status: 'published',
+            publishedAt: new Date(),
+          });
+          
+          results.push({ id: itemId, status: 'published', externalId });
+        } catch (err: any) {
+          await storage.updatePublishQueueItem(itemId, {
+            status: 'failed',
+            errorMessage: err.message,
+          });
+          results.push({ id: itemId, status: 'failed', message: err.message });
+        }
+      }
+      
+      res.json({ results });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to publish items' });
+    }
   });
 
   // Register protected routes
