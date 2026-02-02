@@ -78,6 +78,9 @@ export default function Inventory() {
           storeId: Number(selectedStore),
           calculatedPrice: Math.round(calculatedPrice * 100) / 100,
           pricingRuleId: activeRule?.id,
+          quantity: product?.quantity || 1,
+          postageType: product?.deliveryType || 'buyer_pays',
+          postageCost: product?.deliveryCost || undefined,
         };
       });
 
@@ -194,6 +197,7 @@ export default function Inventory() {
               <TableHead>Cost</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Profit</TableHead>
+              <TableHead>Delivery</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[50px]"></TableHead>
             </TableRow>
@@ -201,11 +205,11 @@ export default function Inventory() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
+                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
               </TableRow>
             ) : data?.items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={9} className="text-center py-12">
                   <p className="text-lg font-medium text-muted-foreground">No products found</p>
                 </TableCell>
               </TableRow>
@@ -232,6 +236,21 @@ export default function Inventory() {
                   <TableCell>${Number(product.sellingPrice).toFixed(2)}</TableCell>
                   <TableCell className="text-green-600 font-medium">
                     ${(Number(product.sellingPrice) - Number(product.costPrice)).toFixed(2)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-0.5">
+                      <Badge variant="outline" className={
+                        product.deliveryType === 'free' ? 'bg-green-500/10 text-green-600 border-green-200' :
+                        product.deliveryType === 'seller_pays' ? 'bg-blue-500/10 text-blue-600 border-blue-200' :
+                        product.deliveryType === 'buyer_pays' ? 'bg-amber-500/10 text-amber-600 border-amber-200' :
+                        'bg-muted text-muted-foreground'
+                      }>
+                        {product.deliveryType === 'free' ? 'Free' : product.deliveryType === 'seller_pays' ? 'Seller Pays' : 'Buyer Pays'}
+                      </Badge>
+                      {product.deliveryType !== 'free' && (
+                        <span className="text-xs text-muted-foreground">£{Number(product.deliveryCost || 0).toFixed(2)}</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={
@@ -277,7 +296,9 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
       costPrice: "0",
       sellingPrice: "0",
       quantity: 0,
-      veroStatus: "clean"
+      veroStatus: "clean",
+      deliveryType: "buyer_pays",
+      deliveryCost: "0"
     }
   });
 
@@ -351,6 +372,51 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
                 <FormLabel>Selling Price ($)</FormLabel>
                 <FormControl>
                   <Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="deliveryType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Delivery Type</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value || "buyer_pays"}>
+                  <FormControl>
+                    <SelectTrigger data-testid="select-delivery-type">
+                      <SelectValue placeholder="Select delivery type" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="free">Free Delivery</SelectItem>
+                    <SelectItem value="buyer_pays">Buyer Pays</SelectItem>
+                    <SelectItem value="seller_pays">Seller Pays</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="deliveryCost"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Delivery Cost (£)</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    {...field} 
+                    value={field.value ?? "0"}
+                    onChange={e => field.onChange(e.target.value)}
+                    disabled={form.watch("deliveryType") === "free"}
+                    data-testid="input-delivery-cost"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

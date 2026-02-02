@@ -50,6 +50,8 @@ export const products = pgTable("products", {
   images: text("images").array(),
   attributes: jsonb("attributes"), // Color, size, etc.
   veroStatus: text("vero_status").default("clean"), // 'clean', 'flagged', 'blocked'
+  deliveryType: text("delivery_type").default("buyer_pays"), // 'free', 'seller_pays', 'buyer_pays'
+  deliveryCost: decimal("delivery_cost", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

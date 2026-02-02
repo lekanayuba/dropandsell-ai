@@ -99,8 +99,29 @@ Preferred communication style: Simple, everyday language.
 - Staging area for products before marketplace publishing
 - Add products individually or bulk from Inventory page
 - Automatic pricing rule application based on vendor and priority
+- Editable quantity per queue item (inline input)
+- Postage/delivery options inherited from product (free/seller_pays/buyer_pays)
 - Batch publish to connected marketplace stores
 - Simulates marketplace API calls (Shopify, eBay, Amazon) - production-ready structure
+
+### Product Delivery Options
+- Each product has configurable delivery settings
+- Delivery types: free, buyer_pays, seller_pays
+- Delivery cost field (disabled when type is 'free')
+- Delivery settings carry over to publish queue automatically
+
+### Referral System
+- Users get unique referral codes (format: "DF" + userId(6 chars) + random(4 chars))
+- 10% commission on referred user subscriptions
+- Commission credited instantly to referrer's wallet
+- URL parameter handling (?ref=CODE) stores code in localStorage
+- Referral page shows code, link, total earnings, and referral history
+
+### PWA Support
+- Installable Progressive Web App for desktop and mobile
+- Manifest with app icons (192px, 512px)
+- Service worker with network-first caching strategy
+- API requests excluded from cache
 
 ### Security Model
 - All automation data (pricing rules, import jobs, publish queue) filtered by userId

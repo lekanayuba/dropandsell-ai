@@ -90,6 +90,18 @@ export function useDeleteFromPublishQueue() {
   });
 }
 
+export function useUpdatePublishQueueItem() {
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: number; quantity?: number; postageType?: string; postageCost?: string }) => {
+      const res = await apiRequest("PUT", `/api/publish-queue/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/publish-queue"] });
+    },
+  });
+}
+
 export function usePublishItems() {
   return useMutation({
     mutationFn: async (queueItemIds: number[]) => {

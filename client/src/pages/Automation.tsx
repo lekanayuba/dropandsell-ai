@@ -23,6 +23,7 @@ import {
   useImportJobs,
   usePublishQueue,
   useDeleteFromPublishQueue,
+  useUpdatePublishQueueItem,
   usePublishItems,
   useImportCSV,
   usePreviewCSV,
@@ -595,8 +596,14 @@ function PublishSection() {
   const { data: stores } = useStores();
   const { data: rules } = usePricingRules();
   const deleteFromQueue = useDeleteFromPublishQueue();
+  const updateQueueItem = useUpdatePublishQueueItem();
   const publishItems = usePublishItems();
   const bulkAddToQueue = useBulkAddToPublishQueue();
+
+  const handleQuantityChange = (itemId: number, quantity: number) => {
+    if (quantity < 1) quantity = 1;
+    updateQueueItem.mutate({ id: itemId, quantity });
+  };
 
   const handlePublish = async () => {
     if (selectedItems.length === 0) {
@@ -653,6 +660,9 @@ function PublishSection() {
           storeId: Number(selectedStore),
           calculatedPrice: Math.round(calculatedPrice * 100) / 100,
           pricingRuleId: activeRule?.id,
+          quantity: product?.quantity || 1,
+          postageType: product?.deliveryType || 'buyer_pays',
+          postageCost: product?.deliveryCost || undefined,
         };
       });
 
@@ -804,6 +814,8 @@ function PublishSection() {
                   <TableHead>Product</TableHead>
                   <TableHead>Store</TableHead>
                   <TableHead>Price</TableHead>
+                  <TableHead>Qty</TableHead>
+                  <TableHead>Postage</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
@@ -836,6 +848,37 @@ function PublishSection() {
                         <Badge variant="outline">{store?.name || "Unknown"}</Badge>
                       </TableCell>
                       <TableCell>£{Number(item.calculatedPrice).toFixed(2)}</TableCell>
+                      <TableCell>
+                        {item.status === "pending" ? (
+                          <Input
+                            type="number"
+                            min="1"
+                            value={item.quantity || 1}
+                            onChange={(e) => handleQuantityChange(item.id, parseInt(e.target.value) || 1)}
+                            className="w-16 h-8 text-center"
+                            data-testid={`input-quantity-${item.id}`}
+                          />
+                        ) : (
+                          <Badge variant="outline">{item.quantity || 1}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          <Badge variant="outline" className={
+                            item.postageType === 'free' ? 'bg-green-500/10 text-green-600 border-green-200' :
+                            item.postageType === 'seller_pays' ? 'bg-blue-500/10 text-blue-600 border-blue-200' :
+                            item.postageType === 'buyer_pays' ? 'bg-amber-500/10 text-amber-600 border-amber-200' :
+                            'bg-muted text-muted-foreground'
+                          }>
+                            {item.postageType === 'free' ? 'Free' : 
+                             item.postageType === 'seller_pays' ? 'Seller Pays' : 
+                             item.postageType === 'buyer_pays' ? 'Buyer Pays' : 'Default'}
+                          </Badge>
+                          {item.postageType !== 'free' && (
+                            <span className="text-xs text-muted-foreground">£{Number(item.postageCost || 0).toFixed(2)}</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={
