@@ -1,9 +1,9 @@
 import { 
   stores, vendors, products, orders, wallet, transactions, subscriptions, referrals,
-  pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters,
+  pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
-  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter
+  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
@@ -63,6 +63,19 @@ export interface IStorage {
   updateContentFilter(id: number, userId: string, updates: Partial<InsertContentFilter>): Promise<typeof contentFilters.$inferSelect>;
   deleteContentFilter(id: number, userId: string): Promise<void>;
   checkContentViolations(userId: string, text: string): Promise<{ hasViolations: boolean; violations: Array<{ type: string; matches: string[] }> }>;
+
+  // Restricted Products (Regulatory compliance)
+  getRestrictedProducts(userId: string): Promise<typeof restrictedProducts.$inferSelect[]>;
+  createRestrictedProduct(item: InsertRestrictedProduct & { userId: string }): Promise<typeof restrictedProducts.$inferSelect>;
+  updateRestrictedProduct(id: number, userId: string, updates: Partial<InsertRestrictedProduct>): Promise<typeof restrictedProducts.$inferSelect>;
+  deleteRestrictedProduct(id: number, userId: string): Promise<void>;
+  checkRestrictedViolations(userId: string, title: string, description: string): Promise<{ isBlocked: boolean; violations: typeof restrictedProducts.$inferSelect[] }>;
+
+  // Points & Referral Wallet
+  addReferralBonus(userId: string, amount: number): Promise<void>;
+  withdrawReferralBalance(userId: string, amount: number): Promise<typeof transactions.$inferSelect>;
+  addPoints(userId: string, spentAmount: number): Promise<void>;
+  convertPointsToFunds(userId: string, points: number): Promise<typeof transactions.$inferSelect>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -556,6 +569,155 @@ export class DatabaseStorage implements IStorage {
       hasViolations: violations.length > 0,
       violations
     };
+  }
+
+  // Restricted Products
+  async getRestrictedProducts(userId: string) {
+    return await db.select().from(restrictedProducts)
+      .where(eq(restrictedProducts.userId, userId))
+      .orderBy(desc(restrictedProducts.createdAt));
+  }
+
+  async createRestrictedProduct(item: InsertRestrictedProduct & { userId: string }) {
+    const [newItem] = await db.insert(restrictedProducts).values(item).returning();
+    return newItem;
+  }
+
+  async updateRestrictedProduct(id: number, userId: string, updates: Partial<InsertRestrictedProduct>) {
+    const [updated] = await db.update(restrictedProducts)
+      .set(updates)
+      .where(and(eq(restrictedProducts.id, id), eq(restrictedProducts.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteRestrictedProduct(id: number, userId: string) {
+    await db.delete(restrictedProducts).where(and(eq(restrictedProducts.id, id), eq(restrictedProducts.userId, userId)));
+  }
+
+  async checkRestrictedViolations(userId: string, title: string, description: string) {
+    const items = await db.select().from(restrictedProducts)
+      .where(and(
+        eq(restrictedProducts.userId, userId),
+        eq(restrictedProducts.isActive, true)
+      ));
+
+    const violations: typeof restrictedProducts.$inferSelect[] = [];
+    const textToCheck = `${title} ${description}`.toLowerCase();
+
+    for (const item of items) {
+      const keywordLower = item.keyword.toLowerCase();
+      if (textToCheck.includes(keywordLower)) {
+        violations.push(item);
+      }
+    }
+
+    return {
+      isBlocked: violations.length > 0,
+      violations
+    };
+  }
+
+  // Points & Referral Wallet
+  async addReferralBonus(userId: string, amount: number) {
+    let userWallet = await this.getWallet(userId);
+    if (!userWallet) {
+      userWallet = await this.createWallet(userId);
+    }
+
+    await db.update(wallet)
+      .set({ 
+        referralBalance: String(Number(userWallet.referralBalance) + amount),
+        updatedAt: new Date()
+      })
+      .where(eq(wallet.userId, userId));
+
+    await db.insert(transactions).values({
+      walletId: userWallet.id,
+      type: 'referral_bonus',
+      amount: String(amount),
+      description: 'Referral commission earned',
+      status: 'completed'
+    });
+  }
+
+  async withdrawReferralBalance(userId: string, amount: number) {
+    const userWallet = await this.getWallet(userId);
+    if (!userWallet) {
+      throw new Error('Wallet not found');
+    }
+
+    const currentReferralBalance = Number(userWallet.referralBalance);
+    if (currentReferralBalance < amount) {
+      throw new Error('Insufficient referral balance');
+    }
+
+    await db.update(wallet)
+      .set({ 
+        referralBalance: String(currentReferralBalance - amount),
+        updatedAt: new Date()
+      })
+      .where(eq(wallet.userId, userId));
+
+    const [transaction] = await db.insert(transactions).values({
+      walletId: userWallet.id,
+      type: 'referral_withdrawal',
+      amount: String(-amount),
+      description: 'Referral balance withdrawal to bank',
+      status: 'pending' // Will be processed by admin
+    }).returning();
+
+    return transaction;
+  }
+
+  async addPoints(userId: string, spentAmount: number) {
+    let userWallet = await this.getWallet(userId);
+    if (!userWallet) {
+      userWallet = await this.createWallet(userId);
+    }
+
+    // 0.001 points per £1 spent
+    const pointsToAdd = spentAmount * 0.001;
+
+    await db.update(wallet)
+      .set({ 
+        points: String(Number(userWallet.points) + pointsToAdd),
+        updatedAt: new Date()
+      })
+      .where(eq(wallet.userId, userId));
+  }
+
+  async convertPointsToFunds(userId: string, pointsToConvert: number) {
+    const userWallet = await this.getWallet(userId);
+    if (!userWallet) {
+      throw new Error('Wallet not found');
+    }
+
+    const currentPoints = Number(userWallet.points);
+    if (currentPoints < pointsToConvert) {
+      throw new Error('Insufficient points');
+    }
+
+    // 1 point = £1 (points are earned at 0.001 per £1, so 1000 points = £1000 spent = £1 reward)
+    const fundsAmount = pointsToConvert;
+
+    await db.update(wallet)
+      .set({ 
+        points: String(currentPoints - pointsToConvert),
+        balance: String(Number(userWallet.balance) + fundsAmount),
+        updatedAt: new Date()
+      })
+      .where(eq(wallet.userId, userId));
+
+    const [transaction] = await db.insert(transactions).values({
+      walletId: userWallet.id,
+      type: 'points_conversion',
+      amount: String(fundsAmount),
+      description: `Converted ${pointsToConvert} points to £${fundsAmount.toFixed(2)}`,
+      status: 'completed'
+    }).returning();
+
+    return transaction;
   }
 }
 

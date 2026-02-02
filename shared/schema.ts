@@ -90,7 +90,9 @@ export const wallet = pgTable("wallet", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().unique().references(() => users.id),
   balance: decimal("balance", { precision: 12, scale: 2 }).notNull().default("0.00"),
-  currency: text("currency").default("USD"),
+  referralBalance: decimal("referral_balance", { precision: 12, scale: 2 }).notNull().default("0.00"), // Separate referral earnings
+  points: decimal("points", { precision: 12, scale: 4 }).notNull().default("0.0000"), // Usage points (0.001 per £1)
+  currency: text("currency").default("GBP"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -204,6 +206,18 @@ export const contentFilters = pgTable("content_filters", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Restricted Products - Regulatory compliance for harmful/dangerous items
+export const restrictedProducts = pgTable("restricted_products", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  category: text("category").notNull(), // 'sharp_objects', 'chemicals', 'drugs', 'weapons', 'custom'
+  keyword: text("keyword").notNull(), // Specific keyword to detect
+  jurisdiction: text("jurisdiction"), // Optional: 'UK', 'EU', 'US', null = global
+  reason: text("reason"), // Why this is restricted
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one, many }) => ({
   stores: many(stores),
@@ -291,6 +305,11 @@ export const insertContentFilterSchema = createInsertSchema(contentFilters).omit
 export type InsertContentFilter = z.infer<typeof insertContentFilterSchema>;
 export type ContentFilter = typeof contentFilters.$inferSelect;
 
+// Restricted Products
+export const insertRestrictedProductSchema = createInsertSchema(restrictedProducts).omit({ id: true, userId: true, createdAt: true });
+export type InsertRestrictedProduct = z.infer<typeof insertRestrictedProductSchema>;
+export type RestrictedProduct = typeof restrictedProducts.$inferSelect;
+
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
 export type UpdateStoreRequest = Partial<InsertStore>;
@@ -303,6 +322,8 @@ export type UpdateProductRequest = Partial<InsertProduct>;
 
 export type WalletBalanceResponse = {
   balance: number;
+  referralBalance: number;
+  points: number;
   currency: string;
 };
 

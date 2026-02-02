@@ -1052,6 +1052,140 @@ Return only the description text, no additional formatting.`;
     }
   });
 
+  // === RESTRICTED PRODUCTS (Regulatory Compliance) ===
+  protectedApi.get('/restricted-products', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const items = await storage.getRestrictedProducts(userId);
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get restricted products' });
+    }
+  });
+
+  protectedApi.post('/restricted-products', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { category, keyword, jurisdiction, reason, isActive } = req.body;
+      
+      if (!category || !keyword) {
+        return res.status(400).json({ message: 'Category and keyword are required' });
+      }
+      
+      const validCategories = ['sharp_objects', 'chemicals', 'drugs', 'weapons', 'custom'];
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({ message: 'Invalid category' });
+      }
+      
+      const newItem = await storage.createRestrictedProduct({
+        userId,
+        category,
+        keyword,
+        jurisdiction: jurisdiction || null,
+        reason: reason || null,
+        isActive: isActive !== false,
+      });
+      
+      res.status(201).json(newItem);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to create restricted product' });
+    }
+  });
+
+  protectedApi.put('/restricted-products/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const itemId = parseInt(req.params.id);
+      const updates = req.body;
+      
+      const updated = await storage.updateRestrictedProduct(itemId, userId, updates);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update restricted product' });
+    }
+  });
+
+  protectedApi.delete('/restricted-products/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const itemId = parseInt(req.params.id);
+      
+      await storage.deleteRestrictedProduct(itemId, userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to delete restricted product' });
+    }
+  });
+
+  protectedApi.post('/restricted-check', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { title, description } = req.body;
+      
+      if (!title) {
+        return res.json({ isBlocked: false, violations: [] });
+      }
+      
+      const result = await storage.checkRestrictedViolations(userId, title, description || '');
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to check restricted products' });
+    }
+  });
+
+  // === POINTS & REFERRAL WALLET ===
+  protectedApi.get('/wallet/full', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      let userWallet = await storage.getWallet(userId);
+      
+      if (!userWallet) {
+        userWallet = await storage.createWallet(userId);
+      }
+      
+      res.json({
+        balance: Number(userWallet.balance),
+        referralBalance: Number(userWallet.referralBalance),
+        points: Number(userWallet.points),
+        currency: userWallet.currency || 'GBP'
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get wallet' });
+    }
+  });
+
+  protectedApi.post('/wallet/withdraw-referral', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { amount } = req.body;
+      
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid amount' });
+      }
+      
+      const transaction = await storage.withdrawReferralBalance(userId, amount);
+      res.json({ success: true, transaction });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to withdraw referral balance' });
+    }
+  });
+
+  protectedApi.post('/wallet/convert-points', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { points } = req.body;
+      
+      if (!points || points <= 0) {
+        return res.status(400).json({ message: 'Invalid points amount' });
+      }
+      
+      const transaction = await storage.convertPointsToFunds(userId, points);
+      res.json({ success: true, transaction });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message || 'Failed to convert points' });
+    }
+  });
+
   // === AUTOMATION: PUBLISH TO MARKETPLACE ===
   protectedApi.post('/automation/publish', async (req: any, res) => {
     try {
@@ -1096,6 +1230,13 @@ Return only the description text, no additional formatting.`;
           if (contentCheck.hasViolations) {
             const violationDetails = contentCheck.violations.map(v => `${v.type}: ${v.matches.join(', ')}`).join('; ');
             throw new Error(`Personal information detected: ${violationDetails}. Remove personal info before listing.`);
+          }
+          
+          // Check for restricted/dangerous products (regulatory compliance)
+          const restrictedCheck = await storage.checkRestrictedViolations(userId, product.title, product.description || '');
+          if (restrictedCheck.isBlocked) {
+            const restrictedItems = restrictedCheck.violations.map(v => `${v.keyword} (${v.category})`).join(', ');
+            throw new Error(`Restricted product detected: ${restrictedItems}. This item cannot be listed for regulatory compliance.`);
           }
           
           // Simulate marketplace API call (in real implementation, this would call Shopify/eBay/Amazon API)
