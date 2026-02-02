@@ -1,7 +1,9 @@
 import { 
   stores, vendors, products, orders, wallet, transactions, subscriptions,
+  pricingRules, importJobs, publishQueue, marketplaceListings,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
-  type InsertTransaction
+  type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
+  type InsertPublishQueue, type InsertMarketplaceListing
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
@@ -194,6 +196,109 @@ export class DatabaseStorage implements IStorage {
   async getSubscription(userId: string) {
     const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
     return sub;
+  }
+
+  // === AUTOMATION ===
+
+  // Pricing Rules
+  async getPricingRules(userId: string) {
+    return await db.select().from(pricingRules)
+      .where(eq(pricingRules.userId, userId))
+      .orderBy(desc(pricingRules.priority));
+  }
+
+  async getPricingRule(id: number) {
+    const [rule] = await db.select().from(pricingRules).where(eq(pricingRules.id, id));
+    return rule;
+  }
+
+  async createPricingRule(rule: InsertPricingRule & { userId: string }) {
+    const [newRule] = await db.insert(pricingRules).values(rule).returning();
+    return newRule;
+  }
+
+  async updatePricingRule(id: number, updates: Partial<InsertPricingRule>) {
+    const [updated] = await db.update(pricingRules).set(updates).where(eq(pricingRules.id, id)).returning();
+    return updated;
+  }
+
+  async deletePricingRule(id: number) {
+    await db.delete(pricingRules).where(eq(pricingRules.id, id));
+  }
+
+  // Import Jobs
+  async getImportJobs(userId: string) {
+    return await db.select().from(importJobs)
+      .where(eq(importJobs.userId, userId))
+      .orderBy(desc(importJobs.createdAt));
+  }
+
+  async getImportJob(id: number) {
+    const [job] = await db.select().from(importJobs).where(eq(importJobs.id, id));
+    return job;
+  }
+
+  async createImportJob(job: InsertImportJob & { userId: string }) {
+    const [newJob] = await db.insert(importJobs).values(job).returning();
+    return newJob;
+  }
+
+  async updateImportJob(id: number, updates: Partial<InsertImportJob & { completedAt?: Date }>) {
+    const [updated] = await db.update(importJobs).set(updates).where(eq(importJobs.id, id)).returning();
+    return updated;
+  }
+
+  // Publish Queue
+  async getPublishQueue(userId: string) {
+    return await db.select().from(publishQueue)
+      .where(eq(publishQueue.userId, userId))
+      .orderBy(desc(publishQueue.createdAt));
+  }
+
+  async getPublishQueueItem(id: number) {
+    const [item] = await db.select().from(publishQueue).where(eq(publishQueue.id, id));
+    return item;
+  }
+
+  async createPublishQueueItem(item: InsertPublishQueue & { userId: string }) {
+    const [newItem] = await db.insert(publishQueue).values(item).returning();
+    return newItem;
+  }
+
+  async updatePublishQueueItem(id: number, updates: Partial<InsertPublishQueue & { publishedAt?: Date }>) {
+    const [updated] = await db.update(publishQueue).set(updates).where(eq(publishQueue.id, id)).returning();
+    return updated;
+  }
+
+  async deletePublishQueueItem(id: number) {
+    await db.delete(publishQueue).where(eq(publishQueue.id, id));
+  }
+
+  async bulkCreatePublishQueue(items: (InsertPublishQueue & { userId: string })[]) {
+    if (items.length === 0) return [];
+    return await db.insert(publishQueue).values(items).returning();
+  }
+
+  // Marketplace Listings
+  async getMarketplaceListings(storeId: number) {
+    return await db.select().from(marketplaceListings)
+      .where(eq(marketplaceListings.storeId, storeId));
+  }
+
+  async createMarketplaceListing(listing: InsertMarketplaceListing) {
+    const [newListing] = await db.insert(marketplaceListings).values(listing).returning();
+    return newListing;
+  }
+
+  async updateMarketplaceListing(id: number, updates: Partial<InsertMarketplaceListing>) {
+    const [updated] = await db.update(marketplaceListings).set(updates).where(eq(marketplaceListings.id, id)).returning();
+    return updated;
+  }
+
+  // Bulk create products
+  async bulkCreateProducts(productsList: (InsertProduct & { userId: string })[]) {
+    if (productsList.length === 0) return [];
+    return await db.insert(products).values(productsList).returning();
   }
 }
 

@@ -121,6 +121,57 @@ export const referrals = pgTable("referrals", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// === AUTOMATION TABLES ===
+
+// Pricing Rules for automated markup/margin calculations
+export const pricingRules = pgTable("pricing_rules", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  ruleType: text("rule_type").notNull().default("markup"), // 'markup', 'margin', 'fixed'
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(), // Percentage or fixed amount
+  minPrice: decimal("min_price", { precision: 10, scale: 2 }), // Optional minimum selling price
+  maxPrice: decimal("max_price", { precision: 10, scale: 2 }), // Optional maximum selling price
+  applyToVendor: integer("apply_to_vendor").references(() => vendors.id), // Null = all vendors
+  applyToCategory: text("apply_to_category"), // Optional category filter
+  priority: integer("priority").notNull().default(0), // Higher = applied first
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Import Jobs for tracking CSV/API imports
+export const importJobs = pgTable("import_jobs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  vendorId: integer("vendor_id").references(() => vendors.id),
+  source: text("source").notNull(), // 'csv', 'api', 'manual'
+  fileName: text("file_name"),
+  fieldMapping: jsonb("field_mapping"), // Maps CSV columns to product fields
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'failed'
+  totalRows: integer("total_rows").default(0),
+  processedRows: integer("processed_rows").default(0),
+  successCount: integer("success_count").default(0),
+  errorCount: integer("error_count").default(0),
+  errors: jsonb("errors"), // Array of error messages
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+// Publish Queue for staging products before publishing to marketplaces
+export const publishQueue = pgTable("publish_queue", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  productId: integer("product_id").notNull().references(() => products.id),
+  storeId: integer("store_id").notNull().references(() => stores.id),
+  calculatedPrice: decimal("calculated_price", { precision: 10, scale: 2 }).notNull(),
+  pricingRuleId: integer("pricing_rule_id").references(() => pricingRules.id),
+  status: text("status").notNull().default("pending"), // 'pending', 'approved', 'publishing', 'published', 'failed'
+  errorMessage: text("error_message"),
+  scheduledAt: timestamp("scheduled_at"),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one, many }) => ({
   stores: many(stores),
@@ -177,6 +228,26 @@ export type Wallet = typeof wallet.$inferSelect;
 
 // Subscriptions
 export type Subscription = typeof subscriptions.$inferSelect;
+
+// Pricing Rules
+export const insertPricingRuleSchema = createInsertSchema(pricingRules).omit({ id: true, userId: true, createdAt: true });
+export type InsertPricingRule = z.infer<typeof insertPricingRuleSchema>;
+export type PricingRule = typeof pricingRules.$inferSelect;
+
+// Import Jobs
+export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, userId: true, createdAt: true, completedAt: true });
+export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
+export type ImportJob = typeof importJobs.$inferSelect;
+
+// Publish Queue
+export const insertPublishQueueSchema = createInsertSchema(publishQueue).omit({ id: true, userId: true, createdAt: true, publishedAt: true });
+export type InsertPublishQueue = z.infer<typeof insertPublishQueueSchema>;
+export type PublishQueueItem = typeof publishQueue.$inferSelect;
+
+// Marketplace Listings
+export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true });
+export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
+export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
 
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
