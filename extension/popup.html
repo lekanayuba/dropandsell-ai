@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DropFlow Importer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 380px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      color: white;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .header .logo {
+      width: 32px;
+      height: 32px;
+      background: white;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #3b82f6;
+    }
+    
+    .content {
+      padding: 16px;
+    }
+    
+    .login-section, .product-section, .success-section, .error-section {
+      display: none;
+    }
+    
+    .login-section.active, .product-section.active, .success-section.active, .error-section.active {
+      display: block;
+    }
+    
+    .form-group {
+      margin-bottom: 12px;
+    }
+    
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    
+    input, textarea, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      background: white;
+      transition: border-color 0.2s;
+    }
+    
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .row .form-group {
+      flex: 1;
+    }
+    
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+    
+    .btn-primary:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    
+    .btn-secondary:hover {
+      background: #cbd5e1;
+    }
+    
+    .product-image {
+      width: 100%;
+      height: 120px;
+      object-fit: contain;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 12px;
+    }
+    
+    .no-image {
+      width: 100%;
+      height: 120px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      margin-bottom: 12px;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 12px;
+    }
+    
+    .status-badge.supported {
+      background: #dcfce7;
+      color: #166534;
+    }
+    
+    .status-badge.unsupported {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    .vendor-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .vendor-info .icon {
+      font-size: 20px;
+    }
+    
+    .vendor-info .name {
+      font-weight: 500;
+    }
+    
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      background: #dcfce7;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 32px;
+    }
+    
+    .success-section h2 {
+      text-align: center;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    
+    .success-section p {
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    
+    .error-icon {
+      width: 64px;
+      height: 64px;
+      background: #fee2e2;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 32px;
+    }
+    
+    .error-section h2 {
+      text-align: center;
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: #dc2626;
+    }
+    
+    .error-section p {
+      text-align: center;
+      color: #64748b;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #ffffff40;
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .settings-link {
+      text-align: center;
+      margin-top: 12px;
+    }
+    
+    .settings-link a {
+      color: #3b82f6;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    
+    .settings-link a:hover {
+      text-decoration: underline;
+    }
+    
+    .divider {
+      height: 1px;
+      background: #e2e8f0;
+      margin: 16px 0;
+    }
+    
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .actions .btn {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">DF</div>
+    <h1>DropFlow Importer</h1>
+  </div>
+  
+  <div class="content">
+    <div class="login-section" id="loginSection">
+      <p style="margin-bottom: 16px; color: #64748b; font-size: 14px;">
+        Connect to your DropFlow account to import products.
+      </p>
+      <div class="form-group">
+        <label>DropFlow URL</label>
+        <input type="url" id="apiUrl" placeholder="https://your-app.replit.app" data-testid="input-api-url" />
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="Enter your API key" data-testid="input-api-key" />
+      </div>
+      <button class="btn btn-primary" id="connectBtn" data-testid="button-connect">Connect</button>
+      <p style="margin-top: 12px; font-size: 12px; color: #94a3b8; text-align: center;">
+        Get your API key from Settings in your DropFlow dashboard
+      </p>
+    </div>
+    
+    <div class="product-section" id="productSection">
+      <div class="vendor-info" id="vendorInfo">
+        <span class="name" id="vendorName" data-testid="text-vendor-name">Unknown Vendor</span>
+      </div>
+      
+      <div id="productImageContainer" data-testid="container-product-image">
+        <div class="no-image">No image detected</div>
+      </div>
+      
+      <div class="form-group">
+        <label>Product Title</label>
+        <input type="text" id="productTitle" placeholder="Product title" data-testid="input-product-title" />
+      </div>
+      
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="productDescription" placeholder="Product description" data-testid="input-product-description"></textarea>
+      </div>
+      
+      <div class="row">
+        <div class="form-group">
+          <label>Cost Price</label>
+          <input type="number" id="costPrice" step="0.01" min="0" placeholder="0.00" data-testid="input-cost-price" />
+        </div>
+        <div class="form-group">
+          <label>Selling Price</label>
+          <input type="number" id="sellingPrice" step="0.01" min="0" placeholder="0.00" data-testid="input-selling-price" />
+        </div>
+      </div>
+      
+      <div class="row">
+        <div class="form-group">
+          <label>SKU</label>
+          <input type="text" id="sku" placeholder="Auto-generated" data-testid="input-sku" />
+        </div>
+        <div class="form-group">
+          <label>Stock</label>
+          <input type="number" id="stock" min="0" value="100" data-testid="input-stock" />
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Vendor</label>
+        <select id="vendorSelect" data-testid="select-vendor">
+          <option value="">Select a vendor...</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label>Delivery</label>
+        <select id="deliveryType" data-testid="select-delivery-type">
+          <option value="free">Free Delivery</option>
+          <option value="buyer_pays">Buyer Pays</option>
+          <option value="seller_pays">Seller Pays</option>
+        </select>
+      </div>
+      
+      <div class="form-group" id="deliveryCostGroup">
+        <label>Delivery Cost</label>
+        <input type="number" id="deliveryCost" step="0.01" min="0" value="0" data-testid="input-delivery-cost" />
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="actions">
+        <button class="btn btn-secondary" id="cancelBtn" data-testid="button-cancel">Cancel</button>
+        <button class="btn btn-primary" id="importBtn" data-testid="button-import">
+          <span class="btn-text">Add to Inventory</span>
+        </button>
+      </div>
+      
+      <div class="settings-link">
+        <a href="#" id="disconnectLink" data-testid="link-disconnect">Disconnect account</a>
+      </div>
+    </div>
+    
+    <div class="success-section" id="successSection">
+      <div class="success-icon" data-testid="icon-success">OK</div>
+      <h2 data-testid="text-success-title">Product Imported!</h2>
+      <p data-testid="text-success-message">The product has been added to your inventory.</p>
+      <button class="btn btn-primary" id="viewInventoryBtn" data-testid="button-view-inventory">View in DropFlow</button>
+      <button class="btn btn-secondary" id="importAnotherBtn" style="margin-top: 8px;" data-testid="button-import-another">Import Another</button>
+    </div>
+    
+    <div class="error-section" id="errorSection">
+      <div class="error-icon" data-testid="icon-error">X</div>
+      <h2 data-testid="text-error-title">Import Failed</h2>
+      <p id="errorMessage" data-testid="text-error-message">Something went wrong. Please try again.</p>
+      <button class="btn btn-primary" id="retryBtn" data-testid="button-retry">Try Again</button>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

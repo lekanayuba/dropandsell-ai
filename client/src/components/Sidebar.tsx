@@ -37,6 +37,7 @@ export function Sidebar() {
     { href: "/subscription", label: "Subscription", icon: CreditCard },
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
+    { href: "/settings", label: "Settings", icon: Settings },
   ];
 
   const NavContent = () => (

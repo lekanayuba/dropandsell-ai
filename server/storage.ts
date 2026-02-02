@@ -45,6 +45,10 @@ export interface IStorage {
   // Auth/Users (Required for Replit Auth integration)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: any): Promise<User>; // Typed as any to match auth implementation flexibility
+  getUserByApiKey(apiKey: string): Promise<User | undefined>;
+  getUserByVerificationToken(token: string): Promise<User | undefined>;
+  getUserByReferralCode(referralCode: string): Promise<User | undefined>;
+  updateUser(id: string, updates: Partial<User>): Promise<User>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -238,6 +242,12 @@ export class DatabaseStorage implements IStorage {
   async getUserByReferralCode(referralCode: string) {
     const [user] = await db.select().from(users)
       .where(eq(users.referralCode, referralCode));
+    return user;
+  }
+
+  async getUserByApiKey(apiKey: string) {
+    const [user] = await db.select().from(users)
+      .where(eq(users.apiKey, apiKey));
     return user;
   }
 

@@ -1159,8 +1159,102 @@ Return only the description text, no additional formatting.`;
     }
   });
 
+  // === API KEY MANAGEMENT ===
+  protectedApi.get('/user/api-key', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    try {
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      if (!user.apiKey) {
+        const apiKey = 'dfk_' + crypto.randomUUID().replace(/-/g, '');
+        await storage.updateUser(userId, { apiKey });
+        return res.json({ apiKey });
+      }
+      
+      res.json({ apiKey: user.apiKey });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get API key' });
+    }
+  });
+
+  protectedApi.post('/user/api-key/regenerate', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    try {
+      const apiKey = 'dfk_' + crypto.randomUUID().replace(/-/g, '');
+      await storage.updateUser(userId, { apiKey });
+      res.json({ apiKey });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to regenerate API key' });
+    }
+  });
+
   // Register protected routes
   app.use('/api', protectedApi);
+
+  // === EXTENSION API (API Key authenticated) ===
+  const extensionApi: Router = express.Router();
+
+  extensionApi.use(async (req: any, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+    if (!apiKey) {
+      return res.status(401).json({ message: 'API key required' });
+    }
+    
+    const user = await storage.getUserByApiKey(apiKey as string);
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid API key' });
+    }
+    
+    req.user = user;
+    next();
+  });
+
+  extensionApi.post('/verify', async (req: any, res) => {
+    res.json({ success: true, user: { id: req.user.id, email: req.user.email } });
+  });
+
+  extensionApi.get('/vendors', async (req: any, res) => {
+    try {
+      const vendors = await storage.getVendors(req.user.id);
+      res.json(vendors);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get vendors' });
+    }
+  });
+
+  extensionApi.post('/import', async (req: any, res) => {
+    try {
+      const { name, description, costPrice, sellingPrice, sku, stockQuantity, vendorId, imageUrl, sourceUrl, deliveryType, deliveryCost } = req.body;
+      
+      if (!name || !vendorId) {
+        return res.status(400).json({ message: 'Product name and vendor are required' });
+      }
+      
+      const product = await storage.createProduct({
+        userId: req.user.id,
+        vendorId: parseInt(vendorId),
+        title: name,
+        description: description || '',
+        sku: sku || 'DF-' + Date.now().toString(36).toUpperCase(),
+        costPrice: costPrice || '0',
+        sellingPrice: sellingPrice || '0',
+        quantity: stockQuantity || 0,
+        images: imageUrl ? [imageUrl] : [],
+        attributes: sourceUrl ? { sourceUrl } : null,
+        deliveryType: deliveryType || 'buyer_pays',
+        deliveryCost: deliveryCost || '0'
+      });
+      
+      res.json({ success: true, product });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to import product' });
+    }
+  });
+
+  app.use('/api/extension', extensionApi);
 
   return httpServer;
 }

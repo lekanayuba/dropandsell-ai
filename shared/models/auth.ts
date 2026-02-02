@@ -32,6 +32,7 @@ export const users = pgTable("users", {
   subscriptionStatus: varchar("subscription_status"),
   referralCode: varchar("referral_code").unique(),
   referredBy: varchar("referred_by"),
+  apiKey: varchar("api_key").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

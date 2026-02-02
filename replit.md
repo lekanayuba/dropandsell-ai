@@ -123,6 +123,14 @@ Preferred communication style: Simple, everyday language.
 - Service worker with network-first caching strategy
 - API requests excluded from cache
 
+### Browser Extension
+- Chrome extension for importing products from vendor websites
+- Supported sites: Amazon (.com, .co.uk, .de, .fr), AliExpress, eBay (.com, .co.uk)
+- Product scraper extracts: title, price, images, description, SKU
+- API key authentication for secure extension-to-app communication
+- Settings page displays API key and download instructions
+- Extension endpoints: /api/extension/verify, /api/extension/vendors, /api/extension/import
+
 ### Security Model
 - All automation data (pricing rules, import jobs, publish queue) filtered by userId
 - Storage layer enforces ownership on all CRUD operations

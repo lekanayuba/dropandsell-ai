@@ -26,6 +26,7 @@ import PaymentSetup from "@/pages/PaymentSetup";
 import InstallApp from "@/pages/InstallApp";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import Referrals from "@/pages/Referrals";
+import Settings from "@/pages/Settings";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -132,6 +133,7 @@ function Router() {
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/automation" component={() => <ProtectedRoute component={Automation} />} />
       <Route path="/referrals" component={() => <ProtectedRoute component={Referrals} />} />
+      <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>
   );
