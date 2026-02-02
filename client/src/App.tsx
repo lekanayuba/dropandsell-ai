@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Sidebar } from "@/components/Sidebar";
+import { SupportChat } from "@/components/SupportChat";
 import { useAuth } from "@/hooks/use-auth";
 import { useReferralHandler } from "@/hooks/use-referral";
 import { Loader2 } from "lucide-react";
@@ -144,6 +145,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Toaster />
       <Router />
+      <SupportChat />
     </QueryClientProvider>
   );
 }

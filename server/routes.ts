@@ -647,6 +647,59 @@ Return only the description text, no additional formatting.`;
     }
   });
 
+  // === AI: SUPPORT CHATBOT ===
+  const SUPPORT_SYSTEM_PROMPT = `You are the AI Support Assistant for DropandSell AI, a dropshipping automation platform. Your role is to help users with questions about the platform.
+
+Key features you can explain:
+- **Stores**: Connect Shopify, eBay, and Amazon marketplace stores
+- **Vendors**: Add suppliers like AliExpress, CJ Dropshipping, or custom vendors
+- **Products**: Import via CSV or browser extension, manage inventory
+- **Pricing Rules**: Set markup percentages, margins, or fixed amounts
+- **Publish Queue**: Stage products and publish to connected stores
+- **VERO List**: Block restricted brands/keywords that violate marketplace policies
+- **Content Filters**: Prevent personal info (emails, phones) in listings
+- **Restricted Products**: Block dangerous items (knives, chemicals, drugs)
+- **Orders**: Track and sync orders across marketplaces
+- **Wallet**: Manage funds, referral earnings (10% commission), usage points
+- **Subscription Plans**: 6 tiers from £12-£100/month based on listing count
+
+Guidelines:
+- Be helpful, friendly, and concise
+- If you don't know something, say so and suggest contacting support
+- Focus on platform features, not technical implementation
+- Use simple language, avoid jargon
+- Respond in the same language the user writes`;
+
+  app.post('/api/support-chat', async (req, res) => {
+    try {
+      const { messages } = req.body;
+      
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ message: 'Messages array is required' });
+      }
+
+      const chatMessages = [
+        { role: 'system' as const, content: SUPPORT_SYSTEM_PROMPT },
+        ...messages.slice(-10).map((m: any) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content
+        }))
+      ];
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-5-mini',
+        messages: chatMessages,
+        max_completion_tokens: 500,
+      });
+
+      const reply = response.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+      res.json({ reply });
+    } catch (err: any) {
+      console.error('Support chat error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to get response' });
+    }
+  });
+
   // === AUTOMATION: CALCULATE PRICE ===
   protectedApi.post('/automation/calculate-price', async (req: any, res) => {
     try {
