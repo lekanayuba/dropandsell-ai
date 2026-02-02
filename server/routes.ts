@@ -77,14 +77,24 @@ export async function registerRoutes(
         ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
         : process.env.REPLIT_DEV_DOMAIN 
           ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
-          : '';
+          : `https://${req.get('host')}`;
       const verifyUrl = `${baseUrl}/verify-email?token=${verificationToken}`;
+      
+      console.log(`Attempting to send verification email to ${email}`);
+      console.log(`Verification URL: ${verifyUrl}`);
       
       try {
         const { sendVerificationEmail } = await import('./email.js');
-        await sendVerificationEmail(email, verifyUrl);
-      } catch (emailErr) {
-        console.log(`Verification link for ${email}: ${verifyUrl}`);
+        const emailSent = await sendVerificationEmail(email, verifyUrl);
+        if (emailSent) {
+          console.log(`Verification email successfully sent to ${email}`);
+        } else {
+          console.error(`Failed to send verification email to ${email}`);
+          console.log(`Fallback verification link for ${email}: ${verifyUrl}`);
+        }
+      } catch (emailErr: any) {
+        console.error(`Email sending error for ${email}:`, emailErr?.message || emailErr);
+        console.log(`Fallback verification link for ${email}: ${verifyUrl}`);
       }
       
       // Create wallet for user

@@ -40,9 +40,11 @@ async function getUncachableResendClient() {
 
 export async function sendVerificationEmail(toEmail: string, verifyUrl: string): Promise<boolean> {
   try {
+    console.log(`[Email] Getting Resend client...`);
     const { client, fromEmail } = await getUncachableResendClient();
+    console.log(`[Email] Sending verification email to ${toEmail} from ${fromEmail}`);
     
-    await client.emails.send({
+    const result = await client.emails.send({
       from: fromEmail || 'DropandSell AI <noreply@dropandsell.online>',
       to: toEmail,
       subject: 'Verify your DropandSell AI account',
@@ -85,10 +87,23 @@ export async function sendVerificationEmail(toEmail: string, verifyUrl: string):
       `
     });
     
-    console.log(`Verification email sent to ${toEmail}`);
+    console.log(`[Email] Resend response:`, JSON.stringify(result, null, 2));
+    
+    if (result.error) {
+      console.error(`[Email] Resend returned error:`, result.error);
+      return false;
+    }
+    
+    console.log(`[Email] Verification email sent successfully to ${toEmail}`);
     return true;
   } catch (error: any) {
-    console.error('Failed to send verification email:', error?.message || error);
+    console.error('[Email] Failed to send verification email:', error?.message || error);
+    if (error?.statusCode) {
+      console.error('[Email] Status code:', error.statusCode);
+    }
+    if (error?.name) {
+      console.error('[Email] Error name:', error.name);
+    }
     return false;
   }
 }
