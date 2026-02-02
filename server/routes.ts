@@ -965,6 +965,93 @@ Return only the description text, no additional formatting.`;
     }
   });
 
+  // === CONTENT FILTERS (Personal Info Detection) ===
+  protectedApi.get('/content-filters', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filters = await storage.getContentFilters(userId);
+      res.json(filters);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get content filters' });
+    }
+  });
+
+  protectedApi.post('/content-filters', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { type, pattern, description, isActive } = req.body;
+      
+      if (!type) {
+        return res.status(400).json({ message: 'Filter type is required' });
+      }
+      
+      // Validate type
+      const validTypes = ['email', 'phone', 'url', 'social', 'custom'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ message: 'Invalid filter type' });
+      }
+      
+      // Custom type requires a pattern
+      if (type === 'custom' && !pattern) {
+        return res.status(400).json({ message: 'Custom filters require a pattern' });
+      }
+      
+      const newFilter = await storage.createContentFilter({
+        userId,
+        type,
+        pattern: pattern || null,
+        description: description || null,
+        isActive: isActive !== false,
+      });
+      
+      res.status(201).json(newFilter);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to create content filter' });
+    }
+  });
+
+  protectedApi.put('/content-filters/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filterId = parseInt(req.params.id);
+      const updates = req.body;
+      
+      const updatedFilter = await storage.updateContentFilter(filterId, userId, updates);
+      res.json(updatedFilter);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update content filter' });
+    }
+  });
+
+  protectedApi.delete('/content-filters/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const filterId = parseInt(req.params.id);
+      
+      await storage.deleteContentFilter(filterId, userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to delete content filter' });
+    }
+  });
+
+  // Check content for personal information violations
+  protectedApi.post('/content-check', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { text } = req.body;
+      
+      if (!text) {
+        return res.json({ hasViolations: false, violations: [] });
+      }
+      
+      const result = await storage.checkContentViolations(userId, text);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to check content' });
+    }
+  });
+
   // === AUTOMATION: PUBLISH TO MARKETPLACE ===
   protectedApi.post('/automation/publish', async (req: any, res) => {
     try {
@@ -1001,6 +1088,14 @@ Return only the description text, no additional formatting.`;
           if (veroCheck.isBlocked) {
             const violationNames = veroCheck.violations.map(v => v.value).join(', ');
             throw new Error(`VERO violation detected: ${violationNames}. This product cannot be listed.`);
+          }
+          
+          // Check for personal information in title and description
+          const contentToCheck = `${product.title} ${product.description || ''}`;
+          const contentCheck = await storage.checkContentViolations(userId, contentToCheck);
+          if (contentCheck.hasViolations) {
+            const violationDetails = contentCheck.violations.map(v => `${v.type}: ${v.matches.join(', ')}`).join('; ');
+            throw new Error(`Personal information detected: ${violationDetails}. Remove personal info before listing.`);
           }
           
           // Simulate marketplace API call (in real implementation, this would call Shopify/eBay/Amazon API)
