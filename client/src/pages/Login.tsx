@@ -65,7 +65,7 @@ export default function Login() {
                 className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
                 onClick={() => window.location.href = "/api/login"}
               >
-                Sign in with Replit
+                Sign up with your email address
                 <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
               
