@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,10 @@ import {
   Globe,
   AtSign,
   Code,
+  Ban,
+  Scissors,
+  Flame,
+  Pill,
 } from "lucide-react";
 
 export default function Automation() {
@@ -69,7 +73,7 @@ export default function Automation() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[625px]">
+        <TabsList className="grid w-full grid-cols-6 lg:w-[750px]">
           <TabsTrigger value="import" className="gap-2" data-testid="tab-import">
             <Upload className="w-4 h-4" />
             Import
@@ -89,6 +93,10 @@ export default function Automation() {
           <TabsTrigger value="filters" className="gap-2" data-testid="tab-filters">
             <Filter className="w-4 h-4" />
             Filters
+          </TabsTrigger>
+          <TabsTrigger value="restricted" className="gap-2" data-testid="tab-restricted">
+            <Ban className="w-4 h-4" />
+            Restricted
           </TabsTrigger>
         </TabsList>
 
@@ -110,6 +118,10 @@ export default function Automation() {
 
         <TabsContent value="filters">
           <ContentFiltersSection />
+        </TabsContent>
+
+        <TabsContent value="restricted">
+          <RestrictedProductsSection />
         </TabsContent>
       </Tabs>
     </div>
@@ -1514,6 +1526,317 @@ function ContentFiltersSection() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function RestrictedProductsSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [category, setCategory] = useState<string>("sharp_objects");
+  const [keyword, setKeyword] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("");
+  const [reason, setReason] = useState("");
+
+  const { data: items, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/restricted-products"],
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (data: { category: string; keyword: string; jurisdiction?: string; reason?: string }) => {
+      const response = await fetch("/api/restricted-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to add restricted product");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
+      toast({ title: "Restricted product added successfully" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const response = await fetch(`/api/restricted-products/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isActive }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/restricted-products/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
+      toast({ title: "Item deleted" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to delete", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const categoryIcons: Record<string, any> = {
+    sharp_objects: Scissors,
+    chemicals: Flame,
+    drugs: Pill,
+    weapons: Ban,
+    custom: AlertTriangle,
+  };
+
+  const categoryLabels: Record<string, string> = {
+    sharp_objects: "Sharp Objects",
+    chemicals: "Chemicals",
+    drugs: "Drugs/Medications",
+    weapons: "Weapons",
+    custom: "Custom",
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card data-testid="card-restricted-products">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2" data-testid="text-restricted-title">
+              <Ban className="h-5 w-5" />
+              Restricted Products
+            </CardTitle>
+            <CardDescription>
+              Block dangerous or regulated items from being listed for regulatory compliance
+            </CardDescription>
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-restricted">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Restriction
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Restricted Product</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger data-testid="select-restricted-category">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sharp_objects">Sharp Objects (knives, blades)</SelectItem>
+                      <SelectItem value="chemicals">Chemicals (hazardous materials)</SelectItem>
+                      <SelectItem value="drugs">Drugs/Medications</SelectItem>
+                      <SelectItem value="weapons">Weapons</SelectItem>
+                      <SelectItem value="custom">Custom</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Keyword to Block</Label>
+                  <Input
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    placeholder="e.g. knife, sword, machete"
+                    data-testid="input-restricted-keyword"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Products containing this keyword in title or description will be blocked
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Jurisdiction (Optional)</Label>
+                  <Input
+                    value={jurisdiction}
+                    onChange={(e) => setJurisdiction(e.target.value)}
+                    placeholder="e.g. UK, EU, USA"
+                    data-testid="input-restricted-jurisdiction"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Reason (Optional)</Label>
+                  <Input
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="e.g. Prohibited under UK law"
+                    data-testid="input-restricted-reason"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} data-testid="button-cancel-restricted">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!keyword.trim()) {
+                      toast({ title: "Please enter a keyword", variant: "destructive" });
+                      return;
+                    }
+                    addMutation.mutate({
+                      category,
+                      keyword: keyword.trim(),
+                      jurisdiction: jurisdiction.trim() || undefined,
+                      reason: reason.trim() || undefined,
+                    });
+                    setKeyword("");
+                    setJurisdiction("");
+                    setReason("");
+                    setIsDialogOpen(false);
+                  }}
+                  disabled={addMutation.isPending}
+                  data-testid="button-confirm-add-restricted"
+                >
+                  {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Restriction
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : !items || items.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground" data-testid="text-restricted-empty">
+              <Ban className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p className="text-lg font-medium">No restrictions configured</p>
+              <p className="text-sm mt-1">Add keywords for products that cannot be listed</p>
+            </div>
+          ) : (
+            <Table data-testid="table-restricted-products">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Keyword</TableHead>
+                  <TableHead>Jurisdiction</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item: any) => {
+                  const Icon = categoryIcons[item.category] || AlertTriangle;
+                  return (
+                    <TableRow key={item.id} data-testid={`row-restricted-${item.id}`}>
+                      <TableCell>
+                        <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                          <Icon className="h-3 w-3" />
+                          {categoryLabels[item.category] || item.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium" data-testid={`text-restricted-keyword-${item.id}`}>
+                        {item.keyword}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {item.jurisdiction || "-"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {item.reason || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={item.isActive}
+                          onCheckedChange={(checked) =>
+                            toggleMutation.mutate({ id: item.id, isActive: checked })
+                          }
+                          data-testid={`switch-restricted-active-${item.id}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMutation.mutate(item.id)}
+                          className="text-destructive hover:text-destructive"
+                          data-testid={`button-delete-restricted-${item.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-restricted-info">
+        <CardHeader>
+          <CardTitle className="text-lg">About Restricted Products</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Products matching restricted keywords will be blocked from publishing to protect you from:
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-destructive/10 rounded-lg">
+                <Scissors className="h-4 w-4 text-destructive" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Sharp Objects</p>
+                <p className="text-xs text-muted-foreground">Knives, blades, swords that may violate shipping policies</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-orange-500/10 rounded-lg">
+                <Flame className="h-4 w-4 text-orange-500" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Chemicals</p>
+                <p className="text-xs text-muted-foreground">Hazardous materials, flammables, corrosives</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <Pill className="h-4 w-4 text-purple-500" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Drugs/Medications</p>
+                <p className="text-xs text-muted-foreground">Prescription items, controlled substances</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-muted rounded-lg">
+                <Ban className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">Custom Rules</p>
+                <p className="text-xs text-muted-foreground">Add your own restrictions for any category</p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
