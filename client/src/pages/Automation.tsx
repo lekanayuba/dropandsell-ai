@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,8 @@ import {
   Clock,
   Loader2,
   RefreshCw,
+  ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function Automation() {
@@ -60,7 +63,7 @@ export default function Automation() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+        <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
           <TabsTrigger value="import" className="gap-2" data-testid="tab-import">
             <Upload className="w-4 h-4" />
             Import
@@ -72,6 +75,10 @@ export default function Automation() {
           <TabsTrigger value="publish" className="gap-2" data-testid="tab-publish">
             <Send className="w-4 h-4" />
             Publish
+          </TabsTrigger>
+          <TabsTrigger value="vero" className="gap-2" data-testid="tab-vero">
+            <ShieldAlert className="w-4 h-4" />
+            VERO
           </TabsTrigger>
         </TabsList>
 
@@ -85,6 +92,10 @@ export default function Automation() {
 
         <TabsContent value="publish">
           <PublishSection />
+        </TabsContent>
+
+        <TabsContent value="vero">
+          <VEROSection />
         </TabsContent>
       </Tabs>
     </div>
@@ -915,6 +926,282 @@ function PublishSection() {
                     </TableRow>
                   );
                 })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function VEROSection() {
+  const { toast } = useToast();
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newItem, setNewItem] = useState({
+    type: "brand",
+    value: "",
+    platform: "",
+    reason: "",
+  });
+
+  const { data: veroList, isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/vero-list"],
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async (data: typeof newItem) => {
+      const res = await fetch("/api/vero-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add VERO item");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      setIsAddDialogOpen(false);
+      setNewItem({ type: "brand", value: "", platform: "", reason: "" });
+      toast({ title: "Item added to VERO list" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add item", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/vero-list/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+      toast({ title: "Item removed from VERO list" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete item", variant: "destructive" });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await fetch(`/api/vero-list/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+    },
+    onError: () => {
+      toast({ title: "Failed to update item", variant: "destructive" });
+    },
+  });
+
+  const handleAddItem = () => {
+    if (!newItem.value.trim()) {
+      toast({ title: "Please enter a value", variant: "destructive" });
+      return;
+    }
+    addMutation.mutate({
+      ...newItem,
+      platform: newItem.platform || undefined,
+    } as any);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card data-testid="card-vero-list">
+        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2" data-testid="text-vero-title">
+              <ShieldAlert className="h-5 w-5 text-destructive" />
+              VERO List
+            </CardTitle>
+            <CardDescription data-testid="text-vero-description">
+              Manage restricted brands and keywords to prevent listing violations
+            </CardDescription>
+          </div>
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-vero-item">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Item
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add VERO Item</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <Select
+                    value={newItem.type}
+                    onValueChange={(v) => setNewItem({ ...newItem, type: v })}
+                  >
+                    <SelectTrigger data-testid="select-vero-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="brand">Brand</SelectItem>
+                      <SelectItem value="keyword">Keyword</SelectItem>
+                      <SelectItem value="sku">SKU Pattern</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Value</Label>
+                  <Input
+                    value={newItem.value}
+                    onChange={(e) => setNewItem({ ...newItem, value: e.target.value })}
+                    placeholder={
+                      newItem.type === "brand" ? "e.g. Nike, Apple" :
+                      newItem.type === "keyword" ? "e.g. replica, fake" :
+                      "e.g. NIKE-*, APPLE*"
+                    }
+                    data-testid="input-vero-value"
+                  />
+                  {newItem.type === "sku" && (
+                    <p className="text-xs text-muted-foreground">Use * as wildcard</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label>Platform (Optional)</Label>
+                  <Select
+                    value={newItem.platform}
+                    onValueChange={(v) => setNewItem({ ...newItem, platform: v })}
+                  >
+                    <SelectTrigger data-testid="select-vero-platform">
+                      <SelectValue placeholder="All platforms" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All platforms</SelectItem>
+                      <SelectItem value="ebay">eBay</SelectItem>
+                      <SelectItem value="amazon">Amazon</SelectItem>
+                      <SelectItem value="shopify">Shopify</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Reason (Optional)</Label>
+                  <Input
+                    value={newItem.reason}
+                    onChange={(e) => setNewItem({ ...newItem, reason: e.target.value })}
+                    placeholder="e.g. Trademark protected"
+                    data-testid="input-vero-reason"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} data-testid="button-cancel-vero">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleAddItem}
+                  disabled={addMutation.isPending}
+                  data-testid="button-confirm-add-vero"
+                >
+                  {addMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add Item
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border bg-amber-500/10 border-amber-200 p-4 mb-6" data-testid="alert-vero-info">
+            <div className="flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              <div>
+                <p className="font-medium text-amber-800">What is VERO?</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  VERO (Verified Rights Owner Program) protects intellectual property on marketplaces like eBay.
+                  Products matching items in this list will be blocked from publishing to prevent account suspensions.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : !veroList || veroList.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground" data-testid="text-vero-empty">
+              <ShieldAlert className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p>No VERO items added yet</p>
+              <p className="text-sm mt-1">Add restricted brands or keywords to protect your account</p>
+            </div>
+          ) : (
+            <Table data-testid="table-vero-list">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {veroList.map((item: any) => (
+                  <TableRow key={item.id} data-testid={`row-vero-item-${item.id}`}>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize" data-testid={`badge-vero-type-${item.id}`}>
+                        {item.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-medium" data-testid={`text-vero-value-${item.id}`}>
+                      {item.value}
+                    </TableCell>
+                    <TableCell data-testid={`text-vero-platform-${item.id}`}>
+                      {item.platform ? (
+                        <Badge variant="secondary" className="capitalize">
+                          {item.platform}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">All</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground" data-testid={`text-vero-reason-${item.id}`}>
+                      {item.reason || "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={item.isActive}
+                        onCheckedChange={(checked) =>
+                          toggleMutation.mutate({ id: item.id, isActive: checked })
+                        }
+                        data-testid={`switch-vero-active-${item.id}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteMutation.mutate(item.id)}
+                        className="text-destructive hover:text-destructive"
+                        data-testid={`button-delete-vero-${item.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           )}

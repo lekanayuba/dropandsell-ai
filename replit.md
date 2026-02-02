@@ -131,6 +131,15 @@ Preferred communication style: Simple, everyday language.
 - Settings page displays API key and download instructions
 - Extension endpoints: /api/extension/verify, /api/extension/vendors, /api/extension/import
 
+### VERO List (Restricted Products)
+- Manage restricted brands, keywords, and SKU patterns that cannot be listed
+- Three types: brand, keyword, sku (with wildcard support using *)
+- Optional platform filtering (eBay, Amazon, Shopify, or all)
+- Products are automatically checked against VERO list before publishing
+- Violations block the listing and show error message
+- UI in Automation page VERO tab for full CRUD management
+- Toggle items active/inactive without deleting
+
 ### Security Model
 - All automation data (pricing rules, import jobs, publish queue) filtered by userId
 - Storage layer enforces ownership on all CRUD operations
