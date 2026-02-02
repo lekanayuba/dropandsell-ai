@@ -1,9 +1,9 @@
 import { 
   stores, vendors, products, orders, wallet, transactions, subscriptions, referrals,
-  pricingRules, importJobs, publishQueue, marketplaceListings, veroList,
+  pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
-  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem
+  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
@@ -56,6 +56,13 @@ export interface IStorage {
   updateVeroItem(id: number, userId: string, updates: Partial<InsertVeroItem>): Promise<typeof veroList.$inferSelect>;
   deleteVeroItem(id: number, userId: string): Promise<void>;
   checkVeroViolation(userId: string, title: string, sku: string, platform?: string): Promise<{ isBlocked: boolean; violations: typeof veroList.$inferSelect[] }>;
+
+  // Content Filters (Personal info detection)
+  getContentFilters(userId: string): Promise<typeof contentFilters.$inferSelect[]>;
+  createContentFilter(filter: InsertContentFilter & { userId: string }): Promise<typeof contentFilters.$inferSelect>;
+  updateContentFilter(id: number, userId: string, updates: Partial<InsertContentFilter>): Promise<typeof contentFilters.$inferSelect>;
+  deleteContentFilter(id: number, userId: string): Promise<void>;
+  checkContentViolations(userId: string, text: string): Promise<{ hasViolations: boolean; violations: Array<{ type: string; matches: string[] }> }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -473,6 +480,80 @@ export class DatabaseStorage implements IStorage {
 
     return {
       isBlocked: violations.length > 0,
+      violations
+    };
+  }
+
+  // Content Filters
+  async getContentFilters(userId: string) {
+    return await db.select().from(contentFilters)
+      .where(eq(contentFilters.userId, userId))
+      .orderBy(desc(contentFilters.createdAt));
+  }
+
+  async createContentFilter(filter: InsertContentFilter & { userId: string }) {
+    const [newFilter] = await db.insert(contentFilters).values(filter).returning();
+    return newFilter;
+  }
+
+  async updateContentFilter(id: number, userId: string, updates: Partial<InsertContentFilter>) {
+    const [updated] = await db.update(contentFilters)
+      .set(updates)
+      .where(and(eq(contentFilters.id, id), eq(contentFilters.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteContentFilter(id: number, userId: string) {
+    await db.delete(contentFilters).where(and(eq(contentFilters.id, id), eq(contentFilters.userId, userId)));
+  }
+
+  async checkContentViolations(userId: string, text: string): Promise<{ hasViolations: boolean; violations: Array<{ type: string; matches: string[] }> }> {
+    const activeFilters = await db.select().from(contentFilters)
+      .where(and(
+        eq(contentFilters.userId, userId),
+        eq(contentFilters.isActive, true)
+      ));
+
+    const violations: Array<{ type: string; matches: string[] }> = [];
+
+    // Built-in patterns for common personal info types
+    const builtInPatterns: Record<string, RegExp> = {
+      email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi,
+      phone: /(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
+      url: /(?:https?:\/\/)?(?:www\.)?[a-zA-Z0-9][-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z]{2,6}(?:\/[-a-zA-Z0-9@:%_+.~#?&//=]*)?/gi,
+      social: /@[a-zA-Z0-9_]{2,30}/g,
+    };
+
+    // Check each active filter type
+    const activeTypes = new Set(activeFilters.map(f => f.type));
+
+    for (const [type, pattern] of Object.entries(builtInPatterns)) {
+      if (activeTypes.has(type)) {
+        const matches = text.match(pattern);
+        if (matches && matches.length > 0) {
+          violations.push({ type, matches: [...new Set(matches)] });
+        }
+      }
+    }
+
+    // Check custom patterns
+    for (const filter of activeFilters) {
+      if (filter.type === 'custom' && filter.pattern) {
+        try {
+          const customRegex = new RegExp(filter.pattern, 'gi');
+          const matches = text.match(customRegex);
+          if (matches && matches.length > 0) {
+            violations.push({ type: `custom: ${filter.description || filter.pattern}`, matches: [...new Set(matches)] });
+          }
+        } catch (e) {
+          // Invalid regex, skip
+        }
+      }
+    }
+
+    return {
+      hasViolations: violations.length > 0,
       violations
     };
   }

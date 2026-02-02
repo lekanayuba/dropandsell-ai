@@ -193,6 +193,17 @@ export const veroList = pgTable("vero_list", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Content Filters - Prevent personal information in listings
+export const contentFilters = pgTable("content_filters", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(), // 'email', 'phone', 'url', 'social', 'custom'
+  pattern: text("pattern"), // Custom regex pattern (for 'custom' type)
+  description: text("description"), // User-friendly description
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one, many }) => ({
   stores: many(stores),
@@ -274,6 +285,11 @@ export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
 export const insertVeroListSchema = createInsertSchema(veroList).omit({ id: true, userId: true, createdAt: true });
 export type InsertVeroItem = z.infer<typeof insertVeroListSchema>;
 export type VeroItem = typeof veroList.$inferSelect;
+
+// Content Filters
+export const insertContentFilterSchema = createInsertSchema(contentFilters).omit({ id: true, userId: true, createdAt: true });
+export type InsertContentFilter = z.infer<typeof insertContentFilterSchema>;
+export type ContentFilter = typeof contentFilters.$inferSelect;
 
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
