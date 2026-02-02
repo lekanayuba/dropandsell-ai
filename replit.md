@@ -107,3 +107,32 @@ Preferred communication style: Simple, everyday language.
 - Storage layer enforces ownership on all CRUD operations
 - Single-record getters accept optional userId for secure access
 - Routes pass authenticated user ID to all storage operations
+- Store email enforcement: Store emails must match user's account email (enforced on create/update)
+
+## User Onboarding & Compliance
+
+### Email Verification Flow
+- Users must verify email before accessing the dashboard
+- Verification token generated on login (24-hour expiry)
+- Resend verification available with 60-second cooldown
+- Verification status tracked in users table (emailVerified timestamp)
+
+### Policy Acceptance
+- Four required policies: Privacy Policy, User Agreement, Data Protection, Direct Debit Authorization
+- Users must accept all policies before proceeding
+- Acceptance tracked with timestamp in users table (policiesAccepted)
+- Full policy documents available at /policies route
+
+### Onboarding Guide
+- 7-step interactive guide (estimated 3-minute read)
+- Covers: stores, vendors, products, pricing rules, publishing, orders, support
+- Progress tracking with visual step indicators
+- Must complete before dashboard access (onboardingCompleted flag)
+
+### Access Control Flow
+Login → Email Verification → Policy Acceptance → Onboarding → Dashboard
+
+### Help & Support
+- FAQ page with 7 categories: Getting Started, Pricing, Orders, Wallet, Subscription, Security, Support
+- Expandable accordion sections with detailed answers
+- Accessible via sidebar after completing onboarding
