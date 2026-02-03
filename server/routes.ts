@@ -190,6 +190,40 @@ export async function registerRoutes(
     }
   });
 
+  // Email verification - PUBLIC endpoint (no auth required)
+  app.post('/api/auth/verify-email', async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ message: 'Verification token required' });
+      }
+      
+      const user = await storage.getUserByVerificationToken(token);
+      
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid verification token' });
+      }
+      
+      if (user.verificationTokenExpiry && new Date(user.verificationTokenExpiry) < new Date()) {
+        return res.status(400).json({ message: 'Verification token expired' });
+      }
+      
+      await storage.updateUser(user.id, {
+        emailVerified: new Date(),
+        verificationToken: null,
+        verificationTokenExpiry: null
+      });
+      
+      // Log the user in after verification
+      (req.session as any).userId = user.id;
+      
+      res.json({ success: true, message: 'Email verified successfully' });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to verify email' });
+    }
+  });
+
   // Protected router for API routes
   const protectedApi: Router = express.Router();
   protectedApi.use(isAuthenticated);
@@ -1661,36 +1695,6 @@ Guidelines:
       res.json({ success: true, message: 'Verification email sent' });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to send verification email' });
-    }
-  });
-
-  protectedApi.post('/auth/verify-email', async (req: any, res) => {
-    try {
-      const { token } = req.body;
-      
-      if (!token) {
-        return res.status(400).json({ message: 'Verification token required' });
-      }
-      
-      const user = await storage.getUserByVerificationToken(token);
-      
-      if (!user) {
-        return res.status(400).json({ message: 'Invalid verification token' });
-      }
-      
-      if (user.verificationTokenExpiry && new Date(user.verificationTokenExpiry) < new Date()) {
-        return res.status(400).json({ message: 'Verification token expired' });
-      }
-      
-      await storage.updateUser(user.id, {
-        emailVerified: new Date(),
-        verificationToken: null,
-        verificationTokenExpiry: null
-      });
-      
-      res.json({ success: true, message: 'Email verified successfully' });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message || 'Failed to verify email' });
     }
   });
 
