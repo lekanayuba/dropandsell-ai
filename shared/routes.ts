@@ -275,6 +275,34 @@ export const api = {
         }),
       },
     },
+    import: {
+      method: 'POST' as const,
+      path: '/api/vendors/import',
+      input: z.object({
+        vendors: z.array(z.object({
+          name: z.string(),
+          website: z.string().optional(),
+          contactPerson: z.string().optional(),
+          contactEmail: z.string().optional(),
+          contactPhone: z.string().optional(),
+          category: z.string().optional(),
+          tags: z.string().optional(),
+          country: z.string().optional(),
+          leadTime: z.string().optional(),
+          paymentTerms: z.string().optional(),
+          minOrderAmount: z.string().optional(),
+          notes: z.string().optional(),
+          integrationType: z.string().optional(),
+          status: z.string().optional(),
+        })),
+      }),
+      responses: {
+        201: z.object({
+          imported: z.number(),
+          vendors: z.array(z.any()),
+        }),
+      },
+    },
   },
 
   // Products

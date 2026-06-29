@@ -3,8 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Users, HeartPulse, Loader2, Truck, XCircle, Package, ArrowLeftRight, Timer, AlertTriangle, RefreshCw, Store, SwitchCamera, History } from "lucide-react";
-import { useState } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Trash2, Users, HeartPulse, Loader2, Truck, XCircle, Package, ArrowLeftRight, Timer, AlertTriangle, RefreshCw, Store, SwitchCamera, History, Search, Edit3, Download, Globe, Phone, Mail, Tag, MapPin, ChevronDown, ChevronRight, FileSpreadsheet } from "lucide-react";
+import { useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -87,13 +89,310 @@ function HealthMeter({ label, value, icon: Icon, good, total }: {
   );
 }
 
+type VendorFormData = InsertVendor & { id?: number };
+
+function VendorForm({ vendor, onSuccess }: { vendor?: any; onSuccess: () => void }) {
+  const createVendor = useCreateVendor();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch(`/api/vendors/${vendor.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update vendor");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vendors'] });
+      toast({ title: "Success", description: "Vendor updated" });
+      onSuccess();
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update vendor", variant: "destructive" });
+    },
+  });
+
+  const form = useForm<VendorFormData>({
+    resolver: zodResolver(insertVendorSchema),
+    defaultValues: vendor ? {
+      name: vendor.name || "",
+      website: vendor.website || "",
+      integrationType: vendor.integrationType || "custom",
+      config: vendor.config || {},
+      contactPerson: vendor.contactPerson || "",
+      contactEmail: vendor.contactEmail || "",
+      contactPhone: vendor.contactPhone || "",
+      category: vendor.category || "",
+      tags: vendor.tags || "",
+      country: vendor.country || "",
+      leadTime: vendor.leadTime || "",
+      paymentTerms: vendor.paymentTerms || "",
+      minOrderAmount: vendor.minOrderAmount || "",
+      notes: vendor.notes || "",
+      status: vendor.status || "active",
+    } : {
+      name: "",
+      website: "",
+      integrationType: "custom",
+      config: {},
+      contactPerson: "",
+      contactEmail: "",
+      contactPhone: "",
+      category: "",
+      tags: "",
+      country: "",
+      leadTime: "",
+      paymentTerms: "",
+      minOrderAmount: "",
+      notes: "",
+      status: "active",
+    }
+  });
+
+  const onSubmit = (data: VendorFormData) => {
+    if (vendor) {
+      updateMutation.mutate(data);
+    } else {
+      createVendor.mutate(data as any, { onSuccess });
+    }
+  };
+
+  const isPending = createVendor.isPending || updateMutation.isPending;
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="name" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Vendor Name *</FormLabel>
+              <FormControl><Input placeholder="Supplier Inc." {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="website" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Website</FormLabel>
+              <FormControl><Input placeholder="https://..." {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="contactPerson" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Contact Person</FormLabel>
+              <FormControl><Input placeholder="John Doe" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="contactEmail" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Contact Email</FormLabel>
+              <FormControl><Input placeholder="john@supplier.com" type="email" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="contactPhone" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Phone</FormLabel>
+              <FormControl><Input placeholder="+1 234 567 8900" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="country" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Country</FormLabel>
+              <FormControl><Input placeholder="China, USA, ..." {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="category" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Category</FormLabel>
+              <Select value={field.value || ""} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="wholesale">Wholesale</SelectItem>
+                  <SelectItem value="manufacturer">Manufacturer</SelectItem>
+                  <SelectItem value="dropshipper">Dropshipper</SelectItem>
+                  <SelectItem value="distributor">Distributor</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="tags" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Tags</FormLabel>
+              <FormControl><Input placeholder="comma, separated, tags" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="leadTime" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Lead Time</FormLabel>
+              <FormControl><Input placeholder="3-5 days" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <FormField control={form.control} name="paymentTerms" render={({ field }) => (
+            <FormItem>
+              <FormLabel>Payment Terms</FormLabel>
+              <FormControl><Input placeholder="Net 30, PayPal, ..." {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
+        </div>
+
+        <FormField control={form.control} name="notes" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Notes</FormLabel>
+            <FormControl><Textarea placeholder="Internal notes about this supplier..." className="min-h-[80px]" {...field} value={field.value || ""} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+
+        <Button type="submit" className="w-full" disabled={isPending}>
+          {isPending ? "Saving..." : vendor ? "Update Vendor" : "Add Vendor"}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+
+function ImportVendorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [csvText, setCsvText] = useState("");
+
+  const importMutation = useMutation({
+    mutationFn: async (vendors: any[]) => {
+      const res = await fetch('/api/vendors/import', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendors }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Import failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/vendors'] });
+      toast({ title: "Imported", description: `${data.imported} vendors added` });
+      setCsvText("");
+      onOpenChange(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Import Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const parseAndImport = () => {
+    const lines = csvText.trim().split('\n').filter(Boolean);
+    const vendors = lines.map(line => {
+      const parts = line.split(',').map(s => s.trim());
+      return {
+        name: parts[0] || '',
+        website: parts[1] || '',
+        contactPerson: parts[2] || '',
+        contactEmail: parts[3] || '',
+        contactPhone: parts[4] || '',
+        country: parts[5] || '',
+        category: parts[6] || '',
+        tags: parts[7] || '',
+      };
+    }).filter(v => v.name);
+    if (vendors.length === 0) {
+      toast({ title: "No valid vendors", description: "Each line needs at least a name", variant: "destructive" });
+      return;
+    }
+    importMutation.mutate(vendors);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Bulk Import Vendors</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Paste CSV data below. Format per line: <code className="text-xs bg-muted px-1 py-0.5 rounded">name, website, contact, email, phone, country, category, tags</code>
+          </p>
+          <Textarea
+            placeholder={`AliExpress, https://aliexpress.com, Ali Baba, support@aliexpress.com, +86 123, China, dropshipper, electronics\neBay Wholesale, https://ebay.com, , , , USA, wholesale, collectibles`}
+            className="min-h-[200px] font-mono text-xs"
+            value={csvText}
+            onChange={(e) => setCsvText(e.target.value)}
+          />
+          <Button
+            className="w-full"
+            onClick={parseAndImport}
+            disabled={importMutation.isPending || !csvText.trim()}
+          >
+            {importMutation.isPending ? (
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</>
+            ) : (
+              <><Download className="w-4 h-4 mr-2" /> Import Vendors</>
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const CATEGORIES = ["all", "wholesale", "manufacturer", "dropshipper", "distributor", "other"] as const;
+
 export default function Vendors() {
   const { data: vendors, isLoading } = useVendors();
   const deleteVendor = useDeleteVendor();
-  const [open, setOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editVendor, setEditVendor] = useState<any>(null);
   const [expandedOos, setExpandedOos] = useState<number | null>(null);
+  const [expandedVendor, setExpandedVendor] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [importOpen, setImportOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const filteredVendors = useMemo(() => {
+    if (!vendors) return [];
+    return vendors.filter((v: any) => {
+      if (search) {
+        const q = search.toLowerCase();
+        const matchesSearch = v.name?.toLowerCase().includes(q)
+          || v.website?.toLowerCase().includes(q)
+          || v.tags?.toLowerCase().includes(q)
+          || v.contactPerson?.toLowerCase().includes(q)
+          || v.country?.toLowerCase().includes(q)
+          || v.category?.toLowerCase().includes(q);
+        if (!matchesSearch) return false;
+      }
+      if (categoryFilter !== "all" && v.category !== categoryFilter) return false;
+      return true;
+    });
+  }, [vendors, search, categoryFilter]);
 
   const healthMutation = useMutation({
     mutationFn: async () => {
@@ -165,16 +464,30 @@ export default function Vendors() {
     } catch { /* ignore */ }
   };
 
+  const countByCategory = useMemo(() => {
+    if (!vendors) return {};
+    const counts: Record<string, number> = {};
+    for (const v of vendors) {
+      const cat = v.category || "other";
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return counts;
+  }, [vendors]);
+
   if (isLoading) return <div className="p-8">Loading vendors...</div>;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold font-display tracking-tight">Vendors</h2>
-          <p className="text-muted-foreground mt-2">Manage your suppliers and sources</p>
+          <h2 className="text-3xl font-bold font-display tracking-tight">Vendors & Suppliers</h2>
+          <p className="text-muted-foreground mt-2">Manage your suppliers and sourcing partners</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+            Import
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -210,29 +523,60 @@ export default function Vendors() {
             )}
             Check Health
           </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
             <DialogTrigger asChild>
               <Button className="shadow-lg shadow-primary/20">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Vendor
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Add New Vendor</DialogTitle>
               </DialogHeader>
-              <VendorForm onSuccess={() => setOpen(false)} />
+              <VendorForm onSuccess={() => setAddOpen(false)} />
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search vendors by name, country, tags..."
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-1 overflow-x-auto pb-1">
+          {CATEGORIES.map((cat) => (
+            <Button
+              key={cat}
+              variant={categoryFilter === cat ? "default" : "outline"}
+              size="sm"
+              className="capitalize whitespace-nowrap"
+              onClick={() => setCategoryFilter(cat)}
+            >
+              {cat}
+              {cat !== "all" && countByCategory[cat] ? (
+                <span className="ml-1.5 text-xs opacity-70">({countByCategory[cat]})</span>
+              ) : null}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {vendors?.map((vendor: any) => {
+        {filteredVendors.map((vendor: any) => {
           const stats = vendor.productStats || { total: 0, inStock: 0, outOfStock: 0, unknown: 0 };
           const hasOos = stats.outOfStock > 0;
           const alts = vendor.alternativeSuppliers || [];
-          const isExpanded = expandedOos === vendor.id;
+          const isOosExpanded = expandedOos === vendor.id;
+          const isVendorExpanded = expandedVendor === vendor.id;
+          const tags = vendor.tags ? vendor.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [];
 
           return (
             <Card
@@ -261,17 +605,51 @@ export default function Vendors() {
                       <CardDescription className="text-xs truncate">{vendor.website || "No website"}</CardDescription>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0 ml-2"
-                    onClick={() => deleteVendor.mutate(vendor.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-primary"
+                      onClick={() => setEditVendor(vendor)}
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => deleteVendor.mutate(vendor.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 pt-0">
+                {/* Tags & Category Row */}
+                <div className="flex items-center flex-wrap gap-1.5">
+                  {vendor.category && (
+                    <Badge variant="secondary" className="text-[10px] capitalize">
+                      <Tag className="w-3 h-3 mr-1" />
+                      {vendor.category}
+                    </Badge>
+                  )}
+                  {vendor.country && (
+                    <Badge variant="outline" className="text-[10px]">
+                      <MapPin className="w-3 h-3 mr-1" />
+                      {vendor.country}
+                    </Badge>
+                  )}
+                  {tags.slice(0, 3).map((tag: string) => (
+                    <Badge key={tag} variant="outline" className="text-[9px] text-muted-foreground">
+                      {tag}
+                    </Badge>
+                  ))}
+                  {tags.length > 3 && (
+                    <span className="text-[9px] text-muted-foreground">+{tags.length - 3}</span>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <StarRating score={vendor.healthScore} />
@@ -282,11 +660,84 @@ export default function Vendors() {
                   </span>
                 </div>
 
+                {/* Contact Info */}
+                {(vendor.contactPerson || vendor.contactEmail || vendor.contactPhone) && (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {vendor.contactPerson && (
+                      <div className="flex items-center gap-1.5">
+                        <Users className="w-3 h-3" />
+                        <span>{vendor.contactPerson}</span>
+                      </div>
+                    )}
+                    {vendor.contactEmail && (
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="w-3 h-3" />
+                        <span className="truncate">{vendor.contactEmail}</span>
+                      </div>
+                    )}
+                    {vendor.contactPhone && (
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="w-3 h-3" />
+                        <span>{vendor.contactPhone}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Lead Time & Payment Terms */}
+                {(vendor.leadTime || vendor.paymentTerms) && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {vendor.leadTime && (
+                      <span className="flex items-center gap-1">
+                        <Truck className="w-3 h-3" />
+                        {vendor.leadTime}
+                      </span>
+                    )}
+                    {vendor.paymentTerms && (
+                      <span className="flex items-center gap-1">
+                        <span className="font-mono text-[10px]">$</span>
+                        {vendor.paymentTerms}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Stock Status Summary */}
                 {stats.total > 0 && (
                   <div className="flex items-center justify-between">
                     <StockBadge inStock={stats.inStock} outOfStock={stats.outOfStock} total={stats.total} />
                     <span className="text-[11px] text-muted-foreground">{stats.total} products</span>
+                  </div>
+                )}
+
+                {/* Expand Products Button */}
+                {stats.total > 0 && (
+                  <button
+                    onClick={() => setExpandedVendor(isVendorExpanded ? null : vendor.id)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {isVendorExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                    {isVendorExpanded ? "Hide products" : "View products"}
+                  </button>
+                )}
+
+                {/* Expanded Product List */}
+                {isVendorExpanded && vendor.outOfStockProducts && (
+                  <div className="space-y-1.5 pl-1 border-l-2 border-muted">
+                    {vendor.outOfStockProducts.map((p: any) => (
+                      <div key={p.id} className="flex items-center justify-between text-xs py-1">
+                        <div className="min-w-0 flex-1 mr-2">
+                          <div className="truncate">{p.title}</div>
+                          {p.sku && <div className="text-[10px] text-muted-foreground font-mono">{p.sku}</div>}
+                        </div>
+                        <Badge variant="outline" className={cn(
+                          "text-[10px] shrink-0",
+                          p.quantity > 0 ? "text-emerald-600 border-emerald-200" : "text-red-600 border-red-200"
+                        )}>
+                          {p.quantity > 0 ? "In Stock" : "OOS"}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -297,17 +748,17 @@ export default function Vendors() {
                     "bg-red-50 border-red-200 dark:bg-red-950/15 dark:border-red-900/50"
                   )}>
                     <button
-                      onClick={() => setExpandedOos(isExpanded ? null : vendor.id)}
+                      onClick={() => setExpandedOos(isOosExpanded ? null : vendor.id)}
                       className="flex items-center justify-between w-full text-left"
                     >
                       <div className="flex items-center gap-2 text-xs font-medium text-red-700 dark:text-red-400">
                         <AlertTriangle className="w-3.5 h-3.5" />
                         {stats.outOfStock} product{stats.outOfStock > 1 ? 's' : ''} out of stock
                       </div>
-                      <span className="text-xs text-red-500">{isExpanded ? 'Hide' : 'Show'}</span>
+                      <span className="text-xs text-red-500">{isOosExpanded ? 'Hide' : 'Show'}</span>
                     </button>
 
-                    {isExpanded && (
+                    {isOosExpanded && (
                       <div className="space-y-1.5 pt-1">
                         {vendor.outOfStockProducts?.map((p: any) => (
                           <div key={p.id} className="flex items-center justify-between text-xs bg-white/50 dark:bg-black/20 rounded px-2 py-1.5">
@@ -340,7 +791,6 @@ export default function Vendors() {
                           </div>
                         ))}
 
-                        {/* Alternative Suppliers */}
                         {alts.length > 0 && (
                           <>
                             <Separator className="bg-red-200/50 dark:bg-red-900/30" />
@@ -427,19 +877,47 @@ export default function Vendors() {
                     </div>
                   </>
                 )}
+
+                {/* Notes */}
+                {vendor.notes && (
+                  <div className="text-xs text-muted-foreground bg-muted/20 rounded-lg p-2.5 italic border border-border/30">
+                    {vendor.notes}
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
         })}
-        {vendors?.length === 0 && (
+        {filteredVendors.length === 0 && (
           <div className="col-span-full flex flex-col items-center justify-center p-12 text-muted-foreground border-2 border-dashed rounded-xl bg-muted/20">
             <Users className="w-12 h-12 mb-4 text-muted-foreground/60" />
-            <h3 className="text-lg font-medium text-foreground">No vendors added yet</h3>
-            <p className="mt-1 mb-6 text-center max-w-sm">Add a supplier to source products and track their reliability.</p>
-            <Button onClick={() => setOpen(true)}>Add Your First Vendor</Button>
+            <h3 className="text-lg font-medium text-foreground">
+              {search || categoryFilter !== "all" ? "No matching vendors" : "No vendors added yet"}
+            </h3>
+            <p className="mt-1 mb-6 text-center max-w-sm">
+              {search || categoryFilter !== "all"
+                ? "Try adjusting your search or filters"
+                : "Add a supplier to source products and track their reliability."}
+            </p>
+            {!search && categoryFilter === "all" && (
+              <Button onClick={() => setAddOpen(true)}>Add Your First Vendor</Button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Edit Vendor Dialog */}
+      <Dialog open={!!editVendor} onOpenChange={(v) => { if (!v) setEditVendor(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Vendor</DialogTitle>
+          </DialogHeader>
+          {editVendor && <VendorForm vendor={editVendor} onSuccess={() => setEditVendor(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <ImportVendorsDialog open={importOpen} onOpenChange={setImportOpen} />
 
       {/* Replacement History Dialog */}
       <Dialog open={showReplaceLogs} onOpenChange={setShowReplaceLogs}>
@@ -485,58 +963,5 @@ export default function Vendors() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function VendorForm({ onSuccess }: { onSuccess: () => void }) {
-  const createVendor = useCreateVendor();
-  const form = useForm<InsertVendor>({
-    resolver: zodResolver(insertVendorSchema),
-    defaultValues: {
-      name: "",
-      website: "",
-      integrationType: "custom",
-      config: {}
-    }
-  });
-
-  const onSubmit = (data: InsertVendor) => {
-    createVendor.mutate(data, { onSuccess });
-  };
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Vendor Name</FormLabel>
-              <FormControl>
-                <Input placeholder="Supplier Inc." {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="website"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Website</FormLabel>
-              <FormControl>
-                <Input placeholder="https://..." {...field} value={field.value || ""} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Button type="submit" className="w-full touch" disabled={createVendor.isPending}>
-          {createVendor.isPending ? "Adding..." : "Add Vendor"}
-        </Button>
-      </form>
-    </Form>
   );
 }

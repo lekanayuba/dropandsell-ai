@@ -978,6 +978,42 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk import vendors (from CSV data or manual entry)
+  protectedApi.post('/vendors/import', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { vendors: vendorList } = req.body;
+      if (!Array.isArray(vendorList) || vendorList.length === 0) {
+        return res.status(400).json({ message: 'Provide an array of vendors' });
+      }
+      const created: typeof vendors.$inferSelect[] = [];
+      for (const v of vendorList) {
+        const vendor = await storage.createVendor({
+          name: v.name,
+          website: v.website || null,
+          contactPerson: v.contactPerson || null,
+          contactEmail: v.contactEmail || null,
+          contactPhone: v.contactPhone || null,
+          category: v.category || null,
+          tags: v.tags || null,
+          country: v.country || null,
+          leadTime: v.leadTime || null,
+          paymentTerms: v.paymentTerms || null,
+          minOrderAmount: v.minOrderAmount || null,
+          notes: v.notes || null,
+          integrationType: v.integrationType || 'custom',
+          config: v.config || {},
+          status: v.status || 'active',
+          userId,
+        });
+        created.push(vendor);
+      }
+      res.status(201).json({ imported: created.length, vendors: created });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Import failed' });
+    }
+  });
+
   // === PRODUCTS ===
   protectedApi.get('/products', async (req: any, res) => {
     const userId = req.user.claims.sub;

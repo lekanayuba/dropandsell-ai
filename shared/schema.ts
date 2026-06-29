@@ -39,6 +39,19 @@ export const vendors = pgTable("vendors", {
   integrationType: text("integration_type").notNull().default("custom"), // 'api', 'csv', 'feed', 'custom'
   config: jsonb("config"), // API endpoints, CSV mapping rules
   status: text("status").notNull().default("active"),
+  // Contact Info
+  contactPerson: text("contact_person"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  // Classification
+  category: text("category"), // 'wholesale', 'manufacturer', 'dropshipper', 'distributor', 'other'
+  tags: text("tags"), // comma-separated tags
+  country: text("country"),
+  // Business Terms
+  leadTime: text("lead_time"), // e.g. "3-5 days"
+  paymentTerms: text("payment_terms"), // e.g. "Net 30", "PayPal"
+  minOrderAmount: decimal("min_order_amount", { precision: 10, scale: 2 }),
+  notes: text("notes"),
   // Supplier Health Score
   healthScore: integer("health_score"), // 1–5 star rating
   averageShippingDays: text("average_shipping_days"), // e.g. "5–8 days"
