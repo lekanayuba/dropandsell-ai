@@ -6,24 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { Label } from "@/components/ui/label";
 import { Loader2, Check, CreditCard, Shield, Clock, ArrowRight, Zap } from "lucide-react";
 
-const SUBSCRIPTION_PLANS = [
-  { id: 'starter', name: 'Starter Plan', listings: 500, priceGbp: 12, features: ['500 active listings', 'Basic analytics', 'Email support'] },
-  { id: 'basic', name: 'Basic Plan', listings: 750, priceGbp: 20, features: ['750 active listings', 'Advanced analytics', 'Priority support'], popular: true },
-  { id: 'growth', name: 'Growth Plan', listings: 1200, priceGbp: 35, features: ['1,200 active listings', 'Full analytics', 'Phone support'] },
-  { id: 'professional', name: 'Professional Plan', listings: 2000, priceGbp: 50, features: ['2,000 active listings', 'API access', 'Dedicated support'] },
-  { id: 'business', name: 'Business Plan', listings: 4000, priceGbp: 75, features: ['4,000 active listings', 'Team accounts', 'Custom integrations'] },
-  { id: 'enterprise', name: 'Enterprise Plan', listings: 8000, priceGbp: 100, features: ['8,000 active listings', 'Unlimited teams', 'SLA guarantee'] },
-];
+type Plan = {
+  priceId: string;
+  name: string;
+  listingsLimit: number;
+  amount: number;
+  features: string[];
+};
 
 export default function PaymentSetup() {
   const [, navigate] = useLocation();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [directDebitAgreed, setDirectDebitAgreed] = useState(false);
 
-  const { data: stripeProducts, isLoading: loadingProducts } = useQuery<any[]>({
+  const { data: subscriptionPlans, isLoading: loadingProducts } = useQuery<Plan[]>({
     queryKey: ['/api/stripe/products'],
   });
 
@@ -49,7 +49,7 @@ export default function PaymentSetup() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
       navigate('/');
     },
   });
@@ -72,32 +72,33 @@ export default function PaymentSetup() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8">
-          {SUBSCRIPTION_PLANS.map((plan) => (
+          {loadingProducts && [...Array(6)].map((_, i) => <Card key={i} className="h-80 animate-pulse bg-muted" />)}
+          {subscriptionPlans?.map((plan) => (
             <Card 
-              key={plan.id}
+              key={plan.priceId}
               className={`relative cursor-pointer transition-all ${
-                selectedPlan === plan.id 
+                selectedPlan === plan.priceId 
                   ? 'ring-2 ring-primary border-primary' 
                   : 'hover:border-primary/50'
               }`}
-              onClick={() => setSelectedPlan(plan.id)}
-              data-testid={`plan-${plan.id}`}
+              onClick={() => setSelectedPlan(plan.priceId)}
+              data-testid={`plan-${plan.name.toLowerCase().replace(' ', '-')}`}
             >
-              {plan.popular && (
+              {plan.name === 'Growth Plan' && ( // Example of marking a plan as popular
                 <Badge className="absolute -top-2 left-1/2 -translate-x-1/2">Most Popular</Badge>
               )}
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   {plan.name}
-                  {selectedPlan === plan.id && <Check className="h-5 w-5 text-primary" />}
+                  {selectedPlan === plan.priceId && <Check className="h-5 w-5 text-primary" />}
                 </CardTitle>
                 <CardDescription>
-                  Up to {plan.listings.toLocaleString()} listings
+                  Up to {plan.listingsLimit.toLocaleString()} listings
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="mb-4">
-                  <span className="text-3xl font-bold">£{plan.priceGbp}</span>
+                  <span className="text-3xl font-bold">£{plan.amount}</span>
                   <span className="text-muted-foreground">/month</span>
                 </div>
                 <ul className="space-y-2">
@@ -173,7 +174,7 @@ export default function PaymentSetup() {
           <CardFooter className="flex flex-col sm:flex-row gap-4">
             <Button
               onClick={handleProceed}
-              disabled={!selectedPlan || !directDebitAgreed || checkoutMutation.isPending}
+              disabled={!selectedPlan || !directDebitAgreed || checkoutMutation.isPending || loadingProducts}
               className="w-full sm:w-auto"
               data-testid="button-proceed-payment"
             >

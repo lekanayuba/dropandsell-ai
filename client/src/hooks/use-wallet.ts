@@ -1,14 +1,24 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 export function useWallet() {
   return useQuery({
     queryKey: [api.wallet.get.path],
     queryFn: async () => {
-      const res = await fetch(api.wallet.get.path, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch wallet info");
+      const res = await apiRequest("GET", api.wallet.get.path);
       return api.wallet.get.responses[200].parse(await res.json());
+    },
+  });
+}
+
+export function useFullWallet() {
+  return useQuery<{ balance: number; referralBalance: number; points: number; currency: string }>({
+    queryKey: ["/api/wallet/full"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/wallet/full");
+      return res.json();
     },
   });
 }
@@ -19,19 +29,14 @@ export function useDeposit() {
 
   return useMutation({
     mutationFn: async (amount: number) => {
-      // Mock payment method ID for now
       const payload = { amount, paymentMethodId: "mock_pm_123" };
-      const res = await fetch(api.wallet.deposit.path, {
-        method: api.wallet.deposit.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        credentials: "include",
-      });
+      const res = await apiRequest("POST", api.wallet.deposit.path, payload);
       if (!res.ok) throw new Error("Failed to deposit funds");
       return api.wallet.deposit.responses[200].parse(await res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.wallet.get.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet/full"] });
       toast({ title: "Success", description: "Funds deposited successfully" });
     },
     onError: () => {

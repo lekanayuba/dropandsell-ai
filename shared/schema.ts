@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal, varchar, date, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -18,8 +18,14 @@ export const stores = pgTable("stores", {
   userId: varchar("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   platform: text("platform").notNull(), // 'shopify', 'amazon', 'ebay', etc.
+  email: text("email"),
   credentials: jsonb("credentials").notNull(), // Encrypted API keys, tokens
   status: text("status").notNull().default("active"), // 'active', 'inactive', 'error'
+  autoRestock: boolean("auto_restock").notNull().default(false), // Auto-restock out-of-stock items when quantity becomes available
+  autoPauseListings: boolean("auto_pause_listings").notNull().default(false), // Auto-pause marketplace listings when out of stock
+  autoMarkOutOfStock: boolean("auto_mark_out_of_stock").notNull().default(false), // Auto-mark listings as out of stock on marketplace
+  autoSwitchSupplier: boolean("auto_switch_supplier").notNull().default(false), // Auto-switch to alternative supplier when out of stock
+  restockThreshold: integer("restock_threshold").notNull().default(1), // Min quantity to trigger auto-restock
   lastSync: timestamp("last_sync"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -33,6 +39,15 @@ export const vendors = pgTable("vendors", {
   integrationType: text("integration_type").notNull().default("custom"), // 'api', 'csv', 'feed', 'custom'
   config: jsonb("config"), // API endpoints, CSV mapping rules
   status: text("status").notNull().default("active"),
+  // Supplier Health Score
+  healthScore: integer("health_score"), // 1–5 star rating
+  averageShippingDays: text("average_shipping_days"), // e.g. "5–8 days"
+  cancellationRate: decimal("cancellation_rate", { precision: 5, scale: 2 }), // percentage
+  stockUpdateReliability: text("stock_update_reliability"), // 'high', 'medium', 'low'
+  returnRate: decimal("return_rate", { precision: 5, scale: 2 }), // percentage
+  lateDeliveryRate: decimal("late_delivery_rate", { precision: 5, scale: 2 }), // percentage
+  totalOrdersFulfilled: integer("total_orders_fulfilled").default(0),
+  lastHealthCheck: timestamp("last_health_check"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -52,8 +67,31 @@ export const products = pgTable("products", {
   veroStatus: text("vero_status").default("clean"), // 'clean', 'flagged', 'blocked'
   deliveryType: text("delivery_type").default("buyer_pays"), // 'free', 'seller_pays', 'buyer_pays'
   deliveryCost: decimal("delivery_cost", { precision: 10, scale: 2 }).default("0"),
+  // Temu / external marketplace tracking
+  externalProductId: text("external_product_id"), // ID on Temu (from URL)
+  marketplacePrice: decimal("marketplace_price", { precision: 10, scale: 2 }), // Temu's current price
+  marketplaceStockStatus: text("marketplace_stock_status").default("unknown"), // 'in_stock', 'out_of_stock', 'unknown'
+  shippingInfo: jsonb("shipping_info"), // { estimatedDays: string, cost: string, origin: string }
+  lastMarketplaceSync: timestamp("last_marketplace_sync"), // last time we checked Temu
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  uniqueExternalProduct: unique("uq_external_product").on(table.userId, table.externalProductId),
+}));
+
+// Product Variations (size, color, etc. from Temu)
+export const productVariations = pgTable("product_variations", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id),
+  name: text("name").notNull(), // e.g. "Black / XL"
+  sku: text("sku").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(), // Temu's price for this variant
+  stock: integer("stock").notNull().default(0),
+  image: text("image"), // variant-specific image URL
+  attributes: jsonb("attributes"), // { color: "Black", size: "XL" }
+  externalId: text("external_id"), // Temu variant ID
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Marketplace Listings (Link internal products to store listings)
@@ -64,6 +102,8 @@ export const marketplaceListings = pgTable("marketplace_listings", {
   externalId: text("external_id").notNull(), // ID on the marketplace
   status: text("status").notNull().default("active"), // 'active', 'ended', 'error'
   syncStatus: text("sync_status").default("synced"),
+  stockStatus: text("stock_status").default("in_stock"), // 'in_stock', 'out_of_stock', 'unknown'
+  outOfStockAt: timestamp("out_of_stock_at"),
   lastSync: timestamp("last_sync"),
 });
 
@@ -81,6 +121,9 @@ export const orders = pgTable("orders", {
   fulfillmentStatus: text("fulfillment_status").default("unfulfilled"),
   trackingNumber: text("tracking_number"),
   carrier: text("carrier"),
+  trackingStatus: text("tracking_status").default("pending"), // 'pending', 'in_transit', 'delivered', 'failed'
+  trackingUrl: text("tracking_url"),
+  trackingUpdatedAt: timestamp("tracking_updated_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -127,6 +170,82 @@ export const referrals = pgTable("referrals", {
   totalEarnings: decimal("total_earnings", { precision: 10, scale: 2 }).default("0.00"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Notifications
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: text("type").notNull().default("info"), // 'info', 'order_shipped', 'order_delivered', 'stock_alert', 'price_alert', 'supplier_alert', 'new_products', 'restock'
+  title: text("title").notNull(),
+  message: text("message"),
+  orderId: integer("order_id").references(() => orders.id),
+  read: boolean("read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, { fields: [notifications.userId], references: [users.id] }),
+  order: one(orders, { fields: [notifications.orderId], references: [orders.id] }),
+}));
+
+// Add-on Catalog
+export const addonCatalog = pgTable("addon_catalog", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  image: text("image"),
+  category: text("category").notNull().default("general"), // 'general', 'tools', 'services', 'content'
+  price: decimal("price", { precision: 10, scale: 2 }).notNull().default("0"),
+  isNew: boolean("is_new").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const catalogRefreshLog = pgTable("catalog_refresh_log", {
+  id: serial("id").primaryKey(),
+  itemsAdded: integer("items_added").notNull().default(0),
+  itemsUpdated: integer("items_updated").notNull().default(0),
+  lastRefreshedAt: timestamp("last_refreshed_at").defaultNow(),
+});
+
+// Restock Logs
+export const restockLogs = pgTable("restock_logs", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").notNull().references(() => stores.id),
+  productId: integer("product_id").notNull().references(() => products.id),
+  previousQuantity: integer("previous_quantity").notNull(),
+  newQuantity: integer("new_quantity").notNull(),
+  marketplaceListingId: integer("marketplace_listing_id").references(() => marketplaceListings.id),
+  triggeredBy: text("triggered_by").notNull().default("auto"), // 'auto' | 'manual'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const restockLogsRelations = relations(restockLogs, ({ one }) => ({
+  store: one(stores, { fields: [restockLogs.storeId], references: [stores.id] }),
+  product: one(products, { fields: [restockLogs.productId], references: [products.id] }),
+  marketplaceListing: one(marketplaceListings, { fields: [restockLogs.marketplaceListingId], references: [marketplaceListings.id] }),
+}));
+
+// Supplier replacement log — tracks when auto-switch finds a new vendor
+export const supplierReplacementLog = pgTable("supplier_replacement_log", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").notNull().references(() => products.id),
+  oldVendorId: integer("old_vendor_id").references(() => vendors.id),
+  newVendorId: integer("new_vendor_id").notNull().references(() => vendors.id),
+  oldVendorName: text("old_vendor_name"),
+  newVendorName: text("new_vendor_name").notNull(),
+  productTitle: text("product_title").notNull(),
+  productSku: text("product_sku"),
+  reason: text("reason").notNull().default("out_of_stock"), // 'out_of_stock' | 'supplier_disappeared' | 'manual'
+  triggeredBy: text("triggered_by").notNull().default("auto"), // 'auto' | 'manual'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const supplierReplacementLogRelations = relations(supplierReplacementLog, ({ one }) => ({
+  product: one(products, { fields: [supplierReplacementLog.productId], references: [products.id] }),
+  oldVendor: one(vendors, { fields: [supplierReplacementLog.oldVendorId], references: [vendors.id] }),
+  newVendor: one(vendors, { fields: [supplierReplacementLog.newVendorId], references: [vendors.id] }),
+}));
 
 // === AUTOMATION TABLES ===
 
@@ -261,6 +380,11 @@ export const insertProductSchema = createInsertSchema(products).omit({ id: true,
 export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 
+// Product Variations
+export const insertProductVariationSchema = createInsertSchema(productVariations).omit({ id: true, createdAt: true });
+export type InsertProductVariation = z.infer<typeof insertProductVariationSchema>;
+export type ProductVariation = typeof productVariations.$inferSelect;
+
 // Orders
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
@@ -291,7 +415,7 @@ export type InsertPublishQueue = z.infer<typeof insertPublishQueueSchema>;
 export type PublishQueueItem = typeof publishQueue.$inferSelect;
 
 // Marketplace Listings
-export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true });
+export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true, outOfStockAt: true });
 export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
 export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
 
@@ -309,6 +433,39 @@ export type ContentFilter = typeof contentFilters.$inferSelect;
 export const insertRestrictedProductSchema = createInsertSchema(restrictedProducts).omit({ id: true, userId: true, createdAt: true });
 export type InsertRestrictedProduct = z.infer<typeof insertRestrictedProductSchema>;
 export type RestrictedProduct = typeof restrictedProducts.$inferSelect;
+
+// Restock Logs
+export const insertRestockLogSchema = createInsertSchema(restockLogs).omit({ id: true, createdAt: true });
+export type InsertRestockLog = z.infer<typeof insertRestockLogSchema>;
+export type RestockLog = typeof restockLogs.$inferSelect;
+
+// Supplier replacement log
+export const insertSupplierReplacementLogSchema = createInsertSchema(supplierReplacementLog).omit({ id: true, createdAt: true });
+export type InsertSupplierReplacementLog = z.infer<typeof insertSupplierReplacementLogSchema>;
+export type SupplierReplacementLog = typeof supplierReplacementLog.$inferSelect;
+
+// Notifications
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+// Add-on Catalog
+export const insertAddonCatalogSchema = createInsertSchema(addonCatalog).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAddonCatalog = z.infer<typeof insertAddonCatalogSchema>;
+export type AddonCatalogItem = typeof addonCatalog.$inferSelect;
+
+export type CatalogRefreshLog = typeof catalogRefreshLog.$inferSelect;
+
+// Admin settings
+export const adminSettings = pgTable("admin_settings", {
+  id: serial("id").primaryKey(),
+  siteName: text("site_name").default("DropandSell AI"),
+  maintenanceMode: boolean("maintenance_mode").default(false),
+  allowNewRegistrations: boolean("allow_new_registrations").default(true),
+  defaultSubscriptionPlan: text("default_subscription_plan").default("free"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
@@ -332,4 +489,5 @@ export type DashboardStatsResponse = {
   totalOrders: number;
   activeListings: number;
   walletBalance: number;
+  outOfStockProducts: number;
 };

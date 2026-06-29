@@ -30,6 +30,7 @@ import {
   usePreviewCSV,
   useBulkAddToPublishQueue,
 } from "@/hooks/use-automation";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Upload,
   Settings2,
@@ -362,9 +363,9 @@ function PricingRulesSection() {
       const data = {
         name: formData.name,
         ruleType: formData.ruleType,
-        value: parseFloat(formData.value),
-        minPrice: formData.minPrice ? parseFloat(formData.minPrice) : null,
-        maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
+        value: formData.value,
+        minPrice: formData.minPrice || null,
+        maxPrice: formData.maxPrice || null,
         applyToVendor: formData.applyToVendor && formData.applyToVendor !== "all" ? Number(formData.applyToVendor) : null,
         priority: parseInt(formData.priority),
         isActive: formData.isActive,
@@ -973,18 +974,12 @@ function VEROSection() {
 
   const { data: veroList, isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/vero-list"],
+    queryFn: () => apiRequest("GET", "/api/vero-list").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: typeof newItem) => {
-      const res = await fetch("/api/vero-list", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to add VERO item");
-      return res.json();
+      return apiRequest("POST", "/api/vero-list", data).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
@@ -992,45 +987,33 @@ function VEROSection() {
       setNewItem({ type: "brand", value: "", platform: "", reason: "" });
       toast({ title: "Item added to VERO list" });
     },
-    onError: () => {
-      toast({ title: "Failed to add item", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to add item", description: err.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/vero-list/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      return res.json();
+      return apiRequest("DELETE", `/api/vero-list/${id}`).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Item removed from VERO list" });
     },
-    onError: () => {
-      toast({ title: "Failed to delete item", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to delete item", description: err.message, variant: "destructive" });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const res = await fetch(`/api/vero-list/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
+      return apiRequest("PUT", `/api/vero-list/${id}`, { isActive }).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
     },
-    onError: () => {
-      toast({ title: "Failed to update item", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to update item", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1245,62 +1228,44 @@ function ContentFiltersSection() {
 
   const { data: filters, isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/content-filters"],
+    queryFn: () => apiRequest("GET", "/api/content-filters").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: { type: string; description?: string; pattern?: string }) => {
-      const res = await fetch("/api/content-filters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to add filter");
-      return res.json();
+      return apiRequest("POST", "/api/content-filters", data).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Content filter enabled" });
     },
-    onError: () => {
-      toast({ title: "Failed to enable filter", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to enable filter", description: err.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`/api/content-filters/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      return res.json();
+      return apiRequest("DELETE", `/api/content-filters/${id}`).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Content filter removed" });
     },
-    onError: () => {
-      toast({ title: "Failed to remove filter", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to remove filter", description: err.message, variant: "destructive" });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const res = await fetch(`/api/content-filters/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
+      return apiRequest("PUT", `/api/content-filters/${id}`, { isActive }).then(res => res.json());
     },
     onSuccess: () => {
       refetch();
     },
-    onError: () => {
-      toast({ title: "Failed to update filter", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to update filter", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1543,18 +1508,12 @@ function RestrictedProductsSection() {
 
   const { data: items, isLoading } = useQuery<any[]>({
     queryKey: ["/api/restricted-products"],
+    queryFn: () => apiRequest("GET", "/api/restricted-products").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: { category: string; keyword: string; jurisdiction?: string; reason?: string }) => {
-      const response = await fetch("/api/restricted-products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to add restricted product");
-      return response.json();
+      return apiRequest("POST", "/api/restricted-products", data).then(res => res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
@@ -1567,28 +1526,19 @@ function RestrictedProductsSection() {
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const response = await fetch(`/api/restricted-products/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isActive }),
-      });
-      if (!response.ok) throw new Error("Failed to update");
-      return response.json();
+      return apiRequest("PUT", `/api/restricted-products/${id}`, { isActive }).then(res => res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
     },
+    onError: (err: any) => {
+      toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+    }
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await fetch(`/api/restricted-products/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to delete");
-      return response.json();
+      return apiRequest("DELETE", `/api/restricted-products/${id}`).then(res => res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });

@@ -1,21 +1,21 @@
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, Loader2, Mail, Lock, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, USER_QUERY_KEY } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const { toast } = useToast();
-  const { refetch } = useAuth();
 
   const features = [
     "Multi-channel inventory sync",
@@ -25,47 +25,33 @@ export default function Login() {
     "Secure wallet & transactions"
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
+  const authMutation = useMutation({
+    mutationFn: async () => {
       const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const body = isLogin 
-        ? { email, password }
-        : { email, password, firstName, lastName };
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Authentication failed");
-      }
-
+      const body = isLogin ? { email, password } : { email, password, firstName, lastName };
+      const response = await apiRequest("POST", endpoint, body);
+      return response.json();
+    },
+    onSuccess: () => {
       toast({
         title: isLogin ? "Welcome back!" : "Account created!",
-        description: isLogin 
-          ? "You have been logged in successfully." 
-          : "Please check your email to verify your account.",
+        description: isLogin ? "You have been logged in successfully." : "Please check your email to verify your account.",
       });
-
-      await refetch();
-      window.location.href = "/";
-    } catch (error: any) {
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
+      // The useAuth hook will handle the redirect on user state change.
+    },
+    onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Something went wrong",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
-    }
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    authMutation.mutate();
   };
 
   return (
@@ -193,10 +179,10 @@ export default function Login() {
                 <Button 
                   type="submit"
                   className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
-                  disabled={isLoading}
+                  disabled={authMutation.isPending}
                   data-testid="button-submit"
                 >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {authMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {isLogin ? "Sign In" : "Create Account"}
                 </Button>
               </form>

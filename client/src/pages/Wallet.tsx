@@ -1,4 +1,4 @@
-import { useWallet, useDeposit } from "@/hooks/use-wallet";
+import { useWallet, useDeposit, useFullWallet } from "@/hooks/use-wallet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, CreditCard, Users, Coins, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Wallet() {
   const { toast } = useToast();
@@ -22,23 +23,10 @@ export default function Wallet() {
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [convertPoints, setConvertPoints] = useState("");
 
-  const { data: fullWallet } = useQuery<{ balance: number; referralBalance: number; points: number; currency: string }>({
-    queryKey: ["/api/wallet/full"],
-  });
-
+  const { data: fullWallet } = useFullWallet();
   const withdrawMutation = useMutation({
     mutationFn: async (amt: number) => {
-      const response = await fetch("/api/wallet/withdraw-referral", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ amount: amt }),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message);
-      }
-      return response.json();
+      return apiRequest("POST", "/api/wallet/withdraw-referral", { amount: amt }).then(res => res.json());
     },
     onSuccess: () => {
       toast({ title: "Withdrawal requested", description: "Your request is pending approval" });
@@ -54,17 +42,7 @@ export default function Wallet() {
 
   const convertMutation = useMutation({
     mutationFn: async (pts: number) => {
-      const response = await fetch("/api/wallet/convert-points", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ points: pts }),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message);
-      }
-      return response.json();
+      return apiRequest("POST", "/api/wallet/convert-points", { points: pts }).then(res => res.json());
     },
     onSuccess: () => {
       toast({ title: "Points converted!", description: "Funds added to your wallet balance" });
@@ -125,7 +103,7 @@ export default function Wallet() {
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Amount ($)</label>
+                      <label className="text-sm font-medium">Amount (£)</label>
                       <Input 
                         type="number" 
                         value={amount} 
@@ -138,7 +116,7 @@ export default function Wallet() {
                       onClick={handleDeposit}
                       disabled={deposit.isPending}
                     >
-                      {deposit.isPending ? "Processing..." : `Deposit $${amount}`}
+                      {deposit.isPending ? "Processing..." : `Deposit £${amount}`}
                     </Button>
                   </div>
                 </DialogContent>
@@ -336,7 +314,7 @@ export default function Wallet() {
                     <TableCell className={`text-right font-medium ${
                       ['deposit', 'referral_bonus'].includes(tx.type) ? 'text-green-600' : 'text-foreground'
                     }`}>
-                      {['deposit', 'referral_bonus'].includes(tx.type) ? '+' : '-'}${Number(tx.amount).toFixed(2)}
+                      {['deposit', 'referral_bonus'].includes(tx.type) ? '+' : '-'}£{Number(tx.amount).toFixed(2)}
                     </TableCell>
                   </TableRow>
                 ))

@@ -30,6 +30,8 @@ const buttonVariants = cva(
         sm: "min-h-8 rounded-md px-3 text-xs",
         lg: "min-h-10 rounded-md px-8",
         icon: "h-9 w-9",
+        // iPad-friendly 44pt minimum touch target
+        touch: "min-h-11 px-5 py-3 text-base rounded-lg",
       },
     },
     defaultVariants: {

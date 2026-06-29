@@ -237,7 +237,7 @@ export default function Subscription() {
 
       <div className="text-center text-sm text-muted-foreground space-y-2 pt-8">
         <p>All prices are in GBP and billed monthly. Cancel anytime.</p>
-        <p>Need a custom plan? <a href="mailto:support@dropflow.io" className="text-primary hover:underline">Contact us</a></p>
+        <p>Need a custom plan? <a href="mailto:support@dropflow.com" className="text-primary hover:underline">Contact us</a></p>
       </div>
     </div>
   );

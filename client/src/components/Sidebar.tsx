@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
   Store, 
@@ -15,16 +16,31 @@ import {
   Menu,
   HelpCircle,
   Shield,
-  Gift
+  Gift,
+  Bell,
+  Globe,
+  MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+
+  const { data: unreadData } = useQuery({
+    queryKey: ["/api/notifications/unread-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/notifications/unread-count", { credentials: "include" });
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const unreadCount = unreadData?.count ?? 0;
 
   const links = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -33,11 +49,15 @@ export function Sidebar() {
     { href: "/inventory", label: "Inventory", icon: Package },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/automation", label: "Automation", icon: Zap },
+    { href: "/notifications", label: "Notifications", icon: Bell, badge: unreadCount },
+    { href: "/addon-catalog", label: "Catalog", icon: PackageOpen },
+    { href: "/temu", label: "Temu", icon: Globe },
     { href: "/wallet", label: "Wallet", icon: Wallet },
     { href: "/referrals", label: "Referrals", icon: Gift },
     { href: "/subscription", label: "Subscription", icon: CreditCard },
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
+    { href: "/admin/support", label: "Support Inbox", icon: MessageSquare },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
@@ -61,14 +81,19 @@ export function Sidebar() {
             <Link key={link.href} href={link.href}>
               <div
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer group",
+                  "flex items-center gap-3 px-4 py-3.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer group min-h-[44px]",
                   isActive
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <Icon className={cn("w-5 h-5", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-                {link.label}
+                <Icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                <span className="truncate">{link.label}</span>
+                {(link as any).badge > 0 && (
+                  <Badge className="ml-auto h-5 min-w-5 flex items-center justify-center text-xs" variant="default">
+                    {(link as any).badge}
+                  </Badge>
+                )}
               </div>
             </Link>
           );
@@ -76,9 +101,9 @@ export function Sidebar() {
       </div>
 
       <div className="p-4 border-t border-border/50">
-        <div className="flex items-center gap-3 px-4 py-3 mb-2">
-          <Avatar className="h-9 w-9 border border-border">
-            <AvatarImage src={user?.profileImageUrl} />
+        <div className="flex items-center gap-3 px-4 py-3.5 mb-2 min-h-[44px]">
+          <Avatar className="h-10 w-10 md:h-9 md:w-9 border border-border shrink-0">
+            <AvatarImage src={user?.profileImageUrl ?? undefined} />
             <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">

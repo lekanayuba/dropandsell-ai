@@ -4,25 +4,31 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Shield, FileText, Database, CreditCard, CheckCircle2 } from "lucide-react";
 
 export default function AcceptPolicies() {
   const [, setLocation] = useLocation();
-  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [acceptedData, setAcceptedData] = useState(false);
-  const [acceptedDebit, setAcceptedDebit] = useState(false);
+  const [acceptedPolicies, setAcceptedPolicies] = useState({
+    privacy: false,
+    terms: false,
+    data: false,
+    debit: false,
+  });
 
-  const allAccepted = acceptedPrivacy && acceptedTerms && acceptedData && acceptedDebit;
+  const handleAcceptanceChange = (policy: keyof typeof acceptedPolicies, checked: boolean) => {
+    setAcceptedPolicies(prev => ({ ...prev, [policy]: checked }));
+  };
+  const allAccepted = Object.values(acceptedPolicies).every(Boolean);
 
   const acceptPolicies = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", "/api/user/accept-policies");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
       setLocation("/onboarding");
     }
   });
@@ -51,8 +57,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="privacy"
-                checked={acceptedPrivacy}
-                onCheckedChange={(checked) => setAcceptedPrivacy(checked === true)}
+                checked={acceptedPolicies.privacy}
+                onCheckedChange={(checked) => handleAcceptanceChange('privacy', !!checked)}
                 data-testid="checkbox-privacy"
               />
               <div className="flex-1">
@@ -78,8 +84,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="terms"
-                checked={acceptedTerms}
-                onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                checked={acceptedPolicies.terms}
+                onCheckedChange={(checked) => handleAcceptanceChange('terms', !!checked)}
                 data-testid="checkbox-terms"
               />
               <div className="flex-1">
@@ -105,8 +111,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="data"
-                checked={acceptedData}
-                onCheckedChange={(checked) => setAcceptedData(checked === true)}
+                checked={acceptedPolicies.data}
+                onCheckedChange={(checked) => handleAcceptanceChange('data', !!checked)}
                 data-testid="checkbox-data"
               />
               <div className="flex-1">
@@ -132,8 +138,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="debit"
-                checked={acceptedDebit}
-                onCheckedChange={(checked) => setAcceptedDebit(checked === true)}
+                checked={acceptedPolicies.debit}
+                onCheckedChange={(checked) => handleAcceptanceChange('debit', !!checked)}
                 data-testid="checkbox-debit"
               />
               <div className="flex-1">

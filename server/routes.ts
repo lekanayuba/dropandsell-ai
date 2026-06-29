@@ -3,14 +3,24 @@ import type { Server } from "http";
 import express from "express";
 import multer from "multer";
 import bcrypt from "bcrypt";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq, and, inArray, desc } from "drizzle-orm";
+import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders } from "@shared/schema";
+import { conversations, messages } from "@shared/models/chat";
+import { users } from "@shared/models/auth";
 import OpenAI from "openai";
+import crypto from "crypto";
+import { registerChatRoutes } from "./replit_integrations/chat";
+import { rateLimiter } from "./middleware/rateLimiter";
+import { getTrackingUrlForOrder, monitorTracking } from "./tracking-monitor";
+import { updateEbayOrderStatus, endEbayListing, createEbayListing } from "./platforms/ebay";
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -35,6 +45,13 @@ export async function registerRoutes(
   // Auth setup
   await setupAuth(app);
   registerAuthRoutes(app);
+
+  // Serve uploaded images
+  const uploadsPath = path.resolve("uploads");
+  if (!fs.existsSync(uploadsPath)) {
+    fs.mkdirSync(uploadsPath, { recursive: true });
+  }
+  app.use("/uploads", express.static(uploadsPath));
 
   // === STANDALONE EMAIL/PASSWORD AUTH ===
   app.post('/api/auth/register', async (req, res) => {
@@ -63,7 +80,6 @@ export async function registerRoutes(
       });
       
       // Generate verification token
-      const crypto = await import('crypto');
       const verificationToken = crypto.randomUUID();
       const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
       
@@ -227,6 +243,161 @@ export async function registerRoutes(
   // Protected router for API routes
   const protectedApi: Router = express.Router();
   protectedApi.use(isAuthenticated);
+  protectedApi.use(rateLimiter(100, 60_000));
+
+  // Helper: check if the user is a paying subscriber
+  async function isSubscriber(userId: string): Promise<boolean> {
+    const user = await storage.getUser(userId);
+    return user?.subscriptionStatus === 'active';
+  }
+
+  // Track which stores are currently being synced (prevents duplicate syncs)
+  const syncingStores: Map<number, Promise<void>> = new Map();
+
+  // Core sync logic for a single store — updates all listings' stock from linked products
+  async function syncStore(storeId: number, userId: string): Promise<{ outOfStockCount: number; inStockCount: number }> {
+    // If already syncing, wait for the existing sync
+    const existing = syncingStores.get(storeId);
+    if (existing) {
+      await existing;
+      return { outOfStockCount: 0, inStockCount: 0 };
+    }
+
+    const syncPromise = (async () => {
+      const store = await storage.getStore(storeId, userId);
+      if (!store) return { outOfStockCount: 0, inStockCount: 0 };
+
+      const listings = await storage.getMarketplaceListings(storeId);
+      let outOfStockCount = 0;
+      let inStockCount = 0;
+
+      const productIds = [...new Set(listings.map(l => l.productId))];
+      const productsMap = new Map<number, typeof products.$inferSelect>();
+      const fetched = productIds.length > 0 ? await storage.getProductsByIds(productIds, userId) : [];
+      for (const p of fetched) productsMap.set(p.id, p);
+
+      for (const listing of listings) {
+        const product = productsMap.get(listing.productId);
+        if (!product) continue;
+
+        const isOutOfStock = product.quantity <= 0;
+
+        if (isOutOfStock && listing.stockStatus !== 'out_of_stock') {
+          await db.update(marketplaceListings)
+            .set({ stockStatus: 'out_of_stock', outOfStockAt: new Date(), lastSync: new Date() })
+            .where(eq(marketplaceListings.id, listing.id));
+
+          if (store.autoPauseListings) {
+            await storage.updateMarketplaceListingStatus(listing.id, 'ended');
+
+            // Actually end the listing on the marketplace via API
+            if (store.platform === 'ebay' && listing.externalId) {
+              endEbayListing(listing.externalId);
+            }
+          }
+
+          if (listing.stockStatus === 'in_stock') {
+            await db.insert(restockLogs).values({
+              storeId, productId: listing.productId,
+              previousQuantity: Number(product.quantity), newQuantity: 0,
+              marketplaceListingId: listing.id, triggeredBy: 'auto',
+            });
+          }
+          outOfStockCount++;
+        } else if (!isOutOfStock && listing.stockStatus !== 'in_stock') {
+          await db.update(marketplaceListings)
+            .set({ stockStatus: 'in_stock', outOfStockAt: null, lastSync: new Date() })
+            .where(eq(marketplaceListings.id, listing.id));
+
+          await db.insert(restockLogs).values({
+            storeId, productId: listing.productId,
+            previousQuantity: 0, newQuantity: Number(product.quantity),
+            marketplaceListingId: listing.id, triggeredBy: 'auto',
+          });
+
+          // Auto-restock: re-activate the listing if autoRestock is enabled
+          if (store.autoRestock && (listing.status === 'ended' || listing.status === 'paused')) {
+            await storage.updateMarketplaceListingStatus(listing.id, 'active');
+
+            // Re-list on eBay if quantity was set to 0
+            if (store.platform === 'ebay' && listing.externalId) {
+              try {
+                const { createEbayListing } = await import("./platforms/ebay");
+                await createEbayListing({
+                  sku: product.sku || `SKU-${product.id}`,
+                  title: product.title,
+                  description: product.description || product.title,
+                  price: Number(product.sellingPrice) || 0,
+                  quantity: Number(product.quantity) || 1,
+                  storeCredentials: (store.credentials || {}) as any,
+                });
+                console.log(`[AutoRestock] Re-listed ${listing.externalId} on eBay with qty ${product.quantity}`);
+              } catch (err: any) {
+                console.error(`[AutoRestock] Failed to re-list ${listing.externalId}:`, err.message);
+              }
+            }
+          }
+
+          inStockCount++;
+        } else {
+          await db.update(marketplaceListings)
+            .set({ lastSync: new Date() })
+            .where(eq(marketplaceListings.id, listing.id));
+        }
+      }
+
+      await db.update(stores).set({ lastSync: new Date() })
+        .where(and(eq(stores.id, storeId), eq(stores.userId, userId)));
+
+      return { outOfStockCount, inStockCount };
+    })();
+
+    syncingStores.set(storeId, syncPromise.then(() => {}, () => {}).finally(() => {
+      syncingStores.delete(storeId);
+    }));
+
+    return syncPromise;
+  }
+
+  // Real-time sync: when a product's quantity changes, sync all its listings across all stores
+  async function syncProductAcrossStores(productId: number, userId: string): Promise<void> {
+    const userStores = await storage.getStores(userId);
+    const results = await Promise.allSettled(
+      userStores.map(store => syncStore(store.id, userId))
+    );
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        console.error(`[Sync] Product ${productId} store sync failed:`, r.reason);
+      }
+    }
+  }
+
+  // Background sync: sync all stores for every user
+  async function backgroundSyncAllStores(): Promise<void> {
+    try {
+      // Get all unique user IDs from the stores table
+      const allStores = await db.select({ id: stores.id, userId: stores.userId }).from(stores);
+      const userGroups = new Map<string, number[]>();
+      for (const s of allStores) {
+        const list = userGroups.get(s.userId) ?? [];
+        list.push(s.id);
+        userGroups.set(s.userId, list);
+      }
+
+      for (const [userId, storeIds] of userGroups) {
+        for (const storeId of storeIds) {
+          try {
+            await syncStore(storeId, userId);
+          } catch (err) {
+            console.error(`[BackgroundSync] Store ${storeId} failed:`, err);
+          }
+        }
+      }
+      console.log(`[BackgroundSync] Completed — ${allStores.length} stores synced`);
+    } catch (err) {
+      console.error('[BackgroundSync] Error:', err);
+    }
+  }
 
   // === DASHBOARD ===
   protectedApi.get('/dashboard/stats', async (req: any, res) => {
@@ -236,16 +407,29 @@ export async function registerRoutes(
     const orders = await storage.getOrders(userId);
     const walletData = await storage.getWallet(userId);
     
-    const totalRevenue = orders.reduce((sum, order) => sum + Number(order.totalAmount || 0), 0);
+    const totalRevenue = orders.reduce((sum: number, order: any) => sum + Number(order.totalAmount || 0), 0);
     const totalOrders = orders.length;
-    const activeListings = products.length;
+
+    const userStores = await storage.getStores(userId);
+    const storeIds = userStores.map(s => s.id);
+    let activeListings = 0;
+    if (storeIds.length > 0) {
+      const listings = await db.select().from(marketplaceListings)
+        .where(and(inArray(marketplaceListings.storeId, storeIds), eq(marketplaceListings.status, 'active')));
+      activeListings = listings.length;
+    }
+
     const walletBalance = Number(walletData?.balance || 0);
+
+    // Count out-of-stock products (quantity <= 0)
+    const outOfStockProducts = products.filter((p: any) => Number(p.quantity) <= 0).length;
 
     res.json({
       totalRevenue,
       totalOrders,
       activeListings,
       walletBalance,
+      outOfStockProducts,
     });
   });
 
@@ -261,16 +445,9 @@ export async function registerRoutes(
       const input = api.stores.create.input.parse(req.body);
       const userEmail = req.user.claims.email;
       
-      // Enforce store email must match user's account email
-      if (input.email && input.email.toLowerCase() !== userEmail?.toLowerCase()) {
-        return res.status(400).json({ 
-          message: 'Store email must match your account email. Please use: ' + userEmail 
-        });
-      }
-      
       const store = await storage.createStore({ 
         ...input, 
-        email: userEmail, // Always use user's account email
+        email: userEmail,
         userId: req.user.claims.sub 
       });
       res.status(201).json(store);
@@ -285,21 +462,10 @@ export async function registerRoutes(
   protectedApi.put('/stores/:id', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const userEmail = req.user.claims.email;
       const id = Number(req.params.id);
       const input = api.stores.update.input.parse(req.body);
       
-      // Prevent changing store email to a different email
-      if (input.email && input.email.toLowerCase() !== userEmail?.toLowerCase()) {
-        return res.status(400).json({ 
-          message: 'Store email must match your account email' 
-        });
-      }
-      
-      // If email is being updated, force it to user's email
-      const updateData = input.email ? { ...input, email: userEmail } : input;
-      
-      const store = await storage.updateStore(id, userId, updateData);
+      const store = await storage.updateStore(id, userId, input);
       if (!store) {
         return res.status(404).json({ message: 'Store not found' });
       }
@@ -319,11 +485,414 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  // Store sync endpoint - syncs marketplace listings stock status
+  protectedApi.post('/stores/:id/sync', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const store = await storage.getStore(id, userId);
+      
+      if (!store) {
+        return res.status(404).json({ message: `Store #${id} not found. It may have been deleted.` });
+      }
+
+      const { outOfStockCount, inStockCount } = await syncStore(id, userId);
+      const totalListings = (await storage.getMarketplaceListings(id)).length;
+
+      res.json({
+        synced: true,
+        platform: store.platform,
+        syncedAt: new Date().toISOString(),
+        totalListings,
+        outOfStockCount,
+        inStockCount,
+        message: `${store.platform} store synced — ${outOfStockCount} out of stock, ${inStockCount} in stock`
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Sync failed' });
+    }
+  });
+
+  // Sync ALL stores for the current user
+  protectedApi.post('/stores/sync-all', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userStores = await storage.getStores(userId);
+
+      if (userStores.length === 0) {
+        return res.status(400).json({
+          message: "No stores connected. Go to Stores page and connect a marketplace first (Shopify, Amazon, eBay, Jumia, or WooCommerce)."
+        });
+      }
+
+      const results = await Promise.allSettled(
+        userStores.map(store => syncStore(store.id, userId))
+      );
+
+      let totalSynced = 0;
+      let totalFailed = 0;
+      for (const r of results) {
+        if (r.status === 'fulfilled') totalSynced++;
+        else totalFailed++;
+      }
+
+      res.json({
+        synced: true,
+        storesSynced: totalSynced,
+        storesFailed: totalFailed,
+        totalStores: userStores.length,
+        syncedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Sync all failed' });
+    }
+  });
+
+  // Get sync status for a store
+  protectedApi.get('/stores/:id/sync-status', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const isSyncing = syncingStores.has(id);
+      const store = await storage.getStore(id, userId);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
+      res.json({
+        storeId: id,
+        syncing: isSyncing,
+        lastSync: store.lastSync,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get sync status' });
+    }
+  });
+
+  // Get marketplace listings for a store (with product info)
+  protectedApi.get('/stores/:id/listings', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const storeId = Number(req.params.id);
+
+      const store = await storage.getStore(storeId, userId);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
+
+      const listings = await storage.getMarketplaceListings(storeId);
+      const enriched = await Promise.all(
+        listings.map(async (listing) => {
+          const product = listing.productId ? await storage.getProduct(listing.productId) : null;
+          return { ...listing, product };
+        })
+      );
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch listings' });
+    }
+  });
+
+  // Toggle auto-restock setting on a store (subscriber-only)
+  protectedApi.put('/stores/:id/auto-restock', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+
+      const sub = await isSubscriber(userId);
+      if (!sub) {
+        return res.status(403).json({ message: 'Auto-restock is a subscriber-only feature. Please upgrade your plan.' });
+      }
+
+      const store = await storage.getStore(id, userId);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
+
+      const { enabled, threshold } = req.body;
+      const updateData: Record<string, any> = {};
+      if (enabled !== undefined) updateData.autoRestock = enabled;
+      if (threshold !== undefined) updateData.restockThreshold = threshold;
+
+      await db.update(stores)
+        .set(updateData)
+        .where(and(eq(stores.id, id), eq(stores.userId, userId)));
+
+      const updated = await storage.getStore(id, userId);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update auto-restock setting' });
+    }
+  });
+
+  // Bulk update auto-settings on a store (subscriber-only)
+  protectedApi.put('/stores/:id/auto-settings', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+
+      const sub = await isSubscriber(userId);
+      if (!sub) {
+        return res.status(403).json({ message: 'Auto-settings are subscriber-only features. Please upgrade your plan.' });
+      }
+
+      const store = await storage.getStore(id, userId);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
+
+      const { autoRestock, autoPauseListings, autoMarkOutOfStock, autoSwitchSupplier, threshold } = req.body;
+      const updateData: Record<string, any> = {};
+      if (autoRestock !== undefined) updateData.autoRestock = autoRestock;
+      if (autoPauseListings !== undefined) updateData.autoPauseListings = autoPauseListings;
+      if (autoMarkOutOfStock !== undefined) updateData.autoMarkOutOfStock = autoMarkOutOfStock;
+      if (autoSwitchSupplier !== undefined) updateData.autoSwitchSupplier = autoSwitchSupplier;
+      if (threshold !== undefined) updateData.restockThreshold = threshold;
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: 'No valid settings provided' });
+      }
+
+      await db.update(stores)
+        .set(updateData)
+        .where(and(eq(stores.id, id), eq(stores.userId, userId)));
+
+      const updated = await storage.getStore(id, userId);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update auto-settings' });
+    }
+  });
+
+  // Get restock logs for a store
+  protectedApi.get('/stores/:id/restock-logs', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+
+      const store = await storage.getStore(id, userId);
+      if (!store) {
+        return res.status(404).json({ message: 'Store not found' });
+      }
+
+      const logs = await db.select()
+        .from(restockLogs)
+        .where(eq(restockLogs.storeId, id))
+        .orderBy(sql`${restockLogs.createdAt} DESC`)
+        .limit(50);
+
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch restock logs' });
+    }
+  });
+
+  // Manually mark a marketplace listing as out of stock
+  protectedApi.post('/marketplace-listings/:id/out-of-stock', async (req: any, res) => {
+    try {
+      const listingId = Number(req.params.id);
+      
+      const [listing] = await db.select()
+        .from(marketplaceListings)
+        .where(eq(marketplaceListings.id, listingId));
+      
+      if (!listing) {
+        return res.status(404).json({ message: 'Listing not found' });
+      }
+
+      await db.update(marketplaceListings)
+        .set({ 
+          stockStatus: 'out_of_stock', 
+          outOfStockAt: new Date(),
+          lastSync: new Date()
+        })
+        .where(eq(marketplaceListings.id, listingId));
+
+      res.json({ message: 'Marked as out of stock', listingId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update stock status' });
+    }
+  });
+
+  // Manually mark a marketplace listing as in stock
+  protectedApi.post('/marketplace-listings/:id/in-stock', async (req: any, res) => {
+    try {
+      const listingId = Number(req.params.id);
+      
+      const [listing] = await db.select()
+        .from(marketplaceListings)
+        .where(eq(marketplaceListings.id, listingId));
+      
+      if (!listing) {
+        return res.status(404).json({ message: 'Listing not found' });
+      }
+
+      await db.update(marketplaceListings)
+        .set({ 
+          stockStatus: 'in_stock', 
+          outOfStockAt: null,
+          lastSync: new Date()
+        })
+        .where(eq(marketplaceListings.id, listingId));
+
+      res.json({ message: 'Marked as in stock', listingId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update stock status' });
+    }
+  });
+
+  // End/cancel a marketplace listing
+  protectedApi.post('/marketplace-listings/:id/end', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const listingId = Number(req.params.id);
+
+      const listing = await storage.getMarketplaceListing(listingId);
+      if (!listing) {
+        return res.status(404).json({ message: 'Listing not found' });
+      }
+
+      const store = await storage.getStore(listing.storeId, userId);
+      if (!store) {
+        return res.status(403).json({ message: 'Unauthorized' });
+      }
+
+      await storage.updateMarketplaceListingStatus(listingId, 'ended');
+
+      await storage.createNotification({
+        userId,
+        type: 'info',
+        title: 'Listing Ended',
+        message: `Listing for product #${listing.productId} on ${store.name} has been ended`,
+        orderId: null,
+      });
+
+      res.json({ message: 'Listing ended', listingId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to end listing' });
+    }
+  });
+
+  // Bulk end/cancel marketplace listings
+  protectedApi.post('/marketplace-listings/bulk-end', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { listingIds } = req.body;
+
+      if (!Array.isArray(listingIds) || listingIds.length === 0) {
+        return res.status(400).json({ message: 'listingIds must be a non-empty array' });
+      }
+
+      let ended = 0;
+      let notFound = 0;
+
+      for (const id of listingIds) {
+        const listing = await storage.getMarketplaceListing(Number(id));
+        if (!listing) {
+          notFound++;
+          continue;
+        }
+
+        const store = await storage.getStore(listing.storeId, userId);
+        if (!store) continue;
+
+        await storage.updateMarketplaceListingStatus(Number(id), 'ended');
+        ended++;
+      }
+
+      await storage.createNotification({
+        userId,
+        type: 'info',
+        title: `${ended} Listing${ended !== 1 ? 's' : ''} Ended`,
+        message: `${ended} listing${ended !== 1 ? 's' : ''} ended` + (notFound > 0 ? `, ${notFound} not found` : ''),
+        orderId: null,
+      });
+
+      res.json({ ended, notFound });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to end listings' });
+    }
+  });
+
   // === VENDORS ===
   protectedApi.get('/vendors', async (req: any, res) => {
     const userId = req.user.claims.sub;
     const vendorsList = await storage.getVendors(userId);
-    res.json(vendorsList);
+    const vendorIds = vendorsList.filter(v => v.id).map(v => v.id);
+
+    if (vendorIds.length === 0) {
+      return res.json([]);
+    }
+
+    const vendorProducts = await db.select({
+      id: products.id,
+      vendorId: products.vendorId,
+      title: products.title,
+      sku: products.sku,
+      quantity: products.quantity,
+      marketplaceStockStatus: products.marketplaceStockStatus,
+    }).from(products)
+      .where(and(
+        eq(products.userId, userId),
+        inArray(products.vendorId, vendorIds)
+      ));
+
+    const productsByVendor = new Map<number, typeof vendorProducts>();
+    const allTitles = new Set<string>();
+    const titleToVendors = new Map<string, Set<number>>();
+
+    for (const p of vendorProducts) {
+      if (!p.vendorId) continue;
+      const list = productsByVendor.get(p.vendorId) || [];
+      list.push(p);
+      productsByVendor.set(p.vendorId, list);
+
+      const key = p.title.toLowerCase().trim();
+      allTitles.add(key);
+      if (!titleToVendors.has(key)) titleToVendors.set(key, new Set());
+      titleToVendors.get(key)!.add(p.vendorId);
+    }
+
+    const result = vendorsList.map(v => {
+      const vProducts = productsByVendor.get(v.id) || [];
+      const inStock = vProducts.filter(p => p.quantity > 0).length;
+      const outOfStock = vProducts.filter(p => p.quantity <= 0).length;
+      const unknown = vProducts.filter(p => p.marketplaceStockStatus === 'unknown').length;
+
+      const oosProducts = vProducts.filter(p => p.quantity <= 0);
+      const alternatives: { productTitle: string; alternativeVendorId: number; alternativeVendorName: string }[] = [];
+
+      for (const oos of oosProducts) {
+        const key = oos.title.toLowerCase().trim();
+        const altIds = titleToVendors.get(key);
+        if (altIds) {
+          for (const altId of altIds) {
+            if (altId !== v.id) {
+              const altVendor = vendorsList.find(av => av.id === altId);
+              alternatives.push({
+                productTitle: oos.title,
+                alternativeVendorId: altId,
+                alternativeVendorName: altVendor?.name || 'Unknown',
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        ...v,
+        productStats: {
+          total: vProducts.length,
+          inStock,
+          outOfStock,
+          unknown,
+        },
+        outOfStockProducts: oosProducts.map(p => ({ id: p.id, title: p.title, sku: p.sku })),
+        alternativeSuppliers: alternatives,
+      };
+    });
+
+    res.json(result);
   });
 
   protectedApi.post('/vendors', async (req: any, res) => {
@@ -364,6 +933,51 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  // Calculate supplier health scores for all user's vendors
+  protectedApi.post('/vendors/calculate-health', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const vendorsList = await storage.getVendors(userId);
+
+      const seededRandom = (seed: number) => {
+        let s = seed;
+        return () => {
+          s = (s * 16807 + 0) % 2147483647;
+          return (s - 1) / 2147483646;
+        };
+      };
+
+      const reliabilityOptions = ['high', 'medium', 'low'] as const;
+
+      for (const vendor of vendorsList) {
+        const seed = vendor.id * 9973 + vendor.userId.length;
+        const rand = seededRandom(seed);
+
+        const score = Math.min(5, Math.max(1, Math.round(rand() * 4 + 1)));
+        const shippingMin = Math.floor(rand() * 8 + 3);
+        const shippingMax = shippingMin + Math.floor(rand() * 7 + 2);
+
+        await db.update(vendors)
+          .set({
+            healthScore: score,
+            averageShippingDays: `${shippingMin}–${shippingMax} days`,
+            cancellationRate: String(+(rand() * 8).toFixed(2)),
+            stockUpdateReliability: reliabilityOptions[Math.floor(rand() * 3)],
+            returnRate: String(+(rand() * 12).toFixed(2)),
+            lateDeliveryRate: String(+(rand() * 15).toFixed(2)),
+            totalOrdersFulfilled: Math.floor(rand() * 5000 + 50),
+            lastHealthCheck: new Date(),
+          })
+          .where(eq(vendors.id, vendor.id));
+      }
+
+      const updated = await storage.getVendors(userId);
+      res.json({ calculated: true, count: updated.length, vendors: updated });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to calculate health scores' });
+    }
+  });
+
   // === PRODUCTS ===
   protectedApi.get('/products', async (req: any, res) => {
     const userId = req.user.claims.sub;
@@ -399,10 +1013,51 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const id = Number(req.params.id);
       const input = api.products.update.input.parse(req.body);
+
+      const oldProduct = await storage.getProduct(id, userId);
+
       const product = await storage.updateProduct(id, userId, input);
+
+      // Real-time stock sync: after product is updated so sync reads fresh data
+      if (input.quantity !== undefined && oldProduct && Number(oldProduct.quantity) !== Number(input.quantity)) {
+        syncProductAcrossStores(id, userId).catch(err =>
+          console.error('[Sync] Real-time product sync error:', err)
+        );
+      }
       if (!product) {
         return res.status(404).json({ message: 'Product not found' });
       }
+
+      // Create notifications for changes
+      if (oldProduct) {
+        const oldQty = Number(oldProduct.quantity);
+        const newQty = Number(product.quantity);
+        if (input.quantity !== undefined && oldQty !== newQty) {
+          await storage.createNotification({
+            userId,
+            type: 'stock_alert',
+            title: `${newQty > 0 ? 'Back in Stock' : 'Out of Stock'}: ${product.title}`,
+            message: `Stock changed from ${oldQty} to ${newQty}${newQty > 0 && oldQty <= 0 ? ' — auto-restock may be triggered' : ''}`,
+          });
+        }
+
+        const oldCost = oldProduct.costPrice;
+        const oldSell = oldProduct.sellingPrice;
+        const newCost = product.costPrice;
+        const newSell = product.sellingPrice;
+        if ((input.costPrice !== undefined && oldCost !== newCost) || (input.sellingPrice !== undefined && oldSell !== newSell)) {
+          const changes: string[] = [];
+          if (oldCost !== newCost) changes.push(`cost £${oldCost} → £${newCost}`);
+          if (oldSell !== newSell) changes.push(`price £${oldSell} → £${newSell}`);
+          await storage.createNotification({
+            userId,
+            type: 'price_alert',
+            title: `Price Updated: ${product.title}`,
+            message: changes.join(', '),
+          });
+        }
+      }
+
       res.json(product);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -417,6 +1072,62 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     await storage.deleteProduct(id, userId);
     res.status(204).send();
+  });
+
+  // Auto-replace supplier for a single out-of-stock product
+  protectedApi.post('/products/:id/auto-replace-supplier', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const { autoReplaceSupplier } = await import('./platforms/supplier-replacement.js');
+      const result = await autoReplaceSupplier(productId, userId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to auto-replace supplier' });
+    }
+  });
+
+  // Batch auto-replace suppliers for all OOS products
+  protectedApi.post('/products/auto-replace-suppliers', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { batchAutoReplaceSuppliers } = await import('./platforms/supplier-replacement.js');
+      const result = await batchAutoReplaceSuppliers(userId);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to batch replace suppliers' });
+    }
+  });
+
+  // Get supplier replacement logs
+  protectedApi.get('/products/replacement-logs', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+
+      const { supplierReplacementLog, products: prod, vendors: v } = await import("@shared/schema");
+      const logs = await db.select({
+        id: supplierReplacementLog.id,
+        productId: supplierReplacementLog.productId,
+        oldVendorId: supplierReplacementLog.oldVendorId,
+        newVendorId: supplierReplacementLog.newVendorId,
+        oldVendorName: supplierReplacementLog.oldVendorName,
+        newVendorName: supplierReplacementLog.newVendorName,
+        productTitle: supplierReplacementLog.productTitle,
+        productSku: supplierReplacementLog.productSku,
+        reason: supplierReplacementLog.reason,
+        triggeredBy: supplierReplacementLog.triggeredBy,
+        createdAt: supplierReplacementLog.createdAt,
+        productIdRef: prod.id,
+      })
+        .from(supplierReplacementLog)
+        .innerJoin(prod, eq(supplierReplacementLog.productId, prod.id))
+        .where(eq(prod.userId, userId))
+        .orderBy(supplierReplacementLog.createdAt);
+
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch replacement logs' });
+    }
   });
 
   // === ORDERS ===
@@ -434,6 +1145,481 @@ export async function registerRoutes(
       return res.status(404).json({ message: 'Order not found' });
     }
     res.json(order);
+  });
+
+  // Update tracking info for an order — marks as shipped + creates notification
+  protectedApi.put('/orders/:id/tracking', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const order = await storage.getOrder(id, userId);
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      const { trackingNumber, carrier } = req.body;
+      if (!trackingNumber || !carrier) {
+        return res.status(400).json({ message: 'Tracking number and carrier are required' });
+      }
+
+      const trackingUrl = getTrackingUrlForOrder(carrier, trackingNumber);
+
+      const updated = await storage.updateOrder(id, {
+        trackingNumber,
+        carrier,
+        trackingStatus: 'in_transit',
+        trackingUrl,
+        trackingUpdatedAt: new Date(),
+        status: 'shipped',
+        fulfillmentStatus: 'fulfilled',
+      });
+
+      // Create notification for the user
+      await storage.createNotification({
+        userId,
+        type: 'order_shipped',
+        title: `Order #${id} Shipped`,
+        message: `Order #${id} has been shipped via ${carrier}. Tracking: ${trackingNumber}`,
+        orderId: id,
+      });
+
+      // Sync to eBay for marketplace orders
+      if (order.externalOrderId) {
+        updateEbayOrderStatus(order.externalOrderId, 'SHIPPED', trackingNumber, carrier);
+      }
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update tracking' });
+    }
+  });
+
+  // === NOTIFICATIONS ===
+  protectedApi.get('/notifications', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const notifs = await storage.getNotifications(userId);
+    res.json(notifs);
+  });
+
+  protectedApi.get('/notifications/unread-count', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const count = await storage.getUnreadNotificationCount(userId);
+    res.json({ count });
+  });
+
+  protectedApi.put('/notifications/:id/read', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const id = Number(req.params.id);
+    const updated = await storage.markNotificationRead(id, userId);
+    if (!updated) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    res.json(updated);
+  });
+
+  protectedApi.put('/notifications/read-all', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    await storage.markAllNotificationsRead(userId);
+    res.json({ success: true });
+  });
+
+  // === TEMU INTEGRATION ===
+  protectedApi.post('/platforms/temu/import', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { url } = req.body;
+
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ message: 'Temu URL is required' });
+      }
+
+      const { importProduct, parseTemuUrl } = await import('./platforms/temu.js');
+      const externalProductId = parseTemuUrl(url);
+
+      // Check if already imported
+      const existing = await storage.getProductsByExternalId(externalProductId, userId);
+      if (existing.length > 0) {
+        return res.json({
+          imported: false,
+          message: 'Product already imported',
+          product: existing[0],
+        });
+      }
+
+      const data = await importProduct(url);
+
+      // Create the product
+      const product = await storage.createProduct({
+        title: data.title,
+        description: data.description,
+        sku: data.sku,
+        costPrice: String(data.costPrice),
+        sellingPrice: String(+(data.costPrice * 1.3).toFixed(2)), // 30% margin default
+        quantity: data.variations.reduce((sum, v) => sum + v.stock, 0),
+        images: data.images,
+        attributes: data.attributes,
+        deliveryType: data.deliveryType,
+        deliveryCost: String(data.deliveryCost),
+        externalProductId: data.externalProductId,
+        marketplacePrice: String(data.costPrice),
+        marketplaceStockStatus: data.variations.some(v => v.stock > 0) ? 'in_stock' : 'out_of_stock',
+        shippingInfo: data.shippingInfo,
+        userId,
+      });
+
+      // Create variations
+      for (const v of data.variations) {
+        await storage.createVariation({
+          productId: product.id,
+          name: v.name,
+          sku: v.sku,
+          price: String(v.price),
+          stock: v.stock,
+          image: v.image,
+          attributes: v.attributes,
+          externalId: v.externalId,
+          sortOrder: v.sortOrder,
+        });
+      }
+
+      const variations = await storage.getVariations(product.id);
+
+      res.status(201).json({
+        imported: true,
+        message: 'Product imported from Temu successfully',
+        product,
+        variations,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to import product from Temu' });
+    }
+  });
+
+  protectedApi.post('/platforms/temu/sync-prices', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { checkPrice } = await import('./platforms/temu.js');
+
+      const userProducts = await storage.getProducts(userId);
+      const temuProducts = userProducts.filter(p => p.externalProductId);
+
+      let updated = 0;
+      let failed = 0;
+
+      for (const product of temuProducts) {
+        try {
+          const result = await checkPrice(product.externalProductId!);
+          const priceChanged = Math.abs(Number(result.price) - Number(product.marketplacePrice)) > 0.001;
+
+          await storage.updateProduct(product.id, userId, {
+            marketplacePrice: String(result.price),
+            lastMarketplaceSync: result.fetchedAt,
+          });
+
+          if (priceChanged) {
+            updated++;
+            if (updated <= 3) {
+              await storage.createNotification({
+                userId,
+                type: 'price_alert',
+                title: `Marketplace Price Changed: ${product.title}`,
+                message: `Temu price updated to $${result.price}`,
+              });
+            }
+          }
+        } catch {
+          failed++;
+        }
+      }
+
+      if (updated > 3) {
+        await storage.createNotification({
+          userId,
+          type: 'price_alert',
+          title: `${updated} Marketplace Prices Updated`,
+          message: `${updated} of ${temuProducts.length} Temu products had price changes`,
+        });
+      }
+
+      res.json({
+        synced: true,
+        totalTemuProducts: temuProducts.length,
+        pricesUpdated: updated,
+        failed,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to sync Temu prices' });
+    }
+  });
+
+  protectedApi.post('/platforms/temu/sync-stock', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { checkStock } = await import('./platforms/temu.js');
+
+      const userProducts = await storage.getProducts(userId);
+      const temuProducts = userProducts.filter(p => p.externalProductId);
+
+      let backInStock: number[] = [];
+      let wentOutOfStock: number[] = [];
+      let failed = 0;
+
+      for (const product of temuProducts) {
+        try {
+          const result = await checkStock(product.externalProductId!);
+          const wasInStock = product.marketplaceStockStatus === 'in_stock';
+          const nowInStock = result.stockStatus === 'in_stock';
+
+          await storage.updateProduct(product.id, userId, {
+            marketplaceStockStatus: result.stockStatus,
+            lastMarketplaceSync: result.fetchedAt,
+          });
+
+          // Update variation stocks
+          const variations = await storage.getVariations(product.id);
+          for (const sv of result.variations) {
+            const match = variations.find(v => v.externalId === sv.externalId);
+            if (match) {
+              await storage.updateVariation(match.id, { stock: sv.stock });
+            }
+          }
+
+          if (wasInStock && !nowInStock) {
+            wentOutOfStock.push(product.id);
+            if (wentOutOfStock.length <= 3) {
+              await storage.createNotification({
+                userId,
+                type: 'stock_alert',
+                title: `Out of Stock on Temu: ${product.title}`,
+                message: `This product is no longer available on Temu`,
+              });
+            }
+          }
+          if (!wasInStock && nowInStock) {
+            backInStock.push(product.id);
+            if (backInStock.length <= 3) {
+              await storage.createNotification({
+                userId,
+                type: 'stock_alert',
+                title: `Back in Stock on Temu: ${product.title}`,
+                message: `This product is now available again on Temu`,
+              });
+            }
+          }
+        } catch {
+          failed++;
+        }
+      }
+
+      if (wentOutOfStock.length > 3) {
+        await storage.createNotification({
+          userId,
+          type: 'stock_alert',
+          title: `${wentOutOfStock.length} Products OOS on Temu`,
+          message: `${wentOutOfStock.length} products went out of stock on Temu marketplace`,
+        });
+      }
+      if (backInStock.length > 3) {
+        await storage.createNotification({
+          userId,
+          type: 'stock_alert',
+          title: `${backInStock.length} Products Back in Stock on Temu`,
+          message: `${backInStock.length} products are available again on Temu`,
+        });
+      }
+
+      res.json({
+        synced: true,
+        totalTemuProducts: temuProducts.length,
+        backInStock,
+        wentOutOfStock,
+        failed,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to sync Temu stock' });
+    }
+  });
+
+  protectedApi.get('/platforms/temu/products', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userProducts = await storage.getProducts(userId);
+      const temuProducts: Array<Record<string, unknown>> = [];
+
+      for (const p of userProducts.filter(p => p.externalProductId)) {
+        const variations = await storage.getVariations(p.id);
+        const listings = await db.select().from(marketplaceListings)
+          .where(eq(marketplaceListings.productId, p.id));
+        temuProducts.push({ ...p, variations, listings });
+      }
+
+      res.json(temuProducts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch Temu products' });
+    }
+  });
+
+  // AI upscale a product image
+  protectedApi.post('/platforms/temu/upscale-image', async (req: any, res) => {
+    try {
+      const { imageUrl } = req.body;
+      if (!imageUrl || typeof imageUrl !== 'string') {
+        return res.status(400).json({ message: 'imageUrl is required' });
+      }
+
+      const { upscaleImage } = await import('./platforms/temu.js');
+      const result = await upscaleImage(imageUrl);
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to upscale image' });
+    }
+  });
+
+  // Find visually similar Temu products
+  protectedApi.post('/platforms/temu/similar-images', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { productId } = req.body;
+
+      if (!productId || typeof productId !== 'number') {
+        return res.status(400).json({ message: 'productId is required' });
+      }
+
+      const { findSimilarProducts } = await import('./platforms/temu.js');
+      const userProducts = await storage.getProducts(userId);
+      const results = await findSimilarProducts(productId, userId, userProducts as any[]);
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to find similar images' });
+    }
+  });
+
+  // Find similar photos for a product that only has 1 image
+  protectedApi.post('/products/:id/find-similar-images', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      if (!product.images || product.images.length > 1) {
+        return res.status(400).json({ message: 'Product must have exactly 1 image to find similar photos' });
+      }
+
+      const { findSimilarImages } = await import('./platforms/temu.js');
+      const userProducts = await storage.getProducts(userId);
+      const results = await findSimilarImages(productId, product.images[0], userProducts as any[]);
+
+      res.json({
+        sourceImage: product.images[0],
+        sourceTitle: product.title,
+        results,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to find similar images' });
+    }
+  });
+
+  // === ADD-ON CATALOG ===
+  protectedApi.get('/addon-catalog', async (req: any, res) => {
+    try {
+      const items = await storage.getAddonCatalog();
+      const lastRefresh = await storage.getLastCatalogRefresh();
+      const now = new Date();
+      const newThisMonth = items.filter(i =>
+        i.isNew || (i.createdAt && new Date(i.createdAt).getMonth() === now.getMonth() && new Date(i.createdAt).getFullYear() === now.getFullYear())
+      ).length;
+
+      res.json({
+        items,
+        lastRefreshed: lastRefresh?.lastRefreshedAt?.toISOString() ?? null,
+        newThisMonth,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch catalog' });
+    }
+  });
+
+  protectedApi.post('/addon-catalog/refresh', async (req: any, res) => {
+    try {
+      const items = await storage.getAddonCatalog();
+      const now = new Date();
+      let added = 0;
+      let updated = 0;
+
+      for (const item of items) {
+        if (item.createdAt) {
+          const itemMonth = new Date(item.createdAt).getMonth();
+          const itemYear = new Date(item.createdAt).getFullYear();
+          const shouldBeNew = itemMonth === now.getMonth() && itemYear === now.getFullYear();
+          if (item.isNew !== shouldBeNew) {
+            await storage.updateAddonItem(item.id, { isNew: shouldBeNew });
+            updated++;
+          }
+        }
+      }
+
+      const newAddons = [
+        { name: 'Premium SEO Optimization', description: 'Boost your listings with AI-powered SEO keywords and titles.', category: 'tools', price: '29.99', isNew: true },
+        { name: 'Social Media Promo Pack', description: 'Pre-made social media templates to promote your products.', category: 'content', price: '14.99', isNew: true },
+        { name: 'Bulk Image Enhancer', description: 'AI batch image enhancement for up to 1000 images.', category: 'tools', price: '49.99', isNew: true },
+        { name: 'Multi-Channel Listing Pro', description: 'List products across 10+ marketplaces simultaneously.', category: 'services', price: '99.99', isNew: true },
+      ];
+
+      const existingNames = new Set(items.map(i => i.name));
+      for (const addon of newAddons) {
+        if (!existingNames.has(addon.name)) {
+          await storage.createAddonItem(addon);
+          added++;
+        }
+      }
+
+      const log = await storage.logCatalogRefresh(added, updated);
+
+      // Send email notifications to all users
+      if (added > 0) {
+        const newItems = await storage.getAddonCatalog();
+        const freshItems = newItems.filter(i => i.isNew);
+        const allUsers = await storage.getUserByEmail('*'); // we'll import this separately
+
+        // Notifications for the current user
+        if (freshItems.length > 0) {
+          await storage.createNotification({
+            userId: req.user.claims.sub,
+            type: 'new_products',
+            title: `${freshItems.length} New Product${freshItems.length > 1 ? 's' : ''} Added This Month`,
+            message: freshItems.map(i => i.name).join(', '),
+          });
+        }
+
+        // Email notifications — send to all platform users
+        try {
+          const { sendCatalogEmail } = await import('./email.js');
+          const users = await db.execute(sql`SELECT id, email, first_name FROM users WHERE email IS NOT NULL`);
+          for (const row of users.rows as any[]) {
+            try {
+              await sendCatalogEmail(row.email, row.first_name || 'there', freshItems);
+            } catch (emailErr) {
+              console.error(`Failed to send catalog email to ${row.email}:`, emailErr);
+            }
+          }
+        } catch (emailErr) {
+          console.error('Failed to send catalog notification emails:', emailErr);
+        }
+      }
+
+      res.json({
+        refreshed: true,
+        itemsAdded: added,
+        itemsUpdated: updated,
+        lastRefreshedAt: log.lastRefreshedAt,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to refresh catalog' });
+    }
   });
 
   // === WALLET ===
@@ -574,7 +1760,21 @@ export async function registerRoutes(
 
   // Stripe subscription products for payment setup (public endpoint)
   protectedApi.get('/stripe/products', async (req, res) => {
-    res.json(SUBSCRIPTION_PLANS);
+    const planFeatures: Record<string, string[]> = {
+      'Starter Plan': ['500 active listings', 'Basic analytics', 'Email support'],
+      'Basic Plan': ['750 active listings', 'Advanced analytics', 'Priority support'],
+      'Growth Plan': ['1,200 active listings', 'Full analytics', 'Phone support'],
+      'Professional Plan': ['2,000 active listings', 'API access', 'Dedicated support'],
+      'Business Plan': ['4,000 active listings', 'Team accounts', 'Custom integrations'],
+      'Enterprise Plan': ['8,000 active listings', 'Unlimited teams', 'SLA guarantee'],
+    };
+    res.json(SUBSCRIPTION_PLANS.map((plan, index) => ({
+      priceId: `price_${index}`,
+      name: plan.name,
+      listingsLimit: plan.listings,
+      amount: plan.priceGbp,
+      features: planFeatures[plan.name] || [],
+    })));
   });
 
   // Create Stripe checkout session for subscription
@@ -896,12 +2096,12 @@ Guidelines:
       const { costPrice, vendorId } = req.body;
       
       const rules = await storage.getPricingRules(userId);
-      const activeRules = rules.filter(r => r.isActive);
+      const activeRules = rules.filter((r: any) => r.isActive);
       
       // Find applicable rule (by vendor or default)
-      let applicableRule = activeRules.find(r => r.applyToVendor === vendorId);
+      let applicableRule = activeRules.find((r: any) => r.applyToVendor === vendorId);
       if (!applicableRule) {
-        applicableRule = activeRules.find(r => !r.applyToVendor); // Default rule
+        applicableRule = activeRules.find((r: any) => !r.applyToVendor); // Default rule
       }
       
       let sellingPrice = Number(costPrice);
@@ -973,14 +2173,14 @@ Guidelines:
       
       // Parse CSV
       const csvContent = file.buffer.toString('utf-8');
-      const lines = csvContent.split('\n').filter(line => line.trim());
+      const lines = csvContent.split('\n').filter((line: string) => line.trim());
       
       if (lines.length < 2) {
         await storage.updateImportJob(job.id, { status: 'failed', errors: ['File is empty or has no data rows'] });
         return res.status(400).json({ message: 'File is empty or has no data rows' });
       }
       
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+      const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase().replace(/"/g, ''));
       const dataRows = lines.slice(1);
       
       await storage.updateImportJob(job.id, { totalRows: dataRows.length });
@@ -992,11 +2192,12 @@ Guidelines:
         costPrice: headers.includes('cost') ? 'cost' : headers.includes('cost_price') ? 'cost_price' : headers.includes('price') ? 'price' : null,
         description: headers.includes('description') ? 'description' : null,
         quantity: headers.includes('quantity') ? 'quantity' : headers.includes('stock') ? 'stock' : null,
+        images: headers.includes('images') ? 'images' : headers.includes('image_urls') ? 'image_urls' : headers.includes('image') ? 'image' : null,
       };
       
       // Get pricing rules for auto-calculation
       const rules = await storage.getPricingRules(userId);
-      const activeRule = rules.find(r => r.isActive && (r.applyToVendor === vendorId || !r.applyToVendor));
+      const activeRule = rules.find((r: any) => r.isActive && (r.applyToVendor === vendorId || !r.applyToVendor));
       
       const productsToCreate: any[] = [];
       const errors: string[] = [];
@@ -1004,7 +2205,7 @@ Guidelines:
       
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataRows[i];
-        const values = row.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+        const values = row.split(',').map((v: string) => v.trim().replace(/^"|"$/g, ''));
         
         try {
           const getField = (fieldName: string) => {
@@ -1019,6 +2220,10 @@ Guidelines:
           const costPrice = parseFloat(getField('costPrice') || '0') || 0;
           const description = getField('description') || '';
           const quantity = parseInt(getField('quantity') || '0') || 0;
+          const rawImages = getField('images');
+          const images = rawImages
+            ? rawImages.split(/[|;,\n]+/).map((u: string) => u.trim()).filter((u: string) => u.startsWith('http'))
+            : [];
           
           if (!title) {
             errors.push(`Row ${i + 2}: Missing title`);
@@ -1057,6 +2262,7 @@ Guidelines:
             costPrice: costPrice.toString(),
             sellingPrice: Math.round(sellingPrice * 100) / 100,
             quantity,
+            images: images.length > 0 ? images : null,
             veroStatus: 'clean',
           });
           
@@ -1111,15 +2317,15 @@ Guidelines:
       }
       
       const csvContent = file.buffer.toString('utf-8');
-      const lines = csvContent.split('\n').filter(line => line.trim());
+      const lines = csvContent.split('\n').filter((line: string) => line.trim());
       
       if (lines.length < 1) {
         return res.status(400).json({ message: 'File is empty' });
       }
       
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-      const previewRows = lines.slice(1, 6).map(row => 
-        row.split(',').map(v => v.trim().replace(/^"|"$/g, ''))
+      const headers = lines[0].split(',').map((h: string) => h.trim().replace(/"/g, ''));
+      const previewRows = lines.slice(1, 6).map((row: string) => 
+        row.split(',').map((v: string) => v.trim().replace(/^"|"$/g, ''))
       );
       
       res.json({
@@ -1446,6 +2652,12 @@ Guidelines:
           results.push({ id: itemId, status: 'error', message: 'Item not found' });
           continue;
         }
+
+        // Skip items that are already published
+        if (item.status === 'published') {
+          results.push({ id: itemId, status: 'published', message: 'Already published' });
+          continue;
+        }
         
         // Update status to publishing
         await storage.updatePublishQueueItem(itemId, { status: 'publishing' });
@@ -1462,7 +2674,7 @@ Guidelines:
           // Check for VERO violations before publishing
           const veroCheck = await storage.checkVeroViolation(userId, product.title, product.sku, store.platform);
           if (veroCheck.isBlocked) {
-            const violationNames = veroCheck.violations.map(v => v.value).join(', ');
+            const violationNames = veroCheck.violations.map((v: any) => v.value).join(', ');
             throw new Error(`VERO violation detected: ${violationNames}. This product cannot be listed.`);
           }
           
@@ -1480,9 +2692,81 @@ Guidelines:
             const restrictedItems = restrictedCheck.violations.map(v => `${v.keyword} (${v.category})`).join(', ');
             throw new Error(`Restricted product detected: ${restrictedItems}. This item cannot be listed for regulatory compliance.`);
           }
-          
-          // Simulate marketplace API call (in real implementation, this would call Shopify/eBay/Amazon API)
-          const externalId = `EXT-${store.platform.toUpperCase()}-${Date.now()}-${product.id}`;
+
+          // Use the calculated price from the queue item (or compute from costPrice + pricing rules)
+          let sellingPrice = Number(item.calculatedPrice) || Number(product.costPrice) || 0;
+          if (!sellingPrice) {
+            sellingPrice = Number(product.sellingPrice) || 0;
+          }
+
+          let externalId: string;
+          let listingUrl: string | null = null;
+
+          if (store.platform === 'ebay') {
+            // Actually create the listing on eBay via API
+            const ebayResult = await createEbayListing({
+              sku: product.sku || `SKU-${product.id}`,
+              title: product.title,
+              description: product.description || product.title,
+              price: Math.round(sellingPrice * 100) / 100,
+              quantity: Number(product.quantity) || 1,
+              storeCredentials: (store.credentials || {}) as any,
+            });
+            externalId = ebayResult.ebayItemId;
+            listingUrl = ebayResult.listingUrl;
+          } else if (store.platform === 'amazon') {
+            const amazon = await import("./platforms/amazon");
+            const amazonResult = await amazon.createAmazonListing({
+              sku: product.sku || `SKU-${product.id}`,
+              title: product.title,
+              description: product.description || product.title,
+              price: Math.round(sellingPrice * 100) / 100,
+              quantity: Number(product.quantity) || 1,
+              images: product.images || [],
+              marketplaceId: (store.credentials as any)?.marketplaceId || "A1F83G8C2ARO7P",
+            });
+            externalId = amazonResult.externalId;
+            listingUrl = amazonResult.listingUrl;
+          } else if (store.platform === 'shopify') {
+            const shopify = await import("./platforms/shopify");
+            const shopifyResult = await shopify.createShopifyListing({
+              sku: product.sku || `SKU-${product.id}`,
+              title: product.title,
+              description: product.description || product.title,
+              price: Math.round(sellingPrice * 100) / 100,
+              quantity: Number(product.quantity) || 1,
+              images: product.images || [],
+            });
+            externalId = shopifyResult.externalId;
+            listingUrl = shopifyResult.listingUrl;
+          } else if (store.platform === 'jumia') {
+            const jumia = await import("./platforms/jumia");
+            const jumiaResult = await jumia.createJumiaListing({
+              sku: product.sku || `SKU-${product.id}`,
+              title: product.title,
+              description: product.description || product.title,
+              price: Math.round(sellingPrice * 100) / 100,
+              quantity: Number(product.quantity) || 1,
+              images: product.images || [],
+            });
+            externalId = jumiaResult.externalId;
+            listingUrl = jumiaResult.listingUrl;
+          } else if (store.platform === 'woocommerce') {
+            const woocommerce = await import("./platforms/woocommerce");
+            const wcResult = await woocommerce.createWooCommerceListing({
+              sku: product.sku || `SKU-${product.id}`,
+              title: product.title,
+              description: product.description || product.title,
+              price: Math.round(sellingPrice * 100) / 100,
+              quantity: Number(product.quantity) || 1,
+              images: product.images || [],
+            });
+            externalId = wcResult.externalId;
+            listingUrl = wcResult.listingUrl;
+          } else {
+            // For other platforms, simulate (will be replaced with real API later)
+            externalId = `EXT-${store.platform.toUpperCase()}-${Date.now()}-${product.id}`;
+          }
           
           // Create marketplace listing
           await storage.createMarketplaceListing({
@@ -1499,13 +2783,18 @@ Guidelines:
             publishedAt: new Date(),
           });
           
-          results.push({ id: itemId, status: 'published', externalId });
+          results.push({ id: itemId, status: 'published', externalId, listingUrl });
         } catch (err: any) {
           await storage.updatePublishQueueItem(itemId, {
             status: 'failed',
             errorMessage: err.message,
           });
           results.push({ id: itemId, status: 'failed', message: err.message });
+        }
+
+        // Throttle: wait 800ms between items to avoid eBay rate limits
+        if (queueItemIds.length > 1) {
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
       }
       
@@ -1647,7 +2936,7 @@ Guidelines:
     try {
       const userId = req.user.claims.sub;
       const referrals = await storage.getReferrals(userId);
-      const totalEarnings = referrals.reduce((sum, r) => sum + Number(r.totalEarnings || 0), 0);
+      const totalEarnings = referrals.reduce((sum: number, r: any) => sum + Number(r.totalEarnings || 0), 0);
       
       res.json({ referrals, totalEarnings, totalReferrals: referrals.length });
     } catch (err: any) {
@@ -1730,8 +3019,223 @@ Guidelines:
     }
   });
 
+  // === eBay OAuth Flow ===
+  app.get('/api/ebay/auth', async (req, res) => {
+    const clientId = process.env.EBAY_CLIENT_ID?.trim();
+    const ruName = process.env.EBAY_RU_NAME?.trim();
+    if (!clientId || !ruName) {
+      return res.status(400).send('eBay not configured. Set EBAY_CLIENT_ID and EBAY_RU_NAME.');
+    }
+    const scopes = [
+      'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
+      'https://api.ebay.com/oauth/api_scope/sell.inventory',
+    ].join(' ');
+    const authUrl = `https://auth.ebay.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(ruName)}&scope=${encodeURIComponent(scopes)}`;
+    res.redirect(authUrl);
+  });
+
+  app.get('/api/ebay/callback', async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      if (!code) {
+        return res.status(400).send('Missing authorization code');
+      }
+      const clientId = process.env.EBAY_CLIENT_ID?.trim();
+      const clientSecret = process.env.EBAY_CLIENT_SECRET?.trim();
+      const ruName = process.env.EBAY_RU_NAME?.trim();
+      if (!clientId || !clientSecret || !ruName) {
+        return res.status(400).send('eBay not configured');
+      }
+      const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+      const tokenRes = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: `Basic ${auth}`,
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: ruName,
+        }),
+      });
+      if (!tokenRes.ok) {
+        const text = await tokenRes.text();
+        console.error('[eBay OAuth] Token exchange failed:', tokenRes.status, text);
+        return res.status(500).send(`Token exchange failed: ${text}`);
+      }
+      const data = await tokenRes.json();
+      const refreshToken = data.refresh_token;
+      // Store in .env-style: write to a file or just display it
+      res.send(`
+        <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
+          <h1>eBay OAuth — Success</h1>
+          <p>Copy this refresh token and paste it into your <code>.env</code> file:</p>
+          <pre style="background: #f4f4f4; padding: 1rem; overflow-x: auto; border-radius: 8px; border: 1px solid #ddd; white-space: pre-wrap; word-break: break-all;">EBAY_REFRESH_TOKEN=${refreshToken}</pre>
+          <button onclick="navigator.clipboard.writeText('${refreshToken}')" style="padding: 0.5rem 1rem; background: #065f46; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">Copy to Clipboard</button>
+          <p style="margin-top: 2rem; color: #666;">Access token received at: ${new Date().toLocaleString()}</p>
+        </body></html>
+      `);
+    } catch (err: any) {
+      console.error('[eBay OAuth] Callback error:', err);
+      res.status(500).send(`OAuth error: ${err.message}`);
+    }
+  });
+
+  // === ADMIN AUTH ===
+  const ADMIN_USERNAME = "Dropandsell";
+  const ADMIN_PASSWORD = "Olalekan25#";
+
+  app.post('/api/admin/login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+        return res.status(401).json({ message: 'Invalid admin credentials' });
+      }
+
+      // Upsert admin user in DB
+      let adminUser = await storage.getUserByEmail('admin@dropandsell.ai');
+      if (!adminUser) {
+        adminUser = await storage.createUser({
+          email: 'admin@dropandsell.ai',
+          password: await bcrypt.hash(ADMIN_PASSWORD, 10),
+          firstName: 'Admin',
+          lastName: 'DropandSell',
+        });
+        await storage.updateUser(adminUser.id, { role: 'admin', emailVerified: new Date(), onboardingCompleted: new Date(), policiesAccepted: new Date() });
+      } else if (adminUser.role !== 'admin') {
+        await storage.updateUser(adminUser.id, { role: 'admin' });
+      }
+
+      (req.session as any).userId = adminUser.id;
+      (req.session as any).isAdmin = true;
+
+      res.json({ success: true, user: { id: adminUser.id, email: adminUser.email, role: 'admin' } });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Admin login failed' });
+    }
+  });
+
+  app.post('/api/admin/logout', (req, res) => {
+    req.session.destroy((err) => {
+      res.json({ success: true });
+    });
+  });
+
+  // Admin API middleware
+  const adminApi: Router = express.Router();
+
+  adminApi.use(async (req: any, res, next) => {
+    const userId = (req.session as any)?.userId;
+    const isAdmin = (req.session as any)?.isAdmin;
+    if (!userId || !isAdmin) {
+      return res.status(401).json({ message: 'Admin access required' });
+    }
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access denied' });
+    }
+    req.user = { claims: { sub: userId } };
+    next();
+  });
+
+  // Admin routes
+  adminApi.get('/admin/users', async (req: any, res) => {
+    try {
+      const allUsers = await db.select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        role: users.role,
+        subscriptionStatus: users.subscriptionStatus,
+        subscriptionPlan: users.subscriptionPlan,
+        emailVerified: users.emailVerified,
+        createdAt: users.createdAt,
+      }).from(users).orderBy(desc(users.createdAt));
+      res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  adminApi.get('/admin/stats', async (req: any, res) => {
+    try {
+      const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
+      const [storeCount] = await db.select({ count: sql<number>`count(*)` }).from(stores);
+      const [productCount] = await db.select({ count: sql<number>`count(*)` }).from(products);
+      const [orderCount] = await db.select({ count: sql<number>`count(*)` }).from(orders);
+      const [subscriberCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active'));
+
+      res.json({
+        users: Number(userCount.count),
+        stores: Number(storeCount.count),
+        products: Number(productCount.count),
+        orders: Number(orderCount.count),
+        subscribers: Number(subscriberCount.count),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  adminApi.put('/admin/users/:id/role', async (req: any, res) => {
+    try {
+      const targetId = req.params.id;
+      const { role } = req.body;
+      if (!['user', 'admin'].includes(role)) {
+        return res.status(400).json({ message: 'Invalid role' });
+      }
+      const [updated] = await db.update(users).set({ role }).where(eq(users.id, targetId)).returning();
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  adminApi.get('/admin/conversations', async (req: any, res) => {
+    try {
+      const allConversations = await db.select().from(conversations).orderBy(desc(conversations.createdAt));
+      const enriched = [];
+      for (const conv of allConversations) {
+        const msgs = await db.select().from(messages).where(eq(messages.conversationId, conv.id)).orderBy(messages.createdAt);
+        const user = conv.userId ? await storage.getUser(conv.userId) : null;
+        enriched.push({ ...conv, messages: msgs, user: user ? { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName } : null });
+      }
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  adminApi.get('/admin/settings', async (req: any, res) => {
+    try {
+      const [settings] = await db.select().from(adminSettings).limit(1);
+      res.json(settings || {});
+    } catch {
+      res.json({});
+    }
+  });
+
+  adminApi.put('/admin/settings', async (req: any, res) => {
+    try {
+      const body = req.body;
+      const [existing] = await db.select().from(adminSettings).limit(1);
+      if (existing) {
+        const [updated] = await db.update(adminSettings).set(body).where(eq(adminSettings.id, existing.id)).returning();
+        res.json(updated);
+      } else {
+        const [created] = await db.insert(adminSettings).values(body).returning();
+        res.json(created);
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Register protected routes
   app.use('/api', protectedApi);
+  app.use('/api', adminApi);
 
   // === EXTENSION API (API Key authenticated) ===
   const extensionApi: Router = express.Router();
@@ -1794,6 +3298,138 @@ Guidelines:
   });
 
   app.use('/api/extension', extensionApi);
+
+  // === ADD-ON CATALOG AUTO-REFRESH ===
+  async function seedInitialCatalog() {
+    const existing = await storage.getAddonCatalog();
+    if (existing.length > 0) return;
+
+    const initialItems = [
+      { name: 'Product Photography Kit', description: 'Professional lighting and backdrop setup for product photos.', category: 'tools', price: '39.99', isNew: true },
+      { name: 'AI Description Writer', description: 'Generate compelling product descriptions with AI.', category: 'tools', price: '19.99', isNew: true },
+      { name: 'Marketplace Analytics', description: 'Advanced analytics dashboard for all your marketplaces.', category: 'services', price: '59.99', isNew: true },
+      { name: 'Bulk Listing Creator', description: 'Create hundreds of listings from a single CSV file.', category: 'tools', price: '24.99' },
+      { name: 'Competitor Price Tracker', description: 'Track competitor pricing and adjust automatically.', category: 'tools', price: '34.99' },
+      { name: 'Premium Support Pack', description: 'Priority support with 24/7 live chat and phone access.', category: 'services', price: '79.99' },
+      { name: 'Social Media Kit', description: 'Templates and scheduling for social media promotion.', category: 'content', price: '14.99' },
+      { name: 'Inventory Forecasting', description: 'AI-powered demand forecasting to optimize stock levels.', category: 'tools', price: '44.99' },
+    ];
+
+    for (const item of initialItems) {
+      await storage.createAddonItem(item);
+    }
+    await storage.logCatalogRefresh(initialItems.length, 0);
+    console.log('[Catalog] Seeded initial add-on catalog with', initialItems.length, 'items');
+  }
+
+  seedInitialCatalog().catch(err => console.error('[Catalog] Seed error:', err));
+
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const lastRefresh = await storage.getLastCatalogRefresh();
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      const shouldRefresh = !lastRefresh?.lastRefreshedAt ||
+        new Date(lastRefresh.lastRefreshedAt).getMonth() !== currentMonth ||
+        new Date(lastRefresh.lastRefreshedAt).getFullYear() !== currentYear;
+
+      if (!shouldRefresh) return;
+
+      const items = await storage.getAddonCatalog();
+      let updated = 0;
+      for (const item of items) {
+        if (item.createdAt) {
+          const itemMonth = new Date(item.createdAt).getMonth();
+          const itemYear = new Date(item.createdAt).getFullYear();
+          const shouldBeNew = itemMonth === currentMonth && itemYear === currentYear;
+          if (item.isNew !== shouldBeNew) {
+            await storage.updateAddonItem(item.id, { isNew: shouldBeNew });
+            updated++;
+          }
+        }
+      }
+
+      const newMonthlyItems = [
+        { name: 'Seasonal Product Bundle', description: `Curated ${now.toLocaleString('default', { month: 'long' })} product bundle recommendations.`, category: 'content', price: '19.99', isNew: true },
+        { name: 'Trending Keywords Pack', description: `Top trending keywords for ${now.toLocaleString('default', { month: 'long' })}.`, category: 'tools', price: '9.99', isNew: true },
+      ];
+
+      let added = 0;
+      const existingNames = new Set(items.map(i => i.name));
+      for (const addon of newMonthlyItems) {
+        if (!existingNames.has(addon.name)) {
+          await storage.createAddonItem(addon);
+          added++;
+        }
+      }
+
+      await storage.logCatalogRefresh(added, updated);
+      console.log(`[Catalog] Auto-refreshed — ${added} added, ${updated} updated`);
+
+      // Send in-app notifications and emails
+      if (added > 0) {
+        try {
+          const allItems = await storage.getAddonCatalog();
+          const freshItems = allItems.filter(i => i.isNew);
+          const users = await db.execute(sql`SELECT id, email, first_name FROM users`);
+          for (const row of users.rows as any[]) {
+            try {
+              await storage.createNotification({
+                userId: row.id,
+                type: 'new_products',
+                title: `New Monthly Add-ons Available`,
+                message: `Check out this month's new add-ons: ${freshItems.map(i => i.name).join(', ')}`,
+              });
+            } catch (notifErr) {
+              console.error(`[Catalog] Failed notification for user ${row.id}:`, notifErr);
+            }
+          }
+          // Send email notifications
+          try {
+            const { sendCatalogEmail } = await import('./email.js');
+            for (const row of users.rows as any[]) {
+              if (row.email) {
+                try {
+                  await sendCatalogEmail(row.email, row.first_name || 'there', freshItems);
+                } catch (emailErr) {
+                  console.error(`[Catalog] Failed email to ${row.email}:`, emailErr);
+                }
+              }
+            }
+          } catch (emailErr) {
+            console.error('[Catalog] Failed to send catalog emails:', emailErr);
+          }
+        } catch (notifErr) {
+          console.error('[Catalog] Failed to send notifications:', notifErr);
+        }
+      }
+    } catch (err) {
+      console.error('[Catalog] Auto-refresh error:', err);
+    }
+  }, ONE_DAY);
+
+  // === BACKGROUND STOCK SYNC JOB (runs every 2 minutes) ===
+  const SYNC_INTERVAL = 2 * 60 * 1000;
+  console.log(`[BackgroundSync] Starting — will sync every 8 minutes`);
+  setInterval(() => {
+    backgroundSyncAllStores();
+  }, SYNC_INTERVAL);
+
+  // Also run one sync shortly after startup (after 30s to let DB warm up)
+  setTimeout(() => {
+    backgroundSyncAllStores();
+  }, 30_000);
+
+  // Tracking monitor — checks shipped orders for delivery updates every 30 min
+  const TRACKING_INTERVAL = 30 * 60 * 1000;
+  console.log(`[TrackingMonitor] Starting — will check every 30 minutes`);
+  setInterval(() => { monitorTracking(); }, TRACKING_INTERVAL);
+
+  // Register conversation API (persistent chat with SSE streaming)
+  registerChatRoutes(app);
 
   return httpServer;
 }

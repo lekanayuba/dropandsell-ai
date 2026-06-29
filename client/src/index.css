@@ -76,8 +76,9 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased touch-manipulation;
     font-family: var(--font-body);
+    -webkit-tap-highlight-color: transparent;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
@@ -85,10 +86,15 @@
   }
 }
 
-/* Custom Scrollbar */
+/* Prevent double-tap zoom on iPad */
+* {
+  touch-action: manipulation;
+}
+
+/* Larger scroll bars for touch */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   @apply bg-transparent;
@@ -96,3 +102,10 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/30 transition-colors;
 }
+
+/* DnD cursor helpers */
+.draggable { cursor: grab; }
+.draggable:active { cursor: grabbing; }
+.dragging { opacity: 0.5; }
+.drop-zone { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.drop-zone.drag-over { transform: scale(1.02); box-shadow: 0 4px 20px hsl(var(--primary) / 0.15); }

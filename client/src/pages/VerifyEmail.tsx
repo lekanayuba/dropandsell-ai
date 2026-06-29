@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useLocation, useSearch } from "wouter";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, USER_QUERY_KEY } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
@@ -26,7 +26,7 @@ export default function VerifyEmail() {
       return apiRequest("POST", "/api/auth/verify-email", { token: verificationToken });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
     }
   });
 

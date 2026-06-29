@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
@@ -15,13 +16,13 @@ export default function PaymentSuccess() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
     },
   });
 
   useEffect(() => {
     confirmPaymentMutation.mutate();
-  }, []);
+  }, [confirmPaymentMutation]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">

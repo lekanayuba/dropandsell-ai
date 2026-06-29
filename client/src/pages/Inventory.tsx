@@ -9,13 +9,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, CheckCircle2 } from "lucide-react";
+import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProductSchema, type InsertProduct } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Inventory() {
@@ -30,6 +34,28 @@ export default function Inventory() {
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
   const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
   const [selectedStore, setSelectedStore] = useState<string>("");
+  const [similarImageProduct, setSimilarImageProduct] = useState<any | null>(null);
+  const [similarImageResults, setSimilarImageResults] = useState<any | null>(null);
+
+  const findSimilarMutation = useMutation({
+    mutationFn: async (productId: number) => {
+      const res = await fetch(`/api/products/${productId}/find-similar-images`, {
+        method: "POST", credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to find similar images");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSimilarImageResults(data);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Search Failed", description: err.message, variant: "destructive" });
+      setSimilarImageProduct(null);
+    },
+  });
 
   const toggleProductSelection = (id: number) => {
     setSelectedProducts((prev) =>
@@ -96,6 +122,7 @@ export default function Inventory() {
   };
 
   return (
+    <>
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -193,7 +220,9 @@ export default function Inventory() {
                 />
               </TableHead>
               <TableHead>Product</TableHead>
+              <TableHead>Images</TableHead>
               <TableHead>SKU</TableHead>
+              <TableHead>Stock</TableHead>
               <TableHead>Cost</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Profit</TableHead>
@@ -205,11 +234,11 @@ export default function Inventory() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
+                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
               </TableRow>
             ) : data?.items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-12">
+                <TableCell colSpan={11} className="text-center py-12">
                   <p className="text-lg font-medium text-muted-foreground">No products found</p>
                 </TableCell>
               </TableRow>
@@ -231,11 +260,64 @@ export default function Inventory() {
                       </div>
                     )}
                   </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      {product.images && product.images.length > 0 ? (
+                        <>
+                          <Badge variant="outline" className={cn(
+                            "text-xs gap-1",
+                            product.images.length === 1
+                              ? "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950/20 dark:text-yellow-400"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400"
+                          )}>
+                            <Image className="w-3 h-3" />
+                            {product.images.length}
+                          </Badge>
+                          {product.images.length === 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-yellow-600 hover:text-yellow-700 hover:bg-yellow-50 dark:hover:bg-yellow-950/20"
+                              onClick={() => {
+                                setSimilarImageProduct(product);
+                                findSimilarMutation.mutate(product.id);
+                              }}
+                              disabled={findSimilarMutation.isPending && similarImageProduct?.id === product.id}
+                              title="Find similar photos"
+                            >
+                              {findSimilarMutation.isPending && similarImageProduct?.id === product.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-3 h-3" />
+                              )}
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {Number(product.quantity) > 0 ? (
+                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200 gap-1">
+                          <Package className="w-3 h-3" />
+                          {Number(product.quantity)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-200 gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Out of Stock
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="font-mono text-xs">{product.sku}</TableCell>
-                  <TableCell>${Number(product.costPrice).toFixed(2)}</TableCell>
-                  <TableCell>${Number(product.sellingPrice).toFixed(2)}</TableCell>
+                  <TableCell>£{Number(product.costPrice).toFixed(2)}</TableCell>
+                  <TableCell>£{Number(product.sellingPrice).toFixed(2)}</TableCell>
                   <TableCell className="text-green-600 font-medium">
-                    ${(Number(product.sellingPrice) - Number(product.costPrice)).toFixed(2)}
+                    £{(Number(product.sellingPrice) - Number(product.costPrice)).toFixed(2)}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-0.5">
@@ -283,6 +365,66 @@ export default function Inventory() {
         </Table>
       </div>
     </div>
+
+      {/* Find Similar Photos Dialog */}
+      <Dialog open={!!similarImageProduct && !!similarImageResults} onOpenChange={(open) => { if (!open) { setSimilarImageProduct(null); setSimilarImageResults(null); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Find Similar Photos</DialogTitle>
+            <div className="flex items-center gap-3 mt-3">
+              {similarImageProduct?.images?.[0] && (
+                <div className="w-16 h-16 rounded-lg border overflow-hidden shrink-0 bg-muted">
+                  <img src={similarImageProduct.images[0]} alt={similarImageProduct.title} className="w-full h-full object-cover" loading="lazy" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{similarImageProduct?.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {similarImageResults?.results?.length || 0} similar image{similarImageResults?.results?.length !== 1 ? 's' : ''} found
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh]">
+            {findSimilarMutation.isPending ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : similarImageResults?.results?.length === 0 ? (
+              <div className="flex flex-col items-center py-16 text-muted-foreground">
+                <Image className="w-10 h-10 mb-3" />
+                <p className="text-sm">No similar images found in your catalog</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-1">
+                {similarImageResults?.results?.map((item: any, i: number) => (
+                  <Card key={i} className="overflow-hidden">
+                    <div className="aspect-square bg-muted relative group">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.productTitle}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <div className="absolute top-2 right-2">
+                        <Badge className="text-[10px] gap-1 bg-black/60 text-white border-0">
+                          <Sparkles className="w-2.5 h-2.5" />
+                          {(item.matchScore * 100).toFixed(0)}%
+                        </Badge>
+                      </div>
+                    </div>
+                    <CardContent className="p-3 space-y-1.5">
+                      <p className="text-sm leading-tight line-clamp-2">{item.productTitle}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.matchReason}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -356,7 +498,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
             name="costPrice"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Cost Price ($)</FormLabel>
+                <FormLabel>Cost Price (£)</FormLabel>
                 <FormControl>
                   <Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                 </FormControl>
@@ -369,7 +511,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
             name="sellingPrice"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Selling Price ($)</FormLabel>
+                <FormLabel>Selling Price (£)</FormLabel>
                 <FormControl>
                   <Input type="number" step="0.01" {...field} onChange={e => field.onChange(e.target.value)} />
                 </FormControl>

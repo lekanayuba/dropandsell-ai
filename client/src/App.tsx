@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Sidebar } from "@/components/Sidebar";
 import { SupportChat } from "@/components/SupportChat";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useAuth } from "@/hooks/use-auth";
 import { useReferralHandler } from "@/hooks/use-referral";
 import { Loader2 } from "lucide-react";
@@ -28,6 +29,11 @@ import InstallApp from "@/pages/InstallApp";
 import PaymentSuccess from "@/pages/PaymentSuccess";
 import Referrals from "@/pages/Referrals";
 import Settings from "@/pages/Settings";
+import Notifications from "@/pages/Notifications";
+import AddonCatalog from "@/pages/AddonCatalog";
+import TemuIntegration from "@/pages/TemuIntegration";
+import AdminSupport from "@/pages/AdminSupport";
+import AdminDashboard from "@/pages/AdminDashboard";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -64,7 +70,9 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
       <Sidebar />
       <main className="flex-1 lg:ml-72 p-6 lg:p-10 transition-all duration-300">
-        <Component />
+        <ErrorBoundary>
+          <Component />
+        </ErrorBoundary>
       </main>
     </div>
   );
@@ -93,7 +101,7 @@ function PublicPolicyRoute({ component: Component }: { component: React.Componen
     return (
       <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
         <Sidebar />
-        <main className="flex-1 lg:ml-72 p-6 lg:p-10 transition-all duration-300">
+      <main className="flex-1 lg:ml-72 p-4 md:p-6 lg:p-10 transition-all duration-300">
           <Component />
         </main>
       </div>
@@ -134,6 +142,11 @@ function Router() {
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/automation" component={() => <ProtectedRoute component={Automation} />} />
       <Route path="/referrals" component={() => <ProtectedRoute component={Referrals} />} />
+      <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
+      <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
+      <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />
+      <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
+      <Route path="/admin" component={() => <AdminDashboard />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>

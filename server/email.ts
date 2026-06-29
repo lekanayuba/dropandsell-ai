@@ -38,6 +38,58 @@ async function getUncachableResendClient() {
   };
 }
 
+export async function sendCatalogEmail(toEmail: string, userName: string, newItems: { name: string; description?: string | null }[]): Promise<boolean> {
+  try {
+    const { client, fromEmail } = await getUncachableResendClient();
+    const itemList = newItems.map(i =>
+      `<tr style="border-bottom: 1px solid #e4e4e7;"><td style="padding: 12px 0; color: #18181b; font-weight: 600;">${i.name}</td><td style="padding: 12px 0; color: #52525b;">${i.description || ''}</td></tr>`
+    ).join('');
+
+    const result = await client.emails.send({
+      from: fromEmail || 'DropandSell AI <noreply@dropandsell.online>',
+      to: toEmail,
+      subject: `New Products Added — DropandSell Catalog (${newItems.length} new items)`,
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 20px;">
+          <div style="max-width: 520px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <div style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 12px; margin-bottom: 16px;"></div>
+              <h1 style="margin: 0; color: #18181b; font-size: 24px; font-weight: 700;">DropandSell AI</h1>
+            </div>
+            <h2 style="color: #18181b; font-size: 20px; margin-bottom: 8px;">Catalog Updated</h2>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+              Hi ${userName}, we've added <strong>${newItems.length} new product${newItems.length > 1 ? 's' : ''}</strong> to the add-on catalog this month.
+            </p>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+              <thead><tr style="background: #f4f4f5;"><th style="text-align: left; padding: 10px 12px; font-size: 12px; text-transform: uppercase; color: #71717a;">Product</th><th style="text-align: left; padding: 10px 12px; font-size: 12px; text-transform: uppercase; color: #71717a;">Description</th></tr></thead>
+              <tbody>${itemList}</tbody>
+            </table>
+            <a href="${process.env.REPLIT_DEPLOYMENT_URL ? `https://${process.env.REPLIT_DEPLOYMENT_URL}` : 'https://dropandsell.ai'}/addon-catalog" style="display: inline-block; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+              Browse Catalog
+            </a>
+            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;">
+            <p style="color: #a1a1aa; font-size: 12px; text-align: center; margin: 0;">© 2024 DropandSell AI. All rights reserved.</p>
+          </div>
+        </body>
+        </html>
+      `
+    });
+
+    if (result.error) {
+      console.error(`[Email] Catalog email error for ${toEmail}:`, result.error);
+      return false;
+    }
+    console.log(`[Email] Catalog update email sent to ${toEmail}`);
+    return true;
+  } catch (error: any) {
+    console.error('[Email] Failed to send catalog email:', error?.message || error);
+    return false;
+  }
+}
+
 export async function sendVerificationEmail(toEmail: string, verifyUrl: string): Promise<boolean> {
   try {
     console.log(`[Email] Getting Resend client...`);

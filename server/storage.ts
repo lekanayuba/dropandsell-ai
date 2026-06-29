@@ -1,13 +1,15 @@
 import { 
-  stores, vendors, products, orders, wallet, transactions, subscriptions, referrals,
+  stores, vendors, products, productVariations, orders, wallet, transactions, subscriptions, referrals, notifications,
+  addonCatalog, catalogRefreshLog,
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
-  type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
+  type InsertStore, type InsertVendor, type InsertProduct, type InsertProductVariation, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
-  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct
+  type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
+  type InsertNotification, type InsertAddonCatalog,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
-import { eq, desc, and, or, ilike } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Stores
@@ -24,16 +26,44 @@ export interface IStorage {
   deleteVendor(id: number, userId: string): Promise<void>;
 
   // Products
-  getProducts(userId: string): Promise<typeof products.$inferSelect[]>;
-  getProduct(id: number): Promise<typeof products.$inferSelect | undefined>;
+  getProducts(userId: string, offset?: number, limit?: number): Promise<typeof products.$inferSelect[]>;
+  getProductsCount(userId: string): Promise<number>;
+  getProductsByIds(ids: number[], userId?: string): Promise<typeof products.$inferSelect[]>;
+  getProduct(id: number, userId?: string): Promise<typeof products.$inferSelect | undefined>;
   createProduct(product: InsertProduct & { userId: string }): Promise<typeof products.$inferSelect>;
   updateProduct(id: number, userId: string, updates: Partial<InsertProduct>): Promise<typeof products.$inferSelect>;
   deleteProduct(id: number, userId: string): Promise<void>;
+  getProductsByExternalId(externalProductId: string, userId: string): Promise<typeof products.$inferSelect[]>;
+
+  // Product Variations
+  getVariations(productId: number): Promise<typeof productVariations.$inferSelect[]>;
+  createVariation(variation: InsertProductVariation): Promise<typeof productVariations.$inferSelect>;
+  updateVariation(id: number, updates: Partial<InsertProductVariation>): Promise<typeof productVariations.$inferSelect | undefined>;
+  deleteVariation(id: number): Promise<void>;
+  deleteVariationsByProduct(productId: number): Promise<void>;
 
   // Orders
-  getOrders(userId: string): Promise<typeof orders.$inferSelect[]>;
-  getOrder(id: number): Promise<typeof orders.$inferSelect | undefined>;
+  getOrders(userId: string, offset?: number, limit?: number): Promise<typeof orders.$inferSelect[]>;
+  getOrdersCount(userId: string): Promise<number>;
+  getOrder(id: number, userId?: string): Promise<typeof orders.$inferSelect | undefined>;
   createOrder(order: InsertOrder & { userId: string }): Promise<typeof orders.$inferSelect>;
+  updateOrder(id: number, updates: Partial<InsertOrder>): Promise<typeof orders.$inferSelect | undefined>;
+
+  // Notifications
+  getNotifications(userId: string, offset?: number, limit?: number): Promise<typeof notifications.$inferSelect[]>;
+  getNotificationsCount(userId: string): Promise<number>;
+  createNotification(notification: InsertNotification): Promise<typeof notifications.$inferSelect>;
+  markNotificationRead(id: number, userId: string): Promise<typeof notifications.$inferSelect | undefined>;
+  markAllNotificationsRead(userId: string): Promise<void>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+
+  // Add-on Catalog
+  getAddonCatalog(): Promise<typeof addonCatalog.$inferSelect[]>;
+  createAddonItem(item: InsertAddonCatalog): Promise<typeof addonCatalog.$inferSelect>;
+  updateAddonItem(id: number, updates: Partial<InsertAddonCatalog>): Promise<typeof addonCatalog.$inferSelect | undefined>;
+  deleteAddonItem(id: number): Promise<void>;
+  getLastCatalogRefresh(): Promise<typeof catalogRefreshLog.$inferSelect | undefined>;
+  logCatalogRefresh(itemsAdded: number, itemsUpdated: number): Promise<typeof catalogRefreshLog.$inferSelect>;
 
   // Wallet
   getWallet(userId: string): Promise<typeof wallet.$inferSelect | undefined>;
@@ -72,6 +102,14 @@ export interface IStorage {
   updateRestrictedProduct(id: number, userId: string, updates: Partial<InsertRestrictedProduct>): Promise<typeof restrictedProducts.$inferSelect>;
   deleteRestrictedProduct(id: number, userId: string): Promise<void>;
   checkRestrictedViolations(userId: string, title: string, description: string): Promise<{ isBlocked: boolean; violations: typeof restrictedProducts.$inferSelect[] }>;
+
+  // Marketplace Listings
+  getMarketplaceListings(storeId: number): Promise<typeof marketplaceListings.$inferSelect[]>;
+  getMarketplaceListing(id: number): Promise<typeof marketplaceListings.$inferSelect | undefined>;
+  createMarketplaceListing(listing: InsertMarketplaceListing): Promise<typeof marketplaceListings.$inferSelect>;
+  updateMarketplaceListing(id: number, updates: Partial<InsertMarketplaceListing>): Promise<typeof marketplaceListings.$inferSelect | undefined>;
+  updateMarketplaceListingStatus(id: number, status: string): Promise<typeof marketplaceListings.$inferSelect | undefined>;
+  getListingsByProductId(productId: number): Promise<typeof marketplaceListings.$inferSelect[]>;
 
   // Points & Referral Wallet
   addReferralBonus(userId: string, amount: number): Promise<void>;
@@ -133,8 +171,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Products
-  async getProducts(userId: string) {
-    return await db.select().from(products).where(eq(products.userId, userId));
+  async getProducts(userId: string, offset?: number, limit?: number) {
+    return await db.select().from(products)
+      .where(eq(products.userId, userId))
+      .limit(limit ?? 1000)
+      .offset(offset ?? 0);
+  }
+
+  async getProductsCount(userId: string) {
+    const [row] = await db.select({ count: sql<number>`count(*)` }).from(products).where(eq(products.userId, userId));
+    return Number(row?.count ?? 0);
+  }
+
+  async getProductsByIds(ids: number[], userId?: string) {
+    if (ids.length === 0) return [];
+    const where = userId
+      ? and(inArray(products.id, ids), eq(products.userId, userId))
+      : inArray(products.id, ids);
+    return await db.select().from(products).where(where);
   }
 
   async getProduct(id: number, userId?: string) {
@@ -162,9 +216,49 @@ export class DatabaseStorage implements IStorage {
     await db.delete(products).where(and(eq(products.id, id), eq(products.userId, userId)));
   }
 
+  async getProductsByExternalId(externalProductId: string, userId: string) {
+    return await db.select().from(products)
+      .where(and(eq(products.externalProductId, externalProductId), eq(products.userId, userId)));
+  }
+
+  // Product Variations
+  async getVariations(productId: number) {
+    return await db.select().from(productVariations)
+      .where(eq(productVariations.productId, productId))
+      .orderBy(productVariations.sortOrder);
+  }
+
+  async createVariation(variation: InsertProductVariation) {
+    const [newVariation] = await db.insert(productVariations).values(variation).returning();
+    return newVariation;
+  }
+
+  async updateVariation(id: number, updates: Partial<InsertProductVariation>) {
+    const [updated] = await db.update(productVariations).set(updates)
+      .where(eq(productVariations.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteVariation(id: number) {
+    await db.delete(productVariations).where(eq(productVariations.id, id));
+  }
+
+  async deleteVariationsByProduct(productId: number) {
+    await db.delete(productVariations).where(eq(productVariations.productId, productId));
+  }
+
   // Orders
-  async getOrders(userId: string) {
-    return await db.select().from(orders).where(eq(orders.userId, userId));
+  async getOrders(userId: string, offset?: number, limit?: number) {
+    const query = db.select().from(orders).where(eq(orders.userId, userId)).orderBy(desc(orders.createdAt)) as any;
+    const paginated = limit ? query.limit(limit) : query;
+    const final = offset ? paginated.offset(offset) : paginated;
+    return await final as typeof orders.$inferSelect[];
+  }
+
+  async getOrdersCount(userId: string) {
+    const [row] = await db.select({ count: sql<number>`count(*)` }).from(orders).where(eq(orders.userId, userId));
+    return Number(row?.count ?? 0);
   }
 
   async getOrder(id: number, userId?: string) {
@@ -179,6 +273,90 @@ export class DatabaseStorage implements IStorage {
   async createOrder(order: InsertOrder & { userId: string }) {
     const [newOrder] = await db.insert(orders).values(order).returning();
     return newOrder;
+  }
+
+  async updateOrder(id: number, updates: Partial<InsertOrder>) {
+    const [updated] = await db.update(orders)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(orders.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Notifications
+  async getNotifications(userId: string, offset?: number, limit?: number) {
+    const query = db.select().from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt)) as any;
+    const paginated = limit ? query.limit(limit) : query;
+    const final = offset ? paginated.offset(offset) : paginated;
+    return await final as typeof notifications.$inferSelect[];
+  }
+
+  async getNotificationsCount(userId: string) {
+    const [row] = await db.select({ count: sql<number>`count(*)` }).from(notifications).where(eq(notifications.userId, userId));
+    return Number(row?.count ?? 0);
+  }
+
+  async createNotification(notification: InsertNotification) {
+    const [newNotification] = await db.insert(notifications).values(notification).returning();
+    return newNotification;
+  }
+
+  async markNotificationRead(id: number, userId: string) {
+    const [updated] = await db.update(notifications)
+      .set({ read: true })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async markAllNotificationsRead(userId: string) {
+    await db.update(notifications)
+      .set({ read: true })
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+  }
+
+  async getUnreadNotificationCount(userId: string) {
+    const [result] = await db.select({ count: sql<number>`count(*)::int` }).from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.read, false)));
+    return result.count;
+  }
+
+  // Add-on Catalog
+  async getAddonCatalog() {
+    return await db.select().from(addonCatalog).orderBy(desc(addonCatalog.createdAt));
+  }
+
+  async createAddonItem(item: InsertAddonCatalog) {
+    const [newItem] = await db.insert(addonCatalog).values(item).returning();
+    return newItem;
+  }
+
+  async updateAddonItem(id: number, updates: Partial<InsertAddonCatalog>) {
+    const [updated] = await db.update(addonCatalog)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(addonCatalog.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAddonItem(id: number) {
+    await db.delete(addonCatalog).where(eq(addonCatalog.id, id));
+  }
+
+  async getLastCatalogRefresh() {
+    const [log] = await db.select().from(catalogRefreshLog)
+      .orderBy(desc(catalogRefreshLog.lastRefreshedAt))
+      .limit(1);
+    return log;
+  }
+
+  async logCatalogRefresh(itemsAdded: number, itemsUpdated: number) {
+    const [log] = await db.insert(catalogRefreshLog)
+      .values({ itemsAdded, itemsUpdated })
+      .returning();
+    return log;
   }
 
   // Wallet
@@ -260,18 +438,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUser(userId: string, updates: Partial<{
-    emailVerified: Date | null;
-    verificationToken: string | null;
-    verificationTokenExpiry: Date | null;
-    policiesAccepted: Date | null;
-    onboardingCompleted: Date | null;
-    paymentSkipped: Date | null;
-    subscriptionPlan: string | null;
-    subscriptionStatus: string | null;
-    referralCode: string | null;
-    referredBy: string | null;
-  }>) {
+  async updateUser(userId: string, updates: Partial<User>) {
     const [user] = await db.update(users)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(users.id, userId))
@@ -435,6 +602,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(marketplaceListings.storeId, storeId));
   }
 
+  async getMarketplaceListing(id: number) {
+    const [listing] = await db.select().from(marketplaceListings)
+      .where(eq(marketplaceListings.id, id));
+    return listing;
+  }
+
   async createMarketplaceListing(listing: InsertMarketplaceListing) {
     const [newListing] = await db.insert(marketplaceListings).values(listing).returning();
     return newListing;
@@ -443,6 +616,19 @@ export class DatabaseStorage implements IStorage {
   async updateMarketplaceListing(id: number, updates: Partial<InsertMarketplaceListing>) {
     const [updated] = await db.update(marketplaceListings).set(updates).where(eq(marketplaceListings.id, id)).returning();
     return updated;
+  }
+
+  async updateMarketplaceListingStatus(id: number, status: string) {
+    const [updated] = await db.update(marketplaceListings)
+      .set({ status: status as any, lastSync: new Date() })
+      .where(eq(marketplaceListings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getListingsByProductId(productId: number) {
+    return await db.select().from(marketplaceListings)
+      .where(eq(marketplaceListings.productId, productId));
   }
 
   // Bulk create products
@@ -558,7 +744,7 @@ export class DatabaseStorage implements IStorage {
     };
 
     // Check each active filter type
-    const activeTypes = new Set(activeFilters.map(f => f.type));
+    const activeTypes = new Set(activeFilters.map((f: any) => f.type));
 
     for (const [type, pattern] of Object.entries(builtInPatterns)) {
       if (activeTypes.has(type)) {

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
+import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -304,37 +305,7 @@ const steps = [
   {
     id: 7,
     title: "You're Ready!",
-    description: "Start automating your dropshipping business",
-    content: (
-      <div className="space-y-6 text-center">
-        <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-950/30 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="h-10 w-10 text-green-600" />
-        </div>
-        <div>
-          <h3 className="text-2xl font-bold mb-4">You're All Set!</h3>
-          <p className="text-muted-foreground max-w-md mx-auto mb-6">
-            You now know the basics of DropandSell AI. Start by connecting your first store 
-            and importing your product catalog.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 max-w-lg mx-auto">
-          <Card className="hover-elevate cursor-pointer">
-            <CardContent className="pt-6 text-left">
-              <Store className="h-8 w-8 text-primary mb-3" />
-              <h4 className="font-semibold">Connect a Store</h4>
-              <p className="text-sm text-muted-foreground">Link your marketplace</p>
-            </CardContent>
-          </Card>
-          <Card className="hover-elevate cursor-pointer">
-            <CardContent className="pt-6 text-left">
-              <Upload className="h-8 w-8 text-primary mb-3" />
-              <h4 className="font-semibold">Import Products</h4>
-              <p className="text-sm text-muted-foreground">Upload your catalog</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
+    description: "Start automating your dropshipping business"
   }
 ];
 
@@ -347,14 +318,24 @@ export default function Onboarding() {
       return apiRequest("POST", "/api/user/complete-onboarding");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
       setLocation("/");
     }
   });
 
+  const handleComplete = () => {
+    completeOnboarding.mutate();
+  };
+
   const progress = ((currentStep + 1) / steps.length) * 100;
   const step = steps[currentStep];
   const isLastStep = currentStep === steps.length - 1;
+
+  const handleCardClick = (path: string) => {
+    completeOnboarding.mutate(undefined, {
+      onSuccess: () => setLocation(path),
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background p-6 lg:p-10">
@@ -370,13 +351,12 @@ export default function Onboarding() {
         <Card className="mb-8">
           <CardHeader>
             <CardTitle>{step.title}</CardTitle>
-            <CardDescription>{step.description}</CardDescription>
+            <CardDescription>{isLastStep ? "" : step.description}</CardDescription>
           </CardHeader>
           <CardContent>
-            {step.content}
+            {isLastStep ? <FinalStepContent onCardClick={handleCardClick} /> : step.content}
           </CardContent>
         </Card>
-
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
@@ -387,10 +367,9 @@ export default function Onboarding() {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Previous
           </Button>
-
           {isLastStep ? (
             <Button
-              onClick={() => completeOnboarding.mutate()}
+              onClick={handleComplete}
               disabled={completeOnboarding.isPending}
               data-testid="button-onboarding-complete"
             >
@@ -407,12 +386,11 @@ export default function Onboarding() {
             </Button>
           )}
         </div>
-
         {!isLastStep && (
           <div className="text-center mt-6">
             <Button
               variant="ghost"
-              onClick={() => completeOnboarding.mutate()}
+              onClick={handleComplete}
               disabled={completeOnboarding.isPending}
               data-testid="button-skip-onboarding"
             >
@@ -424,3 +402,34 @@ export default function Onboarding() {
     </div>
   );
 }
+
+const FinalStepContent = ({ onCardClick }: { onCardClick: (path: string) => void }) => (
+  <div className="space-y-6 text-center">
+    <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-950/30 flex items-center justify-center mx-auto">
+      <CheckCircle2 className="h-10 w-10 text-green-600" />
+    </div>
+    <div>
+      <h3 className="text-2xl font-bold mb-4">You're All Set!</h3>
+      <p className="text-muted-foreground max-w-md mx-auto mb-6">
+        You now know the basics of DropandSell AI. Start by connecting your first store 
+        and importing your product catalog.
+      </p>
+    </div>
+    <div className="grid gap-4 md:grid-cols-2 max-w-lg mx-auto">
+      <Card className="hover-elevate cursor-pointer" onClick={() => onCardClick('/stores')}>
+        <CardContent className="pt-6 text-left">
+          <Store className="h-8 w-8 text-primary mb-3" />
+          <h4 className="font-semibold">Connect a Store</h4>
+          <p className="text-sm text-muted-foreground">Link your marketplace</p>
+        </CardContent>
+      </Card>
+      <Card className="hover-elevate cursor-pointer" onClick={() => onCardClick('/automation?tab=import')}>
+        <CardContent className="pt-6 text-left">
+          <Upload className="h-8 w-8 text-primary mb-3" />
+          <h4 className="font-semibold">Import Products</h4>
+          <p className="text-sm text-muted-foreground">Upload your catalog</p>
+        </CardContent>
+      </Card>
+    </div>
+  </div>
+);
