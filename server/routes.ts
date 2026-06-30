@@ -12,7 +12,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integra
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db } from "./db";
 import { sql, eq, and, inArray, desc } from "drizzle-orm";
-import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders } from "@shared/schema";
+import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings } from "@shared/schema";
 import { conversations, messages } from "@shared/models/chat";
 import { users } from "@shared/models/auth";
 import OpenAI from "openai";
@@ -20,7 +20,7 @@ import crypto from "crypto";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking } from "./tracking-monitor";
-import { updateEbayOrderStatus, endEbayListing, createEbayListing } from "./platforms/ebay";
+import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -52,6 +52,20 @@ export async function registerRoutes(
     fs.mkdirSync(uploadsPath, { recursive: true });
   }
   app.use("/uploads", express.static(uploadsPath));
+
+  // Safe migration: ensure app_settings table exists
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        id SERIAL PRIMARY KEY,
+        key TEXT UNIQUE NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+  } catch (e: any) {
+    console.error("[Migration] app_settings table setup failed:", e.message);
+  }
 
   // === STANDALONE EMAIL/PASSWORD AUTH ===
   app.post('/api/auth/register', async (req, res) => {
@@ -1221,7 +1235,7 @@ export async function registerRoutes(
 
       // Sync to eBay for marketplace orders
       if (order.externalOrderId) {
-        updateEbayOrderStatus(order.externalOrderId, 'SHIPPED', trackingNumber, carrier);
+        updateEbayOrderStatus(order.externalOrderId, 'SHIPPED', trackingNumber, carrier, order.storeId ?? undefined);
       }
 
       res.json(updated);
@@ -3055,61 +3069,94 @@ Guidelines:
     }
   });
 
-  // === eBay OAuth Flow ===
+  // === Admin: eBay App Settings ===
+  protectedApi.get('/admin/app-settings/ebay', async (req: any, res) => {
+    try {
+      const all = await db.select().from(appSettings);
+      const getVal = (key: string) => all.find(r => r.key === key)?.value || process.env[key] || "";
+      res.json({ clientId: getVal("EBAY_CLIENT_ID"), clientSecret: getVal("EBAY_CLIENT_SECRET"), ruName: getVal("EBAY_RU_NAME") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  protectedApi.put('/admin/app-settings/ebay', async (req: any, res) => {
+    try {
+      const { clientId, clientSecret, ruName } = req.body;
+      const upsert = async (key: string, value: string) => {
+        if (!value) return;
+        const existing = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+        if (existing.length) {
+          await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+        } else {
+          await db.insert(appSettings).values({ key, value });
+        }
+      };
+      await upsert("EBAY_CLIENT_ID", clientId);
+      await upsert("EBAY_CLIENT_SECRET", clientSecret);
+      await upsert("EBAY_RU_NAME", ruName);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // === eBay OAuth Flow (uses DB settings, supports per-store tokens) ===
   app.get('/api/ebay/auth', async (req, res) => {
-    const clientId = process.env.EBAY_CLIENT_ID?.trim();
-    const ruName = process.env.EBAY_RU_NAME?.trim();
-    if (!clientId || !ruName) {
-      return res.status(400).send('eBay not configured. Set EBAY_CLIENT_ID and EBAY_RU_NAME.');
-    }
-    const scopes = [
-      'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
-      'https://api.ebay.com/oauth/api_scope/sell.inventory',
-    ].join(' ');
-    const authUrl = `https://auth.ebay.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(ruName)}&scope=${encodeURIComponent(scopes)}`;
-    res.redirect(authUrl);
+    try {
+      const storeId = req.query.storeId as string;
+      const { clientId, ruName } = await getEbayAppSettings();
+      if (!clientId || !ruName) {
+        return res.status(400).send('eBay not configured. Admin must set Client ID and RuName in Admin > Integrations.');
+      }
+      const scopes = [
+        'https://api.ebay.com/oauth/api_scope/sell.fulfillment',
+        'https://api.ebay.com/oauth/api_scope/sell.inventory',
+      ].join(' ');
+      const state = storeId ? `store_${storeId}` : "";
+      const authUrl = `https://auth.ebay.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&response_type=code&redirect_uri=${encodeURIComponent(ruName)}&scope=${encodeURIComponent(scopes)}${state ? `&state=${encodeURIComponent(state)}` : ""}`;
+      res.redirect(authUrl);
+    } catch (err: any) { res.status(500).send(`OAuth error: ${err.message}`); }
   });
 
   app.get('/api/ebay/callback', async (req, res) => {
     try {
       const code = req.query.code as string;
-      if (!code) {
-        return res.status(400).send('Missing authorization code');
-      }
-      const clientId = process.env.EBAY_CLIENT_ID?.trim();
-      const clientSecret = process.env.EBAY_CLIENT_SECRET?.trim();
-      const ruName = process.env.EBAY_RU_NAME?.trim();
-      if (!clientId || !clientSecret || !ruName) {
-        return res.status(400).send('eBay not configured');
-      }
+      const state = (req.query.state as string) || "";
+      if (!code) return res.status(400).send('Missing authorization code');
+
+      const { clientId, clientSecret, ruName } = await getEbayAppSettings();
+      if (!clientId || !clientSecret || !ruName) return res.status(400).send('eBay not configured');
+
+      // Extract storeId from state parameter
+      let storeId: number | null = null;
+      if (state.startsWith("store_")) storeId = parseInt(state.replace("store_", ""), 10) || null;
+
       const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
       const tokenRes = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: `Basic ${auth}`,
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code,
-          redirect_uri: ruName,
-        }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Basic ${auth}` },
+        body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: ruName }),
       });
-      if (!tokenRes.ok) {
-        const text = await tokenRes.text();
-        console.error('[eBay OAuth] Token exchange failed:', tokenRes.status, text);
-        return res.status(500).send(`Token exchange failed: ${text}`);
-      }
+      if (!tokenRes.ok) return res.status(500).send(`Token exchange failed: ${await tokenRes.text()}`);
+
       const data = await tokenRes.json();
       const refreshToken = data.refresh_token;
-      // Store in .env-style: write to a file or just display it
+
+      // If a storeId was passed, save the refresh token to the store's credentials
+      if (storeId) {
+        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        if (storeRows.length) {
+          const creds = (storeRows[0].credentials as any) || {};
+          creds.ebayRefreshToken = refreshToken;
+          await db.update(stores).set({ credentials: creds }).where(eq(stores.id, storeId));
+        }
+      }
+
       res.send(`
         <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
           <h1>eBay OAuth — Success</h1>
-          <p>Copy this refresh token and paste it into your <code>.env</code> file:</p>
+          ${storeId ? `<p>Your eBay account has been connected to store #${storeId}.</p>` : `<p>Copy this refresh token and paste it into your <code>.env</code> file:</p>
           <pre style="background: #f4f4f4; padding: 1rem; overflow-x: auto; border-radius: 8px; border: 1px solid #ddd; white-space: pre-wrap; word-break: break-all;">EBAY_REFRESH_TOKEN=${refreshToken}</pre>
-          <button onclick="navigator.clipboard.writeText('${refreshToken}')" style="padding: 0.5rem 1rem; background: #065f46; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">Copy to Clipboard</button>
+          <button onclick="navigator.clipboard.writeText('${refreshToken}')" style="padding: 0.5rem 1rem; background: #065f46; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">Copy to Clipboard</button>`}
           <p style="margin-top: 2rem; color: #666;">Access token received at: ${new Date().toLocaleString()}</p>
+          <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
         </body></html>
       `);
     } catch (err: any) {
@@ -3121,22 +3168,32 @@ Guidelines:
   // === eBay Connection Status ===
   app.get('/api/ebay/status', async (req, res) => {
     try {
-      const clientId = process.env.EBAY_CLIENT_ID;
-      const clientSecret = process.env.EBAY_CLIENT_SECRET;
-      const refreshToken = process.env.EBAY_REFRESH_TOKEN;
-      if (!clientId || !clientSecret || !refreshToken) {
-        return res.json({ connected: false, message: "eBay credentials not configured" });
+      const { clientId, clientSecret } = await getEbayAppSettings();
+      const storeId = req.query.storeId ? parseInt(req.query.storeId as string, 10) : null;
+      let refreshToken = process.env.EBAY_REFRESH_TOKEN;
+
+      // If checking a specific store, use its token
+      if (storeId) {
+        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        if (storeRows.length) {
+          const creds = storeRows[0].credentials as any;
+          refreshToken = creds?.ebayRefreshToken || refreshToken;
+        }
       }
-      // Try to get a token to verify credentials
+
+      if (!clientId || !clientSecret || !refreshToken) {
+        return res.json({ connected: false, message: "eBay credentials not configured", needsAdmin: !clientId || !clientSecret, needsStoreAuth: storeId ? !refreshToken : false });
+      }
+
       const { getAccessToken } = await import("./platforms/ebay");
-      await getAccessToken();
+      await getAccessToken(refreshToken);
       res.json({ connected: true, message: "eBay API connected and authenticated" });
     } catch (err: any) {
       const msg = err.message || "";
       if (msg.includes("expired") || msg.includes("invalid") || msg.includes("revoked")) {
-        res.json({ connected: false, message: "eBay refresh token expired or revoked. Re-authorize via /api/ebay/auth" });
+        res.json({ connected: false, message: "eBay refresh token expired or revoked. Re-authorize.", needsReauth: true });
       } else if (msg.includes("not configured")) {
-        res.json({ connected: false, message: "eBay API credentials missing. Set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_REFRESH_TOKEN" });
+        res.json({ connected: false, message: "eBay API credentials missing. Admin must configure.", needsAdmin: true });
       } else {
         res.json({ connected: false, message: `eBay connection error: ${msg}` });
       }

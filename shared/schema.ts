@@ -502,6 +502,17 @@ export const adminSettings = pgTable("admin_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// App settings (key-value store for platform credentials, etc.)
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true, updatedAt: true });
+export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
+
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
 export type UpdateStoreRequest = Partial<InsertStore>;

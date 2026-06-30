@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import {
   Users, Store, Package, ShoppingCart, CreditCard, Shield, Settings,
   MessageSquare, LogOut, TrendingUp, TrendingDown, Activity, Clock,
@@ -828,10 +830,10 @@ export default function AdminDashboard() {
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections.</p>
-                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => window.open('/api/ebay/auth', '_blank')}>
-                  <ExternalLink className="w-3.5 h-3.5" />Authorize eBay
-                </Button>
               </div>
+              {/* eBay API Settings */}
+              <EbayAdminSettings />
+
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { key: "stripe", name: "Stripe", desc: "Payment processing & subscriptions", icon: CreditCard, doc: "https://stripe.com/docs" },
@@ -1002,5 +1004,111 @@ export default function AdminDashboard() {
         </main>
       </div>
     </div>
+  );
+}
+
+function EbayAdminSettings() {
+  const [open, setOpen] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [ruName, setRuName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch("/api/admin/app-settings/ebay", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setClientId(data.clientId || "");
+        setClientSecret(data.clientSecret || "");
+        setRuName(data.ruName || "");
+      }
+    } catch {}
+  };
+
+  useEffect(() => { if (open) fetchSettings(); }, [open]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/app-settings/ebay", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId, clientSecret, ruName }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      toast({ title: "eBay settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/service-status"] });
+      setOpen(false);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <>
+      <Card className="border-blue-200/50 dark:border-blue-900/30 mb-4">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center">
+                <Globe className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">eBay API Configuration</p>
+                <p className="text-xs text-muted-foreground">Manage your eBay Developer App credentials</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
+              <Settings className="w-3.5 h-3.5 mr-1.5" /> Configure
+            </Button>
+          </div>
+          <div className="flex items-center gap-4 mt-3 text-[11px] text-muted-foreground">
+            <span>Client ID: {clientId ? `${clientId.slice(0, 15)}...` : "Not set"}</span>
+            <span>RuName: {ruName ? `${ruName.slice(0, 15)}...` : "Not set"}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="w-4 h-4" /> eBay API Settings
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Enter your eBay Developer App credentials. These are used to authorize client stores.
+              Get them at <a href="https://developer.ebay.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">developer.ebay.com</a>
+            </p>
+            <div className="space-y-2">
+              <Label>Client ID (App ID)</Label>
+              <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Olalekan-DropandS-PRD-..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Client Secret</Label>
+              <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="PRD-..." />
+            </div>
+            <div className="space-y-2">
+              <Label>RuName (Redirect URL)</Label>
+              <Input value={ruName} onChange={(e) => setRuName(e.target.value)} placeholder="Olalekan_Ayuba-Olalekan-Dropan-..." />
+              <p className="text-[10px] text-muted-foreground">
+                This must match the Redirect URL configured in your eBay app settings.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={save} disabled={saving || !clientId}>
+                {saving ? "Saving..." : "Save Settings"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

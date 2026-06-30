@@ -44,15 +44,6 @@ export default function Stores() {
   const [syncingStoreIds, setSyncingStoreIds] = useState<Set<number>>(new Set());
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: ebayStatus, isLoading: ebayStatusLoading } = useQuery({
-    queryKey: ['ebay-status'],
-    queryFn: async () => {
-      const res = await fetch('/api/ebay/status', { credentials: "include" });
-      if (!res.ok) return { connected: false, message: "Could not check eBay status" };
-      return res.json();
-    },
-    refetchInterval: 60_000,
-  });
 
   const isSubscriber = user?.subscriptionStatus === 'active';
 
@@ -205,8 +196,6 @@ export default function Stores() {
             onShowListings={() => setListingsStoreId(store.id)}
             autoSettingsPending={autoSettingsMutation.isPending}
             deletePending={deleteStore.isPending}
-            ebayStatus={store.platform === 'ebay' ? ebayStatus : null}
-            ebayStatusLoading={store.platform === 'ebay' && ebayStatusLoading}
           />
         ))}
         {stores?.length === 0 && (
@@ -250,8 +239,72 @@ const platformMeta: Record<string, { icon: React.ElementType; color: string }> =
   woocommerce: { icon: ShoppingBag, color: 'text-purple-600 bg-purple-100 dark:bg-purple-950/30' },
 };
 
+function EbayStoreSection({ store }: { store: any }) {
+  const { toast } = useToast();
+  const creds = (store.credentials as any) || {};
+  const hasToken = !!creds?.ebayRefreshToken;
+  const sellerId = creds?.sellerId || "";
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['ebay-store-status', store.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/ebay/status?storeId=${store.id}`, { credentials: "include" });
+      if (!res.ok) return { connected: false, message: "Could not check status" };
+      return res.json();
+    },
+    refetchInterval: 60_000,
+    enabled: !!store.id,
+  });
+
+  return (
+    <div className="space-y-2">
+      {sellerId && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
+          <span className="text-muted-foreground">Seller ID</span>
+          <span className="font-medium">{sellerId}</span>
+        </div>
+      )}
+      {store.email && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
+          <span className="text-muted-foreground">Email</span>
+          <span className="font-medium truncate ml-2">{store.email}</span>
+        </div>
+      )}
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-lg text-sm">
+        <span className="text-muted-foreground">eBay Auth</span>
+        {isLoading ? (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Loader2 className="w-3 h-3 animate-spin" /> Checking...
+          </div>
+        ) : hasToken && status?.connected ? (
+          <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800 gap-1">
+            <CheckCircle2 className="w-3 h-3" /> Authorized
+          </Badge>
+        ) : hasToken ? (
+          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800 gap-1">
+            <AlertCircle className="w-3 h-3" /> Token Expired
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground gap-1">
+            <AlertCircle className="w-3 h-3" /> Not Authorized
+          </Badge>
+        )}
+      </div>
+      <Button
+        variant={hasToken ? "outline" : "default"}
+        size="sm"
+        className="w-full h-8 text-xs gap-1.5"
+        onClick={() => window.open(`/api/ebay/auth?storeId=${store.id}`, '_blank')}
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+        {hasToken ? 'Re-authorize with eBay' : 'Authorize with eBay'}
+      </Button>
+    </div>
+  );
+}
+
 function StoreCard({
-  store, isSubscriber, isSyncing, onSync, onDelete, onAutoSetting, onShowLogs, onShowListings, autoSettingsPending, deletePending, ebayStatus, ebayStatusLoading,
+  store, isSubscriber, isSyncing, onSync, onDelete, onAutoSetting, onShowLogs, onShowListings, autoSettingsPending, deletePending,
 }: {
   store: any;
   isSubscriber: boolean;
@@ -263,8 +316,6 @@ function StoreCard({
   onShowListings: () => void;
   autoSettingsPending: boolean;
   deletePending: boolean;
-  ebayStatus: any;
-  ebayStatusLoading: boolean;
 }) {
   const { toast } = useToast();
 
@@ -321,33 +372,7 @@ function StoreCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {store.platform === 'ebay' && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-lg text-sm">
-              <span className="text-muted-foreground">eBay API</span>
-              {ebayStatusLoading ? (
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Checking...
-                </div>
-              ) : ebayStatus?.connected ? (
-                <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800 gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Connected
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50 dark:bg-red-950/20 dark:text-red-400 dark:border-red-800 gap-1">
-                  <AlertCircle className="w-3 h-3" /> Disconnected
-                </Badge>
-              )}
-            </div>
-            <Button
-              variant={ebayStatus?.connected ? "outline" : "default"}
-              size="sm"
-              className="w-full h-8 text-xs gap-1.5"
-              onClick={() => window.open('/api/ebay/auth', '_blank')}
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              {ebayStatus?.connected ? 'Re-authorize eBay' : 'Authorize eBay Account'}
-            </Button>
-          </div>
+          <EbayStoreSection store={store} />
         )}
         <div className="flex items-center text-sm">
           <RefreshCw className={`w-3 h-3 mr-2 ${isSyncing ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
@@ -620,8 +645,14 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
     resolver: zodResolver(insertStoreSchema),
     defaultValues: { name: "", platform: "shopify", credentials: {}, status: "active" },
   });
+  const plat = form.watch('platform');
 
   const onSubmit = (data: InsertStore) => {
+    // For eBay, extract sellerId and ebayRefreshToken from credentials
+    const creds = data.credentials as any;
+    if (data.platform === 'ebay') {
+      data.credentials = { sellerId: creds?.sellerId || "", ebayRefreshToken: "" };
+    }
     createStore.mutate(data, { onSuccess });
   };
 
@@ -630,50 +661,74 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
         <FormField control={form.control} name="name" render={({ field }) => (
           <FormItem>
-            <FormLabel>Store Name</FormLabel>
-            <FormControl><Input placeholder="My Awesome Store" {...field} /></FormControl>
+            <FormLabel>{plat === 'ebay' ? 'Store Name / eBay Seller Name' : 'Store Name'}</FormLabel>
+            <FormControl><Input placeholder={plat === 'ebay' ? 'Your eBay store name' : "My Awesome Store"} {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )} />
-        <FormField control={form.control} name="platform" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Platform</FormLabel>
-            <Select onValueChange={field.onChange} defaultValue={field.value}>
-              <FormControl>
-                <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                <SelectItem value="shopify">Shopify</SelectItem>
-                <SelectItem value="amazon">Amazon</SelectItem>
-                <SelectItem value="ebay">eBay</SelectItem>
-                <SelectItem value="jumia">Jumia</SelectItem>
-                <SelectItem value="woocommerce">WooCommerce</SelectItem>
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <FormField control={form.control} name="credentials" render={({ field }) => (
-          <FormItem>
-            <FormLabel>API Key</FormLabel>
-            <FormControl>
-              <Input
-                type="password"
-                placeholder={form.watch('platform') === 'ebay' ? 'Not needed for eBay' : "Enter API key for this platform"}
-                value={(field.value as any)?.apiKey ?? ""}
-                onChange={(e) => field.onChange({ ...(field.value as any ?? {}), apiKey: e.target.value })}
-                disabled={form.watch('platform') === 'ebay'}
-              />
-            </FormControl>
-            {form.watch('platform') === 'ebay' && (
-              <p className="text-xs text-muted-foreground mt-1">
-                eBay uses global OAuth — no per-store API key needed.
-                Authorize via the "Authorize eBay Account" button on the store card after creation.
-              </p>
-            )}
-            <FormMessage />
-          </FormItem>
-        )} />
+        {plat === 'ebay' && (
+          <>
+            <FormField control={form.control} name="email" render={({ field }) => (
+              <FormItem>
+                <FormLabel>eBay Account Email</FormLabel>
+                <FormControl><Input type="email" placeholder="your@email.com" {...field} value={field.value || ""} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="credentials" render={({ field }) => (
+              <FormItem>
+                <FormLabel>eBay Seller ID</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Your eBay seller/user ID"
+                    value={(field.value as any)?.sellerId ?? ""}
+                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), sellerId: e.target.value, ebayRefreshToken: "" })}
+                  />
+                </FormControl>
+                <p className="text-xs text-muted-foreground mt-1">
+                  After creating the store, authorize it via the "Authorize with eBay" button on the store card.
+                </p>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </>
+        )}
+        {plat !== 'ebay' && (
+          <>
+            <FormField control={form.control} name="platform" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Platform</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="shopify">Shopify</SelectItem>
+                    <SelectItem value="amazon">Amazon</SelectItem>
+                    <SelectItem value="ebay">eBay</SelectItem>
+                    <SelectItem value="jumia">Jumia</SelectItem>
+                    <SelectItem value="woocommerce">WooCommerce</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="credentials" render={({ field }) => (
+              <FormItem>
+                <FormLabel>API Key</FormLabel>
+                <FormControl>
+                  <Input
+                    type="password"
+                    placeholder="Enter API key for this platform"
+                    value={(field.value as any)?.apiKey ?? ""}
+                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), apiKey: e.target.value })}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </>
+        )}
         <Button type="submit" className="w-full" disabled={createStore.isPending}>
           {createStore.isPending ? "Connecting..." : "Connect Store"}
         </Button>

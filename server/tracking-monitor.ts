@@ -134,6 +134,7 @@ export async function monitorTracking(): Promise<void> {
               "DELIVERED",
               order.trackingNumber!,
               order.carrier ?? "",
+              order.storeId ?? undefined,
             );
           }
         }
