@@ -239,31 +239,44 @@ const platformMeta: Record<string, { icon: React.ElementType; color: string }> =
   woocommerce: { icon: ShoppingBag, color: 'text-purple-600 bg-purple-100 dark:bg-purple-950/30' },
 };
 
-function EbayStoreSection({ store }: { store: any }) {
-  const { toast } = useToast();
+function OAuthStoreSection({ store }: { store: any }) {
   const creds = (store.credentials as any) || {};
-  const hasToken = !!creds?.ebayRefreshToken;
-  const sellerId = creds?.sellerId || "";
+  const plat = store.platform;
 
-  const { data: status, isLoading } = useQuery({
-    queryKey: ['ebay-store-status', store.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/ebay/status?storeId=${store.id}`, { credentials: "include" });
-      if (!res.ok) return { connected: false, message: "Could not check status" };
-      return res.json();
-    },
-    refetchInterval: 60_000,
-    enabled: !!store.id,
-  });
+  const infoFields: Record<string, { label: string; value: string }[]> = {
+    ebay: [
+      { label: 'Seller ID', value: creds?.sellerId || '' },
+    ],
+    shopify: [
+      { label: 'Shop Domain', value: creds?.shopDomain || '' },
+    ],
+    woocommerce: [
+      { label: 'Site URL', value: creds?.siteUrl || '' },
+    ],
+  };
+
+  const isAuthorized = plat === 'ebay' ? !!creds?.ebayRefreshToken
+    : plat === 'shopify' ? !!creds?.accessToken
+    : plat === 'woocommerce' ? !!(creds?.consumerKey && creds?.consumerSecret)
+    : false;
+
+  const authUrl = plat === 'ebay' ? `/api/ebay/auth?storeId=${store.id}`
+    : plat === 'shopify' ? `/api/oauth/shopify/auth?storeId=${store.id}`
+    : plat === 'woocommerce' ? `/api/oauth/woocommerce/auth?storeId=${store.id}`
+    : plat === 'amazon' ? `/api/oauth/amazon/auth?storeId=${store.id}`
+    : plat === 'jumia' ? `/api/oauth/jumia/auth?storeId=${store.id}`
+    : null;
+
+  const platformLabel = plat.charAt(0).toUpperCase() + plat.slice(1);
 
   return (
     <div className="space-y-2">
-      {sellerId && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
-          <span className="text-muted-foreground">Seller ID</span>
-          <span className="font-medium">{sellerId}</span>
+      {infoFields[plat]?.filter(f => f.value).map(f => (
+        <div key={f.label} className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
+          <span className="text-muted-foreground">{f.label}</span>
+          <span className="font-medium">{f.value}</span>
         </div>
-      )}
+      ))}
       {store.email && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
           <span className="text-muted-foreground">Email</span>
@@ -271,18 +284,10 @@ function EbayStoreSection({ store }: { store: any }) {
         </div>
       )}
       <div className="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-lg text-sm">
-        <span className="text-muted-foreground">eBay Auth</span>
-        {isLoading ? (
-          <div className="flex items-center gap-1.5 text-muted-foreground">
-            <Loader2 className="w-3 h-3 animate-spin" /> Checking...
-          </div>
-        ) : hasToken && status?.connected ? (
+        <span className="text-muted-foreground">{platformLabel} Auth</span>
+        {isAuthorized ? (
           <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800 gap-1">
             <CheckCircle2 className="w-3 h-3" /> Authorized
-          </Badge>
-        ) : hasToken ? (
-          <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800 gap-1">
-            <AlertCircle className="w-3 h-3" /> Token Expired
           </Badge>
         ) : (
           <Badge variant="outline" className="text-muted-foreground gap-1">
@@ -290,15 +295,17 @@ function EbayStoreSection({ store }: { store: any }) {
           </Badge>
         )}
       </div>
-      <Button
-        variant={hasToken ? "outline" : "default"}
-        size="sm"
-        className="w-full h-8 text-xs gap-1.5"
-        onClick={() => window.open(`/api/ebay/auth?storeId=${store.id}`, '_blank')}
-      >
-        <ExternalLink className="w-3.5 h-3.5" />
-        {hasToken ? 'Re-authorize with eBay' : 'Authorize with eBay'}
-      </Button>
+      {authUrl && (
+        <Button
+          variant={isAuthorized ? "outline" : "default"}
+          size="sm"
+          className="w-full h-8 text-xs gap-1.5"
+          onClick={() => window.open(authUrl, '_blank')}
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          {isAuthorized ? `Re-authorize with ${platformLabel}` : `Authorize with ${platformLabel}`}
+        </Button>
+      )}
     </div>
   );
 }
@@ -363,19 +370,10 @@ function StoreCard({
         <CardTitle className="mt-4">{store.name}</CardTitle>
         <CardDescription className="flex items-center gap-2">
           <span className="capitalize">{store.platform}</span>
-          {store.platform !== 'ebay' && (
-            store.credentials?.apiKey ? (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800">Connected</Badge>
-            ) : (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground">No API Key</Badge>
-            )
-          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {store.platform === 'ebay' && (
-          <EbayStoreSection store={store} />
-        )}
+        <OAuthStoreSection store={store} />
         <div className="flex items-center text-sm">
           <RefreshCw className={`w-3 h-3 mr-2 ${isSyncing ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
           {store.lastSync ? (
@@ -653,6 +651,12 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
     const creds = data.credentials as any;
     if (data.platform === 'ebay') {
       data.credentials = { sellerId: creds?.sellerId || "", ebayRefreshToken: "" };
+    } else if (data.platform === 'shopify') {
+      data.credentials = { shopDomain: creds?.shopDomain || "", accessToken: "" };
+    } else if (data.platform === 'woocommerce') {
+      data.credentials = { siteUrl: creds?.siteUrl || "", consumerKey: "", consumerSecret: "" };
+    } else {
+      data.credentials = {};
     }
     createStore.mutate(data, { onSuccess });
   };
@@ -709,24 +713,46 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
             )} />
           </>
         )}
-        {plat !== 'ebay' && (
+        {plat === 'shopify' && (
           <FormField control={form.control} name="credentials" render={({ field }) => (
             <FormItem>
-              <FormLabel>API Key</FormLabel>
+              <FormLabel>Shopify Store Domain</FormLabel>
               <FormControl>
                 <Input
-                  type="password"
-                  placeholder="Enter API key for this platform"
-                  value={(field.value as any)?.apiKey ?? ""}
-                  onChange={(e) => field.onChange({ ...(field.value as any ?? {}), apiKey: e.target.value })}
+                  placeholder="mystore.myshopify.com"
+                  value={(field.value as any)?.shopDomain ?? ""}
+                  onChange={(e) => field.onChange({ ...(field.value as any ?? {}), shopDomain: e.target.value, accessToken: "" })}
                 />
               </FormControl>
               <FormMessage />
             </FormItem>
           )} />
         )}
+        {plat === 'woocommerce' && (
+          <>
+            <FormField control={form.control} name="credentials" render={({ field }) => (
+              <FormItem>
+                <FormLabel>WooCommerce Site URL</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="https://mystore.com"
+                    value={(field.value as any)?.siteUrl ?? ""}
+                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), siteUrl: e.target.value, consumerKey: "", consumerSecret: "" })}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </>
+        )}
+        {plat === 'amazon' && (
+          <p className="text-xs text-muted-foreground">After creating the store, authorize with Amazon via the store card below.</p>
+        )}
+        {plat === 'jumia' && (
+          <p className="text-xs text-muted-foreground">After creating the store, authorize with Jumia via the store card below.</p>
+        )}
         <Button type="submit" className="w-full" disabled={createStore.isPending}>
-          {createStore.isPending ? "Connecting..." : "Connect Store"}
+          {createStore.isPending ? "Creating..." : "Connect Store"}
         </Button>
       </form>
     </Form>

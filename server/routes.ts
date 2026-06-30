@@ -3161,6 +3161,183 @@ Guidelines:
     }
   });
 
+  // === Helper: read app setting from DB with env fallback ===
+  async function getAppSetting(key: string): Promise<string> {
+    const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    return rows.length ? rows[0].value : process.env[key] || "";
+  }
+
+  async function upsertAppSetting(key: string, value: string) {
+    if (!value) return;
+    const existing = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (existing.length) {
+      await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+    } else {
+      await db.insert(appSettings).values({ key, value });
+    }
+  }
+
+  // === Shopify OAuth Flow ===
+  app.get('/api/oauth/shopify/auth', async (req, res) => {
+    try {
+      const storeId = req.query.storeId as string;
+      const clientId = await getAppSetting("SHOPIFY_CLIENT_ID");
+      const redirectUri = await getAppSetting("SHOPIFY_REDIRECT_URI");
+      if (!clientId || !redirectUri) {
+        return res.status(400).send('Shopify not configured. Admin must set Client ID and Redirect URI in Admin > Integrations.');
+      }
+      const store = storeId ? (await db.select().from(stores).where(eq(stores.id, parseInt(storeId))).limit(1))[0] : null;
+      if (!store) return res.status(400).send('Store not found');
+      const creds = store.credentials as any;
+      const shopDomain = creds?.shopDomain;
+      if (!shopDomain) return res.status(400).send('Shopify store domain not set. Edit the store and add your myshopify.com domain.');
+      const scopes = 'read_products,write_products,read_orders,write_orders,read_inventory,write_inventory';
+      const state = `store_${storeId}`;
+      const authUrl = `https://${shopDomain}/admin/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&state=${encodeURIComponent(state)}`;
+      res.redirect(authUrl);
+    } catch (err: any) { res.status(500).send(`Shopify OAuth error: ${err.message}`); }
+  });
+
+  app.get('/api/oauth/shopify/callback', async (req, res) => {
+    try {
+      const code = req.query.code as string;
+      const state = (req.query.state as string) || "";
+      const shop = req.query.shop as string;
+      if (!code) return res.status(400).send('Missing authorization code');
+      const clientId = await getAppSetting("SHOPIFY_CLIENT_ID");
+      const clientSecret = await getAppSetting("SHOPIFY_CLIENT_SECRET");
+      const redirectUri = await getAppSetting("SHOPIFY_REDIRECT_URI");
+      if (!clientId || !clientSecret) return res.status(400).send('Shopify not configured');
+      let storeId: number | null = null;
+      if (state.startsWith("store_")) storeId = parseInt(state.replace("store_", ""), 10) || null;
+      let shopDomain = shop;
+      if (!shopDomain && storeId) {
+        const storeRows2 = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        if (storeRows2.length) shopDomain = (storeRows2[0].credentials as any).shopDomain || null;
+      }
+      if (!shopDomain) return res.status(400).send('Could not determine shop domain');
+      const tokenRes = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
+      });
+      if (!tokenRes.ok) return res.status(500).send(`Token exchange failed: ${await tokenRes.text()}`);
+      const data = await tokenRes.json();
+      const accessToken = data.access_token;
+      if (storeId) {
+        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        if (storeRows.length) {
+          const creds = (storeRows[0].credentials as any) || {};
+          creds.accessToken = accessToken;
+          await db.update(stores).set({ credentials: creds }).where(eq(stores.id, storeId));
+        }
+      }
+      res.send(`
+        <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
+          <h1>Shopify OAuth — Success</h1>
+          <p>Your Shopify store "${shopDomain}" has been connected.</p>
+          <p style="margin-top: 2rem; color: #666;">Access token received at: ${new Date().toLocaleString()}</p>
+          <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
+        </body></html>
+      `);
+    } catch (err: any) { res.status(500).send(`Shopify OAuth error: ${err.message}`); }
+  });
+
+  // === WooCommerce OAuth Flow ===
+  app.get('/api/oauth/woocommerce/auth', async (req, res) => {
+    try {
+      const storeId = req.query.storeId as string;
+      res.send(`
+        <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
+          <h1>WooCommerce Connection</h1>
+          <p>To connect your WooCommerce store:</p>
+          <ol style="line-height: 2;">
+            <li>Go to your WooCommerce admin: <strong>WooCommerce → Settings → Advanced → REST API</strong></li>
+            <li>Click <strong>Add Key</strong></li>
+            <li>Set description, user, and permissions (<strong>Read/Write</strong>)</li>
+            <li>Copy the <strong>Consumer Key</strong> and <strong>Consumer Secret</strong></li>
+            <li>Enter them in the <strong>Admin → Integrations → WooCommerce</strong> settings</li>
+          </ol>
+          <p>After setup, return to <a href="/stores">Stores</a> and sync your store.</p>
+        </body></html>
+      `);
+    } catch (err: any) { res.status(500).send(`WooCommerce error: ${err.message}`); }
+  });
+
+  // === Amazon SP-API Auth Flow ===
+  app.get('/api/oauth/amazon/auth', async (req, res) => {
+    try {
+      const storeId = req.query.storeId as string;
+      const clientId = await getAppSetting("AMAZON_CLIENT_ID");
+      const redirectUri = await getAppSetting("AMAZON_REDIRECT_URI");
+      if (!clientId || !redirectUri) {
+        return res.status(400).send('Amazon not configured. Admin must set Client ID and Redirect URI in Admin > Integrations.');
+      }
+      const state = storeId ? `store_${storeId}` : "";
+      const authUrl = `https://sellercentral.amazon.com/apps/authorize/consent?application_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
+      res.redirect(authUrl);
+    } catch (err: any) { res.status(500).send(`Amazon OAuth error: ${err.message}`); }
+  });
+
+  app.get('/api/oauth/amazon/callback', async (req, res) => {
+    try {
+      const state = (req.query.state as string) || "";
+      const sellingPartnerId = req.query.selling_partner_id as string;
+      let storeId: number | null = null;
+      if (state.startsWith("store_")) storeId = parseInt(state.replace("store_", ""), 10) || null;
+      if (storeId) {
+        const creds = { spApiSellerId: sellingPartnerId || "", spApiRefreshToken: "" };
+        await db.update(stores).set({ credentials: creds }).where(eq(stores.id, storeId));
+      }
+      res.send(`
+        <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
+          <h1>Amazon SP-API — Success</h1>
+          <p>Your Amazon seller account has been connected.</p>
+          <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
+        </body></html>
+      `);
+    } catch (err: any) { res.status(500).send(`Amazon callback error: ${err.message}`); }
+  });
+
+  // === Jumia OAuth Flow ===
+  app.get('/api/oauth/jumia/auth', async (req, res) => {
+    try {
+      res.send(`
+        <html><body style="font-family: sans-serif; padding: 2rem; max-width: 800px; margin: auto;">
+          <h1>Jumia Connection</h1>
+          <p>Jumia uses API keys for authentication.</p>
+          <p>The admin must configure Jumia API credentials in <strong>Admin → Integrations</strong>.</p>
+          <p>After setup, return to <a href="/stores">Stores</a> and sync your store.</p>
+        </body></html>
+      `);
+    } catch (err: any) { res.status(500).send(`Jumia error: ${err.message}`); }
+  });
+
+  // === OAuth Status Check ===
+  app.get('/api/oauth/:platform/status', async (req, res) => {
+    try {
+      const { platform } = req.params;
+      const storeId = req.query.storeId ? parseInt(req.query.storeId as string, 10) : null;
+      if (!storeId) return res.json({ connected: false, message: "No store specified" });
+      const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+      if (!storeRows.length) return res.json({ connected: false, message: "Store not found" });
+      const creds = storeRows[0].credentials as any;
+      if (platform === 'shopify') {
+        return res.json({ connected: !!creds?.accessToken, message: creds?.accessToken ? 'Authorized' : 'Not authorized' });
+      }
+      if (platform === 'woocommerce') {
+        return res.json({ connected: !!(creds?.consumerKey && creds?.consumerSecret), message: creds?.consumerKey ? 'Configured' : 'Not configured' });
+      }
+      if (platform === 'amazon') {
+        return res.json({ connected: !!creds?.spApiSellerId, message: creds?.spApiSellerId ? 'Authorized' : 'Not authorized' });
+      }
+      if (platform === 'jumia') {
+        return res.json({ connected: false, message: 'Configure via Admin Integrations' });
+      }
+      res.json({ connected: false, message: "Unknown platform" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // === eBay Connection Status ===
   app.get('/api/ebay/status', async (req, res) => {
     try {
@@ -3634,6 +3811,74 @@ Guidelines:
       await upsert("EBAY_CLIENT_ID", clientId);
       await upsert("EBAY_CLIENT_SECRET", clientSecret);
       await upsert("EBAY_RU_NAME", ruName);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Admin: Shopify App Settings
+  adminApi.get('/admin/app-settings/shopify', async (req: any, res) => {
+    try {
+      res.json({ clientId: await getAppSetting("SHOPIFY_CLIENT_ID"), clientSecret: await getAppSetting("SHOPIFY_CLIENT_SECRET"), redirectUri: await getAppSetting("SHOPIFY_REDIRECT_URI") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/app-settings/shopify', async (req: any, res) => {
+    try {
+      const { clientId, clientSecret, redirectUri } = req.body;
+      await upsertAppSetting("SHOPIFY_CLIENT_ID", clientId);
+      await upsertAppSetting("SHOPIFY_CLIENT_SECRET", clientSecret);
+      await upsertAppSetting("SHOPIFY_REDIRECT_URI", redirectUri);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Admin: Amazon App Settings
+  adminApi.get('/admin/app-settings/amazon', async (req: any, res) => {
+    try {
+      res.json({ clientId: await getAppSetting("AMAZON_CLIENT_ID"), clientSecret: await getAppSetting("AMAZON_CLIENT_SECRET"), redirectUri: await getAppSetting("AMAZON_REDIRECT_URI"), refreshToken: await getAppSetting("AMAZON_REFRESH_TOKEN") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/app-settings/amazon', async (req: any, res) => {
+    try {
+      const { clientId, clientSecret, redirectUri, refreshToken } = req.body;
+      await upsertAppSetting("AMAZON_CLIENT_ID", clientId);
+      await upsertAppSetting("AMAZON_CLIENT_SECRET", clientSecret);
+      await upsertAppSetting("AMAZON_REDIRECT_URI", redirectUri);
+      await upsertAppSetting("AMAZON_REFRESH_TOKEN", refreshToken);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Admin: WooCommerce App Settings
+  adminApi.get('/admin/app-settings/woocommerce', async (req: any, res) => {
+    try {
+      res.json({ consumerKey: await getAppSetting("WOOCOMMERCE_CONSUMER_KEY"), consumerSecret: await getAppSetting("WOOCOMMERCE_CONSUMER_SECRET") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/app-settings/woocommerce', async (req: any, res) => {
+    try {
+      const { consumerKey, consumerSecret } = req.body;
+      await upsertAppSetting("WOOCOMMERCE_CONSUMER_KEY", consumerKey);
+      await upsertAppSetting("WOOCOMMERCE_CONSUMER_SECRET", consumerSecret);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Admin: Jumia App Settings
+  adminApi.get('/admin/app-settings/jumia', async (req: any, res) => {
+    try {
+      res.json({ apiKey: await getAppSetting("JUMIA_API_KEY"), apiSecret: await getAppSetting("JUMIA_API_SECRET"), sellerId: await getAppSetting("JUMIA_SELLER_ID") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/app-settings/jumia', async (req: any, res) => {
+    try {
+      const { apiKey, apiSecret, sellerId } = req.body;
+      await upsertAppSetting("JUMIA_API_KEY", apiKey);
+      await upsertAppSetting("JUMIA_API_SECRET", apiSecret);
+      await upsertAppSetting("JUMIA_SELLER_ID", sellerId);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

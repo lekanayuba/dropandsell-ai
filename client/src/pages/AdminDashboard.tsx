@@ -24,7 +24,7 @@ import {
   FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
   PieChart, LineChart, TrendingUp as TrendUp, ArrowUpRight,
   ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
-  Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2,
+  Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2, ShoppingBag,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -847,12 +847,76 @@ export default function AdminDashboard() {
           {activeTab === "integrations" && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections.</p>
+                <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections. These credentials are used by all client stores — end users never need to enter API keys manually.</p>
               </div>
-              {/* eBay API Settings */}
-              <EbayAdminSettings />
 
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* Platform API Settings Cards */}
+              <PlatformSettingsCard
+                platform="ebay"
+                label="eBay"
+                icon={Globe}
+                color="border-blue-200/50 dark:border-blue-900/30"
+                fields={[
+                  { key: "clientId", label: "Client ID (App ID)", placeholder: "Olalekan-DropandS-PRD-..." },
+                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "PRD-..." },
+                  { key: "ruName", label: "RuName (Redirect URL)", placeholder: "Olalekan_Ayuba-..." },
+                ]}
+                docUrl="https://developer.ebay.com"
+              />
+
+              <PlatformSettingsCard
+                platform="shopify"
+                label="Shopify"
+                icon={ShoppingBag}
+                color="border-green-200/50 dark:border-green-900/30"
+                fields={[
+                  { key: "clientId", label: "Client ID", placeholder: "Your Shopify App Client ID" },
+                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "Your Shopify App Client Secret" },
+                  { key: "redirectUri", label: "Redirect URI", placeholder: "https://yourapp.com/api/oauth/shopify/callback" },
+                ]}
+                docUrl="https://shopify.dev/docs/apps/auth/oauth"
+              />
+
+              <PlatformSettingsCard
+                platform="amazon"
+                label="Amazon SP-API"
+                icon={Store}
+                color="border-orange-200/50 dark:border-orange-900/30"
+                fields={[
+                  { key: "clientId", label: "Client ID", placeholder: "amzn1.application-oa2-..." },
+                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "Your Amazon SP-API Client Secret" },
+                  { key: "redirectUri", label: "Redirect URI", placeholder: "https://yourapp.com/api/oauth/amazon/callback" },
+                  { key: "refreshToken", label: "Refresh Token", secret: true, placeholder: "Your Amazon SP-API Refresh Token" },
+                ]}
+                docUrl="https://developer.amazon.com/docs/amazon-sp-api.html"
+              />
+
+              <PlatformSettingsCard
+                platform="woocommerce"
+                label="WooCommerce"
+                icon={ShoppingCart}
+                color="border-purple-200/50 dark:border-purple-900/30"
+                fields={[
+                  { key: "consumerKey", label: "Consumer Key", placeholder: "ck_..." },
+                  { key: "consumerSecret", label: "Consumer Secret", secret: true, placeholder: "cs_..." },
+                ]}
+                docUrl="https://woocommerce.com/document/rest-api/"
+              />
+
+              <PlatformSettingsCard
+                platform="jumia"
+                label="Jumia"
+                icon={Globe}
+                color="border-orange-200/50 dark:border-orange-900/30"
+                fields={[
+                  { key: "apiKey", label: "API Key", placeholder: "Your Jumia API Key" },
+                  { key: "apiSecret", label: "API Secret", secret: true, placeholder: "Your Jumia API Secret" },
+                  { key: "sellerId", label: "Seller ID", placeholder: "Your Jumia Seller ID" },
+                ]}
+                docUrl="https://developers.jumia.com"
+              />
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                 {[
                   { key: "stripe", name: "Stripe", desc: "Payment processing & subscriptions", icon: CreditCard, doc: "https://stripe.com/docs" },
                   { key: "openai", name: "OpenAI", desc: "AI descriptions & support chat", icon: MessageSquare, doc: "https://openai.com" },
@@ -1025,23 +1089,25 @@ export default function AdminDashboard() {
   );
 }
 
-function EbayAdminSettings() {
+function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docUrl }: {
+  platform: string; label: string; icon: React.ElementType; color: string;
+  fields: { key: string; label: string; secret?: boolean; placeholder?: string }[];
+  docUrl: string;
+}) {
   const [open, setOpen] = useState(false);
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [ruName, setRuName] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const fetchSettings = async () => {
     try {
-      const res = await fetch("/api/admin/app-settings/ebay", { credentials: "include" });
+      const res = await fetch(`/api/admin/app-settings/${platform}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
-        setClientId(data.clientId || "");
-        setClientSecret(data.clientSecret || "");
-        setRuName(data.ruName || "");
+        const vals: Record<string, string> = {};
+        fields.forEach(f => vals[f.key] = data[f.key] || "");
+        setValues(vals);
       }
     } catch {}
   };
@@ -1051,14 +1117,14 @@ function EbayAdminSettings() {
   const save = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/admin/app-settings/ebay", {
+      const res = await fetch(`/api/admin/app-settings/${platform}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, clientSecret, ruName }),
+        body: JSON.stringify(values),
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast({ title: "eBay settings saved" });
+      toast({ title: `${label} settings saved` });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/service-status"] });
       setOpen(false);
     } catch (err: any) {
@@ -1066,28 +1132,36 @@ function EbayAdminSettings() {
     } finally { setSaving(false); }
   };
 
+  const allSet = fields.every(f => values[f.key]);
+
   return (
     <>
-      <Card className="border-blue-200/50 dark:border-blue-900/30 mb-4">
+      <Card className={cn("border-border/40 mb-4", color)}>
         <CardContent className="p-4 sm:p-5">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center">
-                <Globe className="w-5 h-5 text-blue-600" />
+              <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
+                <Icon className="w-5 h-5 text-foreground" />
               </div>
               <div>
-                <p className="text-sm font-semibold">eBay API Configuration</p>
-                <p className="text-xs text-muted-foreground">Manage your eBay Developer App credentials</p>
+                <p className="text-sm font-semibold">{label} API Configuration</p>
+                <p className="text-xs text-muted-foreground">Manage your {label} API credentials</p>
               </div>
             </div>
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
               <Settings className="w-3.5 h-3.5 mr-1.5" /> Configure
             </Button>
           </div>
-          <div className="flex items-center gap-4 mt-3 text-[11px] text-muted-foreground">
-            <span>Client ID: {clientId ? `${clientId.slice(0, 15)}...` : "Not set"}</span>
-            <span>RuName: {ruName ? `${ruName.slice(0, 15)}...` : "Not set"}</span>
+          <div className="flex items-center gap-4 mt-3 text-[11px] text-muted-foreground flex-wrap">
+            {fields.map(f => (
+              <span key={f.key}>{f.label}: {values[f.key] ? `${values[f.key].slice(0, 15)}...` : "Not set"}</span>
+            ))}
           </div>
+          {allSet && (
+            <p className="text-[10px] text-emerald-600 flex items-center gap-1 mt-2">
+              <CheckCircle className="w-3 h-3" /> All credentials configured
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -1095,32 +1169,28 @@ function EbayAdminSettings() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Globe className="w-4 h-4" /> eBay API Settings
+              <Icon className="w-4 h-4" /> {label} API Settings
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Enter your eBay Developer App credentials. These are used to authorize client stores.
-              Get them at <a href="https://developer.ebay.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">developer.ebay.com</a>
+              Enter your {label} API credentials. Get them at{" "}
+              <a href={docUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">{docUrl}</a>
             </p>
-            <div className="space-y-2">
-              <Label>Client ID (App ID)</Label>
-              <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Olalekan-DropandS-PRD-..." />
-            </div>
-            <div className="space-y-2">
-              <Label>Client Secret</Label>
-              <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="PRD-..." />
-            </div>
-            <div className="space-y-2">
-              <Label>RuName (Redirect URL)</Label>
-              <Input value={ruName} onChange={(e) => setRuName(e.target.value)} placeholder="Olalekan_Ayuba-Olalekan-Dropan-..." />
-              <p className="text-[10px] text-muted-foreground">
-                This must match the Redirect URL configured in your eBay app settings.
-              </p>
-            </div>
+            {fields.map(f => (
+              <div key={f.key} className="space-y-2">
+                <Label>{f.label}</Label>
+                <Input
+                  type={f.secret ? "password" : "text"}
+                  value={values[f.key] || ""}
+                  onChange={(e) => setValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+                  placeholder={f.placeholder}
+                />
+              </div>
+            ))}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={save} disabled={saving || !clientId}>
+              <Button className="flex-1" onClick={save} disabled={saving || !fields.some(f => values[f.key])}>
                 {saving ? "Saving..." : "Save Settings"}
               </Button>
             </div>
