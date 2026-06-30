@@ -294,6 +294,22 @@ async function endEbayListingLegacy(ebayItemId: string, token: string): Promise<
   }
 }
 
+async function getEbayOrderLineItems(ebayOrderId: string, token: string): Promise<{ itemId: string; lineItemId: string }[]> {
+  try {
+    const res = await fetch(`https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}`, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.lineItems || []).map((li: any) => ({
+      itemId: li.itemId,
+      lineItemId: li.lineItemId,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function updateEbayOrderStatus(
   ebayOrderId: string,
   status: "SHIPPED" | "DELIVERED",
@@ -303,7 +319,6 @@ export async function updateEbayOrderStatus(
   try {
     const token = await getAccessToken();
 
-    // Map common carrier names to eBay carrier codes
     const carrierMap: Record<string, string> = {
       "royal mail": "RoyalMail",
       "ups": "UPS",
@@ -322,18 +337,13 @@ export async function updateEbayOrderStatus(
 
     const ebayCarrier = carrierMap[carrier.toLowerCase().trim()] || carrier;
 
-    const body = {
-      lineItems: [],
-      shipped: {
-        shipmentDate: new Date().toISOString(),
-        trackingNumber,
-        carrierUsed: ebayCarrier,
-      },
-    };
+    const lineItems = await getEbayOrderLineItems(ebayOrderId, token);
+    if (lineItems.length === 0) {
+      console.warn(`[eBay] No line items found for order ${ebayOrderId}, skipping fulfillment`);
+      return;
+    }
 
-    const endpoint = status === "DELIVERED"
-      ? `https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}/shipping_fulfillment`
-      : `https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}/shipping_fulfillment`;
+    const endpoint = `https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}/shipping_fulfillment`;
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -342,10 +352,22 @@ export async function updateEbayOrderStatus(
         Authorization: `Bearer ${token}`,
         "Content-Language": "en-US",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        lineItems: lineItems.map(li => ({
+          itemId: li.itemId,
+          lineItemId: li.lineItemId,
+        })),
+        shipped: {
+          shipmentDate: new Date().toISOString(),
+          trackingNumber,
+          carrierUsed: ebayCarrier,
+        },
+      }),
     });
 
-    if (!res.ok && res.status !== 409) {
+    if (res.status === 409) {
+      console.log(`[eBay] Fulfillment already exists for order ${ebayOrderId}`);
+    } else if (!res.ok) {
       const text = await res.text();
       console.error(`[eBay] Failed to update order ${ebayOrderId}: ${res.status} ${text}`);
     } else {

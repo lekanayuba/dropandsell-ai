@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Store, RefreshCw, Loader2, History, Lock, Unlock, CheckCircle2, AlertCircle, PauseCircle, AlertTriangle, ArrowLeftRight, ListX, Globe, ShoppingBag } from "lucide-react";
+import { Plus, Trash2, Store, RefreshCw, Loader2, History, Lock, Unlock, CheckCircle2, AlertCircle, PauseCircle, AlertTriangle, ArrowLeftRight, ListX, Globe, ShoppingBag, ExternalLink } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -307,6 +307,16 @@ function StoreCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {store.platform === 'ebay' && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950/20"
+            onClick={() => window.open('/api/ebay/auth', '_blank')}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />Authorize eBay Account
+          </Button>
+        )}
         <div className="flex items-center text-sm">
           <RefreshCw className={`w-3 h-3 mr-2 ${isSyncing ? 'animate-spin text-primary' : 'text-muted-foreground'}`} />
           {store.lastSync ? (

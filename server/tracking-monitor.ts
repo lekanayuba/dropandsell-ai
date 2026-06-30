@@ -57,17 +57,24 @@ async function checkTrackingStatus(
 
       if (res.ok) {
         const data = await res.json();
-        const trackData = data.data?.accepted?.[0]?.track;
-        if (trackData) {
+        const accepted = data.data?.accepted?.[0];
+        if (accepted?.track) {
+          const trackData = accepted.track;
           const statusCode = trackData.e;
-          if (statusCode === 10 || statusCode === 11) {
+          if (statusCode === 30) {
             return { status: "delivered", statusText: "Delivered" };
-          } else if (statusCode >= 1 && statusCode <= 9) {
+          } else if (statusCode >= 10 && statusCode <= 29) {
             return { status: "in_transit", statusText: "In Transit" };
-          } else if (statusCode >= 20) {
+          } else if (statusCode >= 40) {
             return { status: "failed", statusText: "Exception" };
+          } else if (statusCode >= 1 && statusCode <= 9) {
+            return { status: "in_transit", statusText: "Pre-Transit" };
           }
           return { status: "in_transit", statusText: trackData.z ?? "In Transit" };
+        }
+        const rejected = data.data?.rejected?.[0];
+        if (rejected) {
+          console.warn(`[Tracking] 17Track rejected ${trackingNumber}: ${rejected.err_msg || 'unknown'}`);
         }
       }
     } catch (err) {

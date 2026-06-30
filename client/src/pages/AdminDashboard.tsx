@@ -21,7 +21,7 @@ import {
   Link, ExternalLink, MoreHorizontal, Plus, Bell, HelpCircle,
   FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
   PieChart, LineChart, TrendingUp as TrendUp, ArrowUpRight,
-  ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical,
+  ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
   Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2,
 } from "lucide-react";
 import {
@@ -38,6 +38,19 @@ const STATUS_COLORS: Record<string, string> = {
   shipped: "bg-blue-500", processing: "bg-violet-500", cancelled: "bg-red-500",
   completed: "bg-emerald-500", delivered: "bg-emerald-500", connected: "bg-emerald-500",
   offline: "bg-red-500", warning: "bg-amber-500",
+};
+
+const COLOR_CLASSES: Record<string, { bg: string; text: string; from: string }> = {
+  primary: { bg: "bg-primary/10", text: "text-primary", from: "from-primary to-transparent" },
+  amber: { bg: "bg-amber-500/10", text: "text-amber-600", from: "from-amber-500 to-transparent" },
+  emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600", from: "from-emerald-500 to-transparent" },
+  violet: { bg: "bg-violet-500/10", text: "text-violet-600", from: "from-violet-500 to-transparent" },
+  rose: { bg: "bg-rose-500/10", text: "text-rose-600", from: "from-rose-500 to-transparent" },
+  cyan: { bg: "bg-cyan-500/10", text: "text-cyan-600", from: "from-cyan-500 to-transparent" },
+  indigo: { bg: "bg-indigo-500/10", text: "text-indigo-600", from: "from-indigo-500 to-transparent" },
+  green: { bg: "bg-green-500/10", text: "text-green-600", from: "from-green-500 to-transparent" },
+  orange: { bg: "bg-orange-500/10", text: "text-orange-600", from: "from-orange-500 to-transparent" },
+  blue: { bg: "bg-blue-500/10", text: "text-blue-600", from: "from-blue-500 to-transparent" },
 };
 
 function StatusDot({ status }: { status: string }) {
@@ -61,15 +74,16 @@ function KpiCard({ label, value, icon: Icon, trend, color = "primary", sparkline
   label: string; value: string | number; icon: any; trend?: { up: boolean; pct: string };
   color?: string; sparklineData?: number[]; subtitle?: string;
 }) {
+  const cc = COLOR_CLASSES[color] || COLOR_CLASSES.primary;
   return (
     <Card className="group relative overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 border-border/40">
-      <div className={cn("absolute inset-0 opacity-[0.03] bg-gradient-to-br", `from-${color} to-transparent`)} />
+      <div className={cn("absolute inset-0 opacity-[0.03] bg-gradient-to-br", cc.from)} />
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between mb-3">
-          <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", `bg-${color}/10`)}>
-            <Icon className={cn("w-4.5 h-4.5", `text-${color}`)} />
+          <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", cc.bg)}>
+            <Icon className={cn("w-4.5 h-4.5", cc.text)} />
           </div>
-          {sparklineData && <Sparkline data={sparklineData} color={`hsl(var(--${color === 'primary' ? 'primary' : 'primary'}))`} />}
+          {sparklineData && <Sparkline data={sparklineData} color={`hsl(var(--primary))`} />}
         </div>
         <p className="text-2xl font-bold tabular-nums leading-none tracking-tight">{value}</p>
         <div className="flex items-center gap-1.5 mt-1.5">
@@ -280,7 +294,8 @@ export default function AdminDashboard() {
   };
 
   const dailyRevData = useMemo(() => ((revenueHist as any)?.dailyRevenue || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.total) })), [revenueHist]);
-  const weeklyRevData = useMemo(() => ((revenueHist as any)?.weeklyRevenue || []).map((r: any) => ({ name: `W${new Date(r.week).getWeekNumber?.() || new Date(r.week).getDate()}`, value: Number(r.total) })), [revenueHist]);
+  const getWeekNumber = (d: Date) => { const start = new Date(d.getFullYear(), 0, 1); return Math.ceil(((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7); };
+  const weeklyRevData = useMemo(() => ((revenueHist as any)?.weeklyRevenue || []).map((r: any) => ({ name: `W${getWeekNumber(new Date(r.week))}`, value: Number(r.total) })), [revenueHist]);
   const monthlyRevData = useMemo(() => ((revenueHist as any)?.monthlyRevenue || []).map((r: any) => ({ name: new Date(r.month).toLocaleDateString(undefined, { month: 'short' }), value: Number(r.total) })), [revenueHist]);
   const userGrowthData = useMemo(() => ((revenueHist as any)?.userGrowth || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]);
   const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
@@ -811,7 +826,12 @@ export default function AdminDashboard() {
           {/* ===== API INTEGRATIONS ===== */}
           {activeTab === "integrations" && (
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <p className="text-xs text-muted-foreground mb-4">Configure and monitor third-party API connections.</p>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections.</p>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => window.open('/api/ebay/auth', '_blank')}>
+                  <ExternalLink className="w-3.5 h-3.5" />Authorize eBay
+                </Button>
+              </div>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[
                   { key: "stripe", name: "Stripe", desc: "Payment processing & subscriptions", icon: CreditCard, doc: "https://stripe.com/docs" },
