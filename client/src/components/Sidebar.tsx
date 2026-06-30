@@ -55,7 +55,7 @@ export function Sidebar() {
     { href: "/inventory", label: "Inventory", icon: Package },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/bulk-edit", label: "Bulk Edit", icon: Pencil },
-    { href: "/shipping", label: "Shipping", icon: Truck },
+    { href: "/shipping", label: "Tracking", icon: Truck },
     { href: "/automation", label: "Automation", icon: Zap },
     { href: "/notifications", label: "Notifications", icon: Bell, badge: unreadCount },
     { href: "/addon-catalog", label: "Catalog", icon: PackageOpen },
