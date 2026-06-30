@@ -61,6 +61,7 @@ export const vendors = pgTable("vendors", {
   lateDeliveryRate: decimal("late_delivery_rate", { precision: 5, scale: 2 }), // percentage
   totalOrdersFulfilled: integer("total_orders_fulfilled").default(0),
   lastHealthCheck: timestamp("last_health_check"),
+  isGlobal: boolean("is_global").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -384,7 +385,7 @@ export type InsertStore = z.infer<typeof insertStoreSchema>;
 export type Store = typeof stores.$inferSelect;
 
 // Vendors
-export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true });
+export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true, isGlobal: true });
 export type InsertVendor = z.infer<typeof insertVendorSchema>;
 export type Vendor = typeof vendors.$inferSelect;
 

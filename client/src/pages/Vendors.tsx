@@ -606,28 +606,38 @@ export default function Vendors() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 ml-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-primary"
-                      onClick={() => setEditVendor(vendor)}
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => deleteVendor.mutate(vendor.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!vendor.isGlobal && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          onClick={() => setEditVendor(vendor)}
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteVendor.mutate(vendor.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4 pt-0">
                 {/* Tags & Category Row */}
                 <div className="flex items-center flex-wrap gap-1.5">
+                  {vendor.isGlobal && (
+                    <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-800">
+                      <Globe className="w-3 h-3 mr-1" />
+                      Global
+                    </Badge>
+                  )}
                   {vendor.category && (
                     <Badge variant="secondary" className="text-[10px] capitalize">
                       <Tag className="w-3 h-3 mr-1" />

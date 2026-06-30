@@ -199,6 +199,7 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState("");
   const [orderFilter, setOrderFilter] = useState("all");
   const [theme, setTheme] = useState<"dark" | "light">(() => (document.documentElement.classList.contains("dark") ? "dark" : "light"));
+  const [globalVendorOpen, setGlobalVendorOpen] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -782,6 +783,23 @@ export default function AdminDashboard() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Global Vendors Management */}
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-blue-500" />
+                      Global Vendors
+                    </h4>
+                    <p className="text-xs text-muted-foreground">Vendors available to all clients</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setGlobalVendorOpen(true)}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Global Vendor
+                  </Button>
+                </div>
+                <GlobalVendorList />
+              </div>
             </div>
           )}
 
@@ -1106,6 +1124,163 @@ function EbayAdminSettings() {
                 {saving ? "Saving..." : "Save Settings"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function GlobalVendorList() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [editVendor, setEditVendor] = useState<any>(null);
+  const [name, setName] = useState("");
+  const [website, setWebsite] = useState("");
+  const [contactPerson, setContactPerson] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [category, setCategory] = useState("");
+  const [tags, setTags] = useState("");
+  const [country, setCountry] = useState("");
+  const [leadTime, setLeadTime] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const { data: vendors, isLoading } = useQuery({
+    queryKey: ["/api/admin/vendors/global"],
+    queryFn: async () => { const r = await fetch("/api/admin/vendors/global", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    refetchInterval: 30000,
+  });
+
+  const resetForm = () => {
+    setName(""); setWebsite(""); setContactPerson(""); setContactEmail(""); setContactPhone("");
+    setCategory(""); setTags(""); setCountry(""); setLeadTime(""); setPaymentTerms(""); setNotes(""); setEditVendor(null);
+  };
+
+  const openEdit = (v: any) => {
+    setName(v.name || ""); setWebsite(v.website || ""); setContactPerson(v.contactPerson || "");
+    setContactEmail(v.contactEmail || ""); setContactPhone(v.contactPhone || "");
+    setCategory(v.category || ""); setTags(v.tags || ""); setCountry(v.country || "");
+    setLeadTime(v.leadTime || ""); setPaymentTerms(v.paymentTerms || ""); setNotes(v.notes || "");
+    setEditVendor(v); setOpen(true);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const body = { name, website, contactPerson, contactEmail, contactPhone, category, tags, country, leadTime, paymentTerms, notes };
+      if (editVendor) {
+        const r = await fetch(`/api/admin/vendors/global/${editVendor.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
+        if (!r.ok) throw new Error("Failed to update");
+        return r.json();
+      } else {
+        const r = await fetch("/api/admin/vendors/global", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
+        if (!r.ok) throw new Error("Failed to create");
+        return r.json();
+      }
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/vendors/global"] }); toast({ title: editVendor ? "Vendor updated" : "Vendor created" }); setOpen(false); resetForm(); },
+    onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { const r = await fetch(`/api/admin/vendors/global/${id}`, { method: "DELETE", credentials: "include" }); if (!r.ok) throw new Error("Failed to delete"); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/vendors/global"] }); toast({ title: "Vendor deleted" }); },
+    onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+
+  return (
+    <>
+      <Card className="border-border/40">
+        <CardContent className="p-0">
+          {isLoading ? <LoadingRows rows={3} /> : !vendors?.length ? (
+            <div className="p-6 text-center text-sm text-muted-foreground">No global vendors yet. Click "Add Global Vendor" to create one.</div>
+          ) : (
+            <div className="divide-y divide-border/10">
+              {vendors.map((v: any) => (
+                <div key={v.id} className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center shrink-0">
+                      <Globe className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{v.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{v.category || v.contactEmail || v.country || "—"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Edit3 className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm("Delete this global vendor?")) deleteMutation.mutate(v.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={open} onOpenChange={(o) => { if (!o) { setOpen(false); resetForm(); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Store className="w-4 h-4" /> {editVendor ? "Edit Global Vendor" : "Add Global Vendor"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Vendor Name *</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. AliExpress Wholesale" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Website</Label>
+              <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Contact Person</Label>
+                <Input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Contact Email</Label>
+                <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Contact Phone</Label>
+                <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Country</Label>
+                <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. China" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Category</Label>
+                <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="wholesale / manufacturer" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tags</Label>
+                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="comma-separated" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Lead Time</Label>
+                <Input value={leadTime} onChange={(e) => setLeadTime(e.target.value)} placeholder="e.g. 3-5 days" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Payment Terms</Label>
+                <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. Net 30" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+            <Button className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !name}>
+              {saveMutation.isPending ? "Saving..." : editVendor ? "Update Vendor" : "Create Vendor"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

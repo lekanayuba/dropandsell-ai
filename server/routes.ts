@@ -67,6 +67,16 @@ export async function registerRoutes(
     console.error("[Migration] app_settings table setup failed:", e.message);
   }
 
+  // Safe migration: add is_global column to vendors
+  try {
+    await db.execute(sql`
+      ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_global BOOLEAN NOT NULL DEFAULT false
+    `);
+    console.log("[Migration] vendors.is_global column ready");
+  } catch (e: any) {
+    console.error("[Migration] vendors.is_global column failed:", e.message);
+  }
+
   // === STANDALONE EMAIL/PASSWORD AUTH ===
   app.post('/api/auth/register', async (req, res) => {
     try {
@@ -3359,6 +3369,51 @@ Guidelines:
       const avgHealth = await db.execute(sql`SELECT COALESCE(AVG(health_score), 0) as avg FROM vendors WHERE health_score IS NOT NULL`);
       res.json({ vendors: vendorStats, totalVendors: Number(count), avgHealthScore: Number((avgHealth.rows[0] as any)?.avg || 0) });
     } catch { res.json({ vendors: [], totalVendors: 0, avgHealthScore: 0 }); }
+  });
+
+  // Admin: Global vendors CRUD
+  adminApi.get('/admin/vendors/global', async (req: any, res) => {
+    try {
+      const global = await db.select().from(vendors).where(eq(vendors.isGlobal, true)).orderBy(desc(vendors.createdAt));
+      res.json(global);
+    } catch { res.json([]); }
+  });
+
+  adminApi.post('/admin/vendors/global', async (req: any, res) => {
+    try {
+      const { name, website, contactPerson, contactEmail, contactPhone, category, tags, country, leadTime, paymentTerms, minOrderAmount, notes, healthScore, integrationType } = req.body;
+      if (!name) return res.status(400).json({ message: 'Vendor name is required' });
+      const adminUser = await db.select().from(users).where(eq(users.role, 'admin')).limit(1);
+      if (!adminUser.length) return res.status(500).json({ message: 'No admin user found' });
+      const [vendor] = await db.insert(vendors).values({
+        userId: adminUser[0].id,
+        name, website, contactPerson, contactEmail, contactPhone,
+        category, tags, country, leadTime, paymentTerms,
+        minOrderAmount: minOrderAmount?.toString(),
+        notes, healthScore, integrationType: integrationType || 'custom',
+        isGlobal: true, status: 'active',
+      }).returning();
+      res.status(201).json(vendor);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/vendors/global/:id', async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const updates = req.body;
+      delete updates.id; delete updates.userId; delete updates.isGlobal;
+      const [vendor] = await db.update(vendors).set(updates).where(and(eq(vendors.id, id), eq(vendors.isGlobal, true))).returning();
+      if (!vendor) return res.status(404).json({ message: 'Global vendor not found' });
+      res.json(vendor);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.delete('/admin/vendors/global/:id', async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      await db.delete(vendors).where(and(eq(vendors.id, id), eq(vendors.isGlobal, true)));
+      res.status(204).send();
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // Admin: System status

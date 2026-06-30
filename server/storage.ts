@@ -158,7 +158,9 @@ export class DatabaseStorage implements IStorage {
 
   // Vendors
   async getVendors(userId: string) {
-    return await db.select().from(vendors).where(eq(vendors.userId, userId));
+    return await db.select().from(vendors).where(
+      or(eq(vendors.userId, userId), eq(vendors.isGlobal, true))
+    );
   }
 
   async createVendor(vendor: InsertVendor & { userId: string }) {
@@ -175,6 +177,17 @@ export class DatabaseStorage implements IStorage {
 
   async deleteVendor(id: number, userId: string) {
     await db.delete(vendors).where(and(eq(vendors.id, id), eq(vendors.userId, userId)));
+  }
+
+  async updateVendorById(id: number, updates: Partial<InsertVendor>) {
+    const [updated] = await db.update(vendors).set(updates)
+      .where(eq(vendors.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteVendorById(id: number) {
+    await db.delete(vendors).where(eq(vendors.id, id));
   }
 
   // Products
