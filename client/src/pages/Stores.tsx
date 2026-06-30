@@ -648,7 +648,6 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
   const plat = form.watch('platform');
 
   const onSubmit = (data: InsertStore) => {
-    // For eBay, extract sellerId and ebayRefreshToken from credentials
     const creds = data.credentials as any;
     if (data.platform === 'ebay') {
       data.credentials = { sellerId: creds?.sellerId || "", ebayRefreshToken: "" };
@@ -659,10 +658,28 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField control={form.control} name="platform" render={({ field }) => (
+          <FormItem>
+            <FormLabel>Platform</FormLabel>
+            <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <FormControl>
+                <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="shopify">Shopify</SelectItem>
+                <SelectItem value="amazon">Amazon</SelectItem>
+                <SelectItem value="ebay">eBay</SelectItem>
+                <SelectItem value="jumia">Jumia</SelectItem>
+                <SelectItem value="woocommerce">WooCommerce</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )} />
         <FormField control={form.control} name="name" render={({ field }) => (
           <FormItem>
-            <FormLabel>{plat === 'ebay' ? 'Store Name / eBay Seller Name' : 'Store Name'}</FormLabel>
-            <FormControl><Input placeholder={plat === 'ebay' ? 'Your eBay store name' : "My Awesome Store"} {...field} /></FormControl>
+            <FormLabel>Store Name</FormLabel>
+            <FormControl><Input placeholder={plat === 'ebay' ? 'My eBay Store' : "My Awesome Store"} {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )} />
@@ -685,49 +702,26 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
                     onChange={(e) => field.onChange({ ...(field.value as any ?? {}), sellerId: e.target.value, ebayRefreshToken: "" })}
                   />
                 </FormControl>
-                <p className="text-xs text-muted-foreground mt-1">
-                  After creating the store, authorize it via the "Authorize with eBay" button on the store card.
-                </p>
                 <FormMessage />
               </FormItem>
             )} />
           </>
         )}
         {plat !== 'ebay' && (
-          <>
-            <FormField control={form.control} name="platform" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Platform</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                  <FormControl>
-                    <SelectTrigger><SelectValue placeholder="Select platform" /></SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="shopify">Shopify</SelectItem>
-                    <SelectItem value="amazon">Amazon</SelectItem>
-                    <SelectItem value="ebay">eBay</SelectItem>
-                    <SelectItem value="jumia">Jumia</SelectItem>
-                    <SelectItem value="woocommerce">WooCommerce</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="credentials" render={({ field }) => (
-              <FormItem>
-                <FormLabel>API Key</FormLabel>
-                <FormControl>
-                  <Input
-                    type="password"
-                    placeholder="Enter API key for this platform"
-                    value={(field.value as any)?.apiKey ?? ""}
-                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), apiKey: e.target.value })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-          </>
+          <FormField control={form.control} name="credentials" render={({ field }) => (
+            <FormItem>
+              <FormLabel>API Key</FormLabel>
+              <FormControl>
+                <Input
+                  type="password"
+                  placeholder="Enter API key for this platform"
+                  value={(field.value as any)?.apiKey ?? ""}
+                  onChange={(e) => field.onChange({ ...(field.value as any ?? {}), apiKey: e.target.value })}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
         )}
         <Button type="submit" className="w-full" disabled={createStore.isPending}>
           {createStore.isPending ? "Connecting..." : "Connect Store"}
