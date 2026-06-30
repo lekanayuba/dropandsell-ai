@@ -19,7 +19,11 @@ import {
   Gift,
   Bell,
   Globe,
-  MessageSquare
+  MessageSquare,
+  BarChart3,
+  Pencil,
+  Truck,
+  Contact
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -44,10 +48,14 @@ export function Sidebar() {
 
   const links = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/analytics", label: "Analytics", icon: BarChart3 },
     { href: "/stores", label: "Stores", icon: Store },
     { href: "/vendors", label: "Vendors", icon: Users },
+    { href: "/customers", label: "Customers", icon: Contact },
     { href: "/inventory", label: "Inventory", icon: Package },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
+    { href: "/bulk-edit", label: "Bulk Edit", icon: Pencil },
+    { href: "/shipping", label: "Shipping", icon: Truck },
     { href: "/automation", label: "Automation", icon: Zap },
     { href: "/notifications", label: "Notifications", icon: Bell, badge: unreadCount },
     { href: "/addon-catalog", label: "Catalog", icon: PackageOpen },

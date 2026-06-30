@@ -1,11 +1,11 @@
 import { 
   stores, vendors, products, productVariations, orders, wallet, transactions, subscriptions, referrals, notifications,
-  addonCatalog, catalogRefreshLog,
+  addonCatalog, catalogRefreshLog, shippingProfiles,
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertProductVariation, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
-  type InsertNotification, type InsertAddonCatalog,
+  type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
@@ -110,6 +110,13 @@ export interface IStorage {
   updateMarketplaceListing(id: number, updates: Partial<InsertMarketplaceListing>): Promise<typeof marketplaceListings.$inferSelect | undefined>;
   updateMarketplaceListingStatus(id: number, status: string): Promise<typeof marketplaceListings.$inferSelect | undefined>;
   getListingsByProductId(productId: number): Promise<typeof marketplaceListings.$inferSelect[]>;
+
+  // Shipping Profiles
+  getShippingProfiles(userId: string): Promise<typeof shippingProfiles.$inferSelect[]>;
+  getShippingProfile(id: number, userId?: string): Promise<typeof shippingProfiles.$inferSelect | undefined>;
+  createShippingProfile(profile: InsertShippingProfile & { userId: string }): Promise<typeof shippingProfiles.$inferSelect>;
+  updateShippingProfile(id: number, userId: string, updates: Partial<InsertShippingProfile>): Promise<typeof shippingProfiles.$inferSelect>;
+  deleteShippingProfile(id: number, userId: string): Promise<void>;
 
   // Points & Referral Wallet
   addReferralBonus(userId: string, amount: number): Promise<void>;
@@ -594,6 +601,36 @@ export class DatabaseStorage implements IStorage {
   async bulkCreatePublishQueue(items: (InsertPublishQueue & { userId: string })[]) {
     if (items.length === 0) return [];
     return await db.insert(publishQueue).values(items).returning();
+  }
+
+  // Shipping Profiles
+  async getShippingProfiles(userId: string) {
+    return await db.select().from(shippingProfiles).where(eq(shippingProfiles.userId, userId)).orderBy(desc(shippingProfiles.createdAt));
+  }
+
+  async getShippingProfile(id: number, userId?: string) {
+    if (userId) {
+      const [profile] = await db.select().from(shippingProfiles).where(and(eq(shippingProfiles.id, id), eq(shippingProfiles.userId, userId)));
+      return profile;
+    }
+    const [profile] = await db.select().from(shippingProfiles).where(eq(shippingProfiles.id, id));
+    return profile;
+  }
+
+  async createShippingProfile(profile: InsertShippingProfile & { userId: string }) {
+    const [newProfile] = await db.insert(shippingProfiles).values(profile).returning();
+    return newProfile;
+  }
+
+  async updateShippingProfile(id: number, userId: string, updates: Partial<InsertShippingProfile>) {
+    const [updated] = await db.update(shippingProfiles).set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(shippingProfiles.id, id), eq(shippingProfiles.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteShippingProfile(id: number, userId: string) {
+    await db.delete(shippingProfiles).where(and(eq(shippingProfiles.id, id), eq(shippingProfiles.userId, userId)));
   }
 
   // Marketplace Listings

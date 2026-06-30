@@ -4,7 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState, useMemo } from "react";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -12,85 +15,110 @@ import {
   MessageSquare, LogOut, TrendingUp, TrendingDown, Activity, Clock,
   AlertTriangle, CheckCircle, XCircle, Database, Key, Server,
   UserPlus, Search, ChevronRight, HeartPulse, Boxes, BarChart3,
-  LayoutDashboard, Sun, Moon, SlidersHorizontal, RefreshCw,
-  ChevronDown, ChevronUp, PanelLeft, PanelLeftClose,
-  UserCheck, UserX, Mail, Phone, Calendar, DollarSign, Award,
+  LayoutDashboard, Sun, Moon, PanelLeft, PanelLeftClose,
+  ChevronDown, ChevronUp, DollarSign, Award, Download, Filter,
+  SlidersHorizontal, RefreshCw, Wifi, WifiOff, Zap, Globe,
+  Link, ExternalLink, MoreHorizontal, Plus, Bell, HelpCircle,
+  FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
+  PieChart, LineChart, TrendingUp as TrendUp, ArrowUpRight,
+  ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical,
+  Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2,
 } from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
+} from "recharts";
 
-type TabId = "overview" | "users" | "orders" | "vendors" | "system";
+type TabId = "overview" | "analytics" | "users" | "orders" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
 
-const TABS: { id: TabId; label: string; icon: any }[] = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "users", label: "Users", icon: Users },
-  { id: "orders", label: "Orders", icon: ShoppingCart },
-  { id: "vendors", label: "Vendors", icon: Boxes },
-  { id: "system", label: "System", icon: Server },
-];
+const COLORS = ["hsl(var(--primary))", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899", "#14b8a6", "#6366f1"];
 
-function StatCard({ label, value, icon: Icon, sub, color, trend }: {
-  label: string; value: number | string; icon: any; sub?: string;
-  color: string; trend?: { up: boolean; pct: string };
+const STATUS_COLORS: Record<string, string> = {
+  active: "bg-emerald-500", inactive: "bg-gray-400", pending: "bg-amber-500",
+  shipped: "bg-blue-500", processing: "bg-violet-500", cancelled: "bg-red-500",
+  completed: "bg-emerald-500", delivered: "bg-emerald-500", connected: "bg-emerald-500",
+  offline: "bg-red-500", warning: "bg-amber-500",
+};
+
+function StatusDot({ status }: { status: string }) {
+  return <span className={cn("h-2 w-2 rounded-full inline-block", STATUS_COLORS[status] || "bg-gray-400")} />;
+}
+
+function Sparkline({ data, color = "hsl(var(--primary))" }: { data: number[]; color?: string }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data); const max = Math.max(...data); const range = Math.max(max - min, 1);
+  const w = 80; const h = 28; const px = (i: number) => (i / (data.length - 1)) * w;
+  const py = (v: number) => h - ((v - min) / range) * (h - 4) - 2;
+  const d = data.map((v, i) => `${i === 0 ? 'M' : 'L'}${px(i)},${py(v)}`).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function KpiCard({ label, value, icon: Icon, trend, color = "primary", sparklineData, subtitle }: {
+  label: string; value: string | number; icon: any; trend?: { up: boolean; pct: string };
+  color?: string; sparklineData?: number[]; subtitle?: string;
 }) {
   return (
-    <Card className="overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5">
-      <CardContent className="p-0">
-        <div className="flex items-center gap-3 p-4">
-          <div className={cn(
-            "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
-            `bg-${color.split("-")[0]}-50 dark:bg-${color.split("-")[0]}-950/20`
-          )}>
-            <Icon className={cn("w-5 h-5", color)} />
+    <Card className="group relative overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 border-border/40">
+      <div className={cn("absolute inset-0 opacity-[0.03] bg-gradient-to-br", `from-${color} to-transparent`)} />
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between mb-3">
+          <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", `bg-${color}/10`)}>
+            <Icon className={cn("w-4.5 h-4.5", `text-${color}`)} />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-2xl font-bold tabular-nums leading-none">{value}</p>
-              {trend && (
-                <span className={cn(
-                  "flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5",
-                  trend.up ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20" : "text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-950/20"
-                )}>
-                  {trend.up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
-                  {trend.pct}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-            {sub && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>}
-          </div>
+          {sparklineData && <Sparkline data={sparklineData} color={`hsl(var(--${color === 'primary' ? 'primary' : 'primary'}))`} />}
+        </div>
+        <p className="text-2xl font-bold tabular-nums leading-none tracking-tight">{value}</p>
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <p className="text-xs text-muted-foreground">{label}</p>
+          {trend && (
+            <span className={cn(
+              "flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5",
+              trend.up ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20" : "text-red-600 bg-red-50 dark:bg-red-950/20"
+            )}>
+              {trend.up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+              {trend.pct}
+            </span>
+          )}
+          {subtitle && <span className="text-[10px] text-muted-foreground ml-auto">{subtitle}</span>}
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    active: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800",
-    inactive: "bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400",
-    pending: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400",
-    shipped: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400",
-    processing: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/20 dark:text-violet-400",
-    cancelled: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400",
-    completed: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
-    delivered: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
-    admin: "bg-primary/10 text-primary border-primary/20",
-    user: "bg-muted text-muted-foreground",
-    free: "bg-gray-50 text-gray-500 border-gray-200",
-  };
+function ChartCard({ title, action, children, className }: {
+  title: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
+}) {
   return (
-    <Badge variant="outline" className={cn("text-[10px] font-medium px-2 py-0.5", colors[status] || "bg-muted text-muted-foreground")}>
-      {status}
-    </Badge>
+    <Card className={cn("border-border/40", className)}>
+      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-4 sm:px-5">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+        {action}
+      </CardHeader>
+      <CardContent className="px-2 sm:px-4 pb-4">{children}</CardContent>
+    </Card>
   );
 }
 
-function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
+function SectionCard({ title, icon: Icon, action, children, className }: {
+  title: string; icon: any; action?: React.ReactNode; children: React.ReactNode; className?: string;
+}) {
   return (
-    <div className="space-y-2.5">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="h-10 bg-muted/40 rounded-lg animate-pulse" />
-      ))}
-    </div>
+    <Card className={cn("border-border/40 overflow-hidden", className)}>
+      <CardHeader className="pb-2 border-b border-border/30 bg-muted/5 pt-3.5 px-4 sm:px-5">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+            <Icon className="w-3.5 h-3.5" />{title}
+          </CardTitle>
+          {action}
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 sm:p-5">{children}</CardContent>
+    </Card>
   );
 }
 
@@ -106,100 +134,76 @@ function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; des
   );
 }
 
-function SectionCard({ title, icon: Icon, action, children, className }: {
-  title: string; icon: any; action?: React.ReactNode; children: React.ReactNode; className?: string;
-}) {
-  return (
-    <Card className={cn("overflow-hidden", className)}>
-      <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Icon className="w-4 h-4 text-muted-foreground" />
-            {title}
-          </CardTitle>
-          {action}
-        </div>
-      </CardHeader>
-      <CardContent className="p-0">
-        <div className="p-4">
-          {children}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function DataTable({ headers, rows, empty }: {
+function DTable({ headers, rows, empty, onRowClick }: {
   headers: { key: string; label: string; className?: string }[];
   rows: { key: string; cells: (string | React.ReactNode)[] }[];
   empty?: { icon: any; title: string; desc: string };
+  onRowClick?: (key: string) => void;
 }) {
-  if (rows.length === 0 && empty) {
-    return <EmptyState {...empty} />;
-  }
+  if (rows.length === 0 && empty) return <EmptyState {...empty} />;
   return (
     <div className="overflow-x-auto -mx-4 sm:-mx-0">
       <div className="inline-block min-w-full align-middle">
-        <div className="overflow-hidden">
-          <table className="min-w-full divide-y divide-border/40">
-            <thead>
-              <tr className="border-b border-border/40">
-                {headers.map((h, i) => (
-                  <th key={h.key} className={cn(
-                    "pb-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider",
-                    i === 0 ? "text-left" : "text-left",
-                    h.className
-                  )}>
-                    {h.label}
-                  </th>
+        <table className="min-w-full">
+          <thead>
+            <tr className="border-b border-border/30">
+              {headers.map((h, i) => (
+                <th key={h.key} className={cn("pb-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left", h.className)}>{h.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/10">
+            {rows.map((row) => (
+              <tr key={row.key} className={cn("transition-colors hover:bg-muted/20", onRowClick && "cursor-pointer")} onClick={() => onRowClick?.(row.key)}>
+                {row.cells.map((cell, i) => (
+                  <td key={i} className={cn("py-2.5 text-sm", headers[i]?.className)}>{cell}</td>
                 ))}
               </tr>
-            </thead>
-            <tbody className="divide-y divide-border/20">
-              {rows.map((row) => (
-                <tr key={row.key} className="hover:bg-muted/20 transition-colors">
-                  {row.cells.map((cell, i) => (
-                    <td key={i} className={cn(
-                      "py-2.5 text-sm",
-                      headers[i]?.className
-                    )}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
+function LoadingRows({ rows = 4 }: { rows?: number }) {
+  return <div className="space-y-2.5">{Array.from({ length: rows }).map((_, i) => <div key={i} className="h-9 bg-muted/30 rounded-lg animate-pulse" />)}</div>;
+}
+
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const [authed, setAuthed] = useState(!!localStorage.getItem("adminAuthed"));
   const [creds, setCreds] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [orderFilter, setOrderFilter] = useState("all");
+  const [theme, setTheme] = useState<"dark" | "light">(() => (document.documentElement.classList.contains("dark") ? "dark" : "light"));
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   useQuery({
     queryKey: ["/api/admin/check"],
-    queryFn: async () => {
-      const r = await fetch("/api/admin/stats", { credentials: "include" });
-      if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); }
-      return r.json();
-    },
+    queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); } return r.json(); },
     enabled: authed,
   });
 
   const { data: stats } = useQuery({
-    queryKey: ["/api/admin/stats"],
-    queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
+    queryKey: ["/api/admin/detailed-stats"],
+    queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
     enabled: authed, refetchInterval: 30000,
+  });
+
+  const { data: revenueHist } = useQuery({
+    queryKey: ["/api/admin/revenue-history"],
+    queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    enabled: authed, refetchInterval: 60000,
   });
 
   const { data: users } = useQuery({
@@ -211,12 +215,6 @@ export default function AdminDashboard() {
   const { data: recentOrders } = useQuery({
     queryKey: ["/api/admin/recent-orders"],
     queryFn: async () => { const r = await fetch("/api/admin/recent-orders", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: authed, refetchInterval: 30000,
-  });
-
-  const { data: recentRegs } = useQuery({
-    queryKey: ["/api/admin/recent-registrations"],
-    queryFn: async () => { const r = await fetch("/api/admin/recent-registrations", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
     enabled: authed, refetchInterval: 30000,
   });
 
@@ -232,6 +230,18 @@ export default function AdminDashboard() {
     enabled: authed, refetchInterval: 120000,
   });
 
+  const { data: serverMetrics } = useQuery({
+    queryKey: ["/api/admin/server-metrics"],
+    queryFn: async () => { const r = await fetch("/api/admin/server-metrics", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    enabled: authed, refetchInterval: 120000,
+  });
+
+  const { data: serviceStatus } = useQuery({
+    queryKey: ["/api/admin/service-status"],
+    queryFn: async () => { const r = await fetch("/api/admin/service-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    enabled: authed, refetchInterval: 60000,
+  });
+
   const { data: activity } = useQuery({
     queryKey: ["/api/admin/activity"],
     queryFn: async () => { const r = await fetch("/api/admin/activity", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
@@ -243,7 +253,7 @@ export default function AdminDashboard() {
       const r = await fetch(`/api/admin/users/${id}/role`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }), credentials: "include" });
       if (!r.ok) throw new Error("Failed"); return r.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/admin/users"] }),
   });
 
   const handleLogin = async () => {
@@ -254,50 +264,133 @@ export default function AdminDashboard() {
     setAuthed(true);
   };
 
-  const handleLogout = async () => {
-    await fetch("/api/admin/logout", { method: "POST", credentials: "include" });
-    localStorage.removeItem("adminAuthed");
-    setAuthed(false);
-  };
-
   const filteredUsers = useMemo(() => {
     if (!users) return [];
     if (!userSearch) return users;
     const q = userSearch.toLowerCase();
-    return users.filter((u: any) =>
-      u.email?.toLowerCase().includes(q) ||
-      u.firstName?.toLowerCase().includes(q) ||
-      u.lastName?.toLowerCase().includes(q)
-    );
+    return users.filter((u: any) => u.email?.toLowerCase().includes(q) || u.firstName?.toLowerCase().includes(q) || u.lastName?.toLowerCase().includes(q));
   }, [users, userSearch]);
+
+  const exportUsers = async () => {
+    const r = await fetch("/api/admin/export/users", { credentials: "include" });
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `users-export-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const dailyRevData = useMemo(() => ((revenueHist as any)?.dailyRevenue || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.total) })), [revenueHist]);
+  const weeklyRevData = useMemo(() => ((revenueHist as any)?.weeklyRevenue || []).map((r: any) => ({ name: `W${new Date(r.week).getWeekNumber?.() || new Date(r.week).getDate()}`, value: Number(r.total) })), [revenueHist]);
+  const monthlyRevData = useMemo(() => ((revenueHist as any)?.monthlyRevenue || []).map((r: any) => ({ name: new Date(r.month).toLocaleDateString(undefined, { month: 'short' }), value: Number(r.total) })), [revenueHist]);
+  const userGrowthData = useMemo(() => ((revenueHist as any)?.userGrowth || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]);
+  const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
+  const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]);
+
+  const sidebarNav = [
+    { id: "overview" as TabId, label: "Overview", icon: LayoutDashboard },
+    { id: "analytics" as TabId, label: "Analytics", icon: BarChart3 },
+    { id: "users" as TabId, label: "Users", icon: Users },
+    { id: "orders" as TabId, label: "Orders", icon: ShoppingCart },
+    { id: "vendors" as TabId, label: "Vendors", icon: Boxes },
+    { id: "subscribers" as TabId, label: "Subscribers", icon: CreditCard },
+    { id: "integrations" as TabId, label: "API Integrations", icon: Link },
+    { id: "system" as TabId, label: "System", icon: Server },
+    { id: "support" as TabId, label: "Support", icon: LifeBuoy },
+    { id: "settings" as TabId, label: "Settings", icon: Settings },
+  ];
+
+  const sidebar = (
+    <div className={cn(
+      "h-full bg-card border-r border-border/40 flex flex-col transition-all duration-300",
+      sidebarCollapsed ? "w-16" : "w-60"
+    )}>
+      <div className={cn("flex items-center gap-2.5 px-4 h-14 border-b border-border/30 shrink-0", sidebarCollapsed && "justify-center px-0")}>
+        <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <Shield className="w-3.5 h-3.5 text-primary" />
+        </div>
+        {!sidebarCollapsed && (
+          <>
+            <span className="text-sm font-bold tracking-tight">DropandSell</span>
+            <Badge variant="outline" className="text-[9px] px-1.5 h-4 ml-auto">Admin</Badge>
+          </>
+        )}
+      </div>
+      <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
+        {sidebarNav.map(item => (
+          <button
+            key={item.id}
+            onClick={() => { setActiveTab(item.id); setMobileSidebarOpen(false); }}
+            className={cn(
+              "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200",
+              sidebarCollapsed && "justify-center px-2",
+              activeTab === item.id
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            )}
+            title={sidebarCollapsed ? item.label : undefined}
+          >
+            <item.icon className="w-4 h-4 shrink-0" />
+            {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+            {!sidebarCollapsed && item.id === "support" && (
+              <Badge className="ml-auto h-4 min-w-4 text-[9px] px-1">3</Badge>
+            )}
+          </button>
+        ))}
+      </nav>
+      <div className={cn("p-2 border-t border-border/30", sidebarCollapsed && "flex flex-col items-center")}>
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className={cn(
+            "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all",
+            sidebarCollapsed && "justify-center px-2"
+          )}
+        >
+          {sidebarCollapsed ? <PanelLeftClose className="w-4 h-4" /> : <><PanelLeft className="w-4 h-4" /><span>Collapse</span></>}
+        </button>
+        <button
+          onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}
+          className={cn(
+            "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium text-red-500/70 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all mt-0.5",
+            sidebarCollapsed && "justify-center px-2"
+          )}
+        >
+          <LogOut className="w-4 h-4" />
+          {!sidebarCollapsed && <span>Logout</span>}
+        </button>
+      </div>
+    </div>
+  );
 
   if (!authed) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-background p-4">
-        <Card className="w-full max-w-sm shadow-2xl border-border/40">
-          <CardHeader className="text-center pb-6">
-            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-7 h-7 text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 p-4">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-blue-500/5 blur-3xl" />
+        </div>
+        <Card className="w-full max-w-sm shadow-2xl border-border/40 relative backdrop-blur-sm">
+          <CardHeader className="text-center pb-6 pt-8">
+            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto mb-4 ring-1 ring-primary/20">
+              <Shield className="w-8 h-8 text-primary" />
             </div>
-            <CardTitle className="text-xl">Admin Panel</CardTitle>
+            <CardTitle className="text-xl font-bold">Admin Panel</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">DropandSell AI Administration</p>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pb-8">
             <div className="space-y-1.5">
-              <Label className="text-xs">Username</Label>
-              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9" />
+              <Label className="text-xs font-medium">Username</Label>
+              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9 text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Password</Label>
-              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+              <Label className="text-xs font-medium">Password</Label>
+              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
             </div>
             {loginError && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
-                <XCircle className="w-3.5 h-3.5 shrink-0" />
-                {loginError}
+              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2 border border-destructive/10">
+                <XCircle className="w-3.5 h-3.5 shrink-0" />{loginError}
               </div>
             )}
-            <Button className="w-full h-9" onClick={handleLogin}>Sign In</Button>
+            <Button className="w-full h-9 text-sm font-medium" onClick={handleLogin}>Sign In</Button>
           </CardContent>
         </Card>
       </div>
@@ -305,481 +398,589 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center"
-          >
-            <PanelLeft className="w-4 h-4" />
+    <div className="min-h-screen bg-background flex">
+      {/* Mobile sidebar overlay */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 lg:hidden" onClick={() => setMobileSidebarOpen(false)}>
+          <div className="absolute left-0 top-0 bottom-0 w-60" onClick={e => e.stopPropagation()}>
+            {sidebar}
+          </div>
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
+      <div className={cn("hidden lg:block fixed inset-y-0 left-0 z-30 transition-all duration-300", sidebarCollapsed ? "w-16" : "w-60")}>{sidebar}</div>
+
+      {/* Main area */}
+      <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", sidebarCollapsed ? "lg:ml-16" : "lg:ml-60")}>
+        {/* Top bar */}
+        <header className="sticky top-0 z-20 h-14 border-b border-border/30 bg-background/80 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 flex items-center gap-3 px-4 lg:px-6">
+          <button className="lg:hidden h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center" onClick={() => setMobileSidebarOpen(true)}>
+            <Menu className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <Shield className="w-3.5 h-3.5 text-primary" />
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="h-6 w-1.5 rounded-full bg-primary" />
+              <h1 className="text-sm font-semibold capitalize">{activeTab}</h1>
             </div>
-            <span className="text-sm font-semibold truncate">Admin</span>
+            <Badge variant="secondary" className="text-[9px] px-1.5 h-4 ml-1">
+              v2.0
+            </Badge>
           </div>
-
-          {/* Desktop Nav Tabs */}
-          <nav className="hidden lg:flex items-center gap-0.5 ml-4">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                  activeTab === tab.id
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setLocation("/admin/support")}>
-              <MessageSquare className="w-3.5 h-3.5 lg:mr-1.5" />
-              <span className="hidden lg:inline">Support</span>
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setLocation("/admin/settings")}>
-              <Settings className="w-3.5 h-3.5 lg:mr-1.5" />
-              <span className="hidden lg:inline">Settings</span>
-            </Button>
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={handleLogout}>
-              <LogOut className="w-3.5 h-3.5 lg:mr-1.5" />
-              <span className="hidden lg:inline">Logout</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Mobile Tab Bar */}
-        <div className="flex lg:hidden overflow-x-auto gap-1 px-4 pb-2 -mt-1 scrollbar-none">
-          {TABS.map(tab => (
+          <div className="flex items-center gap-1">
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors shrink-0",
-                activeTab === tab.id
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground"
-              )}
+              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
+              className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground"
             >
-              <tab.icon className="w-3 h-3" />
-              {tab.label}
+              {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
             </button>
-          ))}
-        </div>
-      </header>
+            <button className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground relative">
+              <Bell className="w-3.5 h-3.5" />
+              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-red-500" />
+            </button>
+            <button className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground">
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </header>
 
-      {/* Main Content */}
-      <main className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 mb-6">
-          <StatCard label="Users" value={stats?.users ?? 0} icon={Users} color="text-blue-600" />
-          <StatCard label="Stores" value={stats?.stores ?? 0} icon={Store} color="text-emerald-600" />
-          <StatCard label="Products" value={stats?.products ?? 0} icon={Package} color="text-violet-600" />
-          <StatCard label="Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="text-amber-600" />
-          <StatCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="text-rose-600" />
-          <StatCard label="Vendors" value={vendorOverview?.totalVendors ?? 0} icon={Boxes} color="text-cyan-600" />
-        </div>
+        {/* Content */}
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+          {/* ===== OVERVIEW ===== */}
+          {activeTab === "overview" && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                <KpiCard label="Total Users" value={stats?.users ?? 0} icon={Users} trend={{ up: true, pct: `${stats?.weeklyGrowth || 0}%` }} color="primary" sparklineData={userGrowthData.slice(-7).map(d => d.value)} />
+                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} subtitle={stats?.pendingOrders > 0 ? `${stats.pendingOrders} pending` : ''} color="amber" sparklineData={dailyOrdersData.slice(-7).map(d => d.value)} />
+                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" sparklineData={dailyRevData.slice(-7).map(d => d.value)} />
+                <KpiCard label="Products" value={stats?.products ?? 0} icon={Package} color="violet" />
+                <KpiCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="rose" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <KpiCard label="Stores" value={stats?.stores ?? 0} icon={Store} color="cyan" />
+                <KpiCard label="Vendors" value={stats?.vendors ?? 0} icon={Boxes} subtitle={`${stats?.activeVendors || 0} active`} color="indigo" />
+                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
+                <KpiCard label="Pending Orders" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
+              </div>
 
-        {/* ===== OVERVIEW TAB ===== */}
-        {activeTab === "overview" && (
-          <div className="space-y-6">
-            <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
-              {/* Activity Feed */}
-              <SectionCard title="Recent Activity" icon={Activity} action={
-                <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={() => { queryClient.invalidateQueries({ queryKey: ["/api/admin/activity"] }); }}>
-                  <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+              <div className="grid lg:grid-cols-2 gap-4">
+                <SectionCard title="Recent Activity" icon={Activity} action={<Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => qc.invalidateQueries({ queryKey: ["/api/admin/activity"] })}><RefreshCw className="w-3 h-3 mr-1" />Refresh</Button>}>
+                  {!activity ? <LoadingRows rows={5} /> : activity.length === 0 ? <EmptyState icon={Activity} title="No activity" desc="New orders and registrations will appear here" /> : (
+                    <div className="space-y-0.5">
+                      {activity.slice(0, 8).map((a: any, i: number) => (
+                        <div key={i} className="flex items-center gap-3 py-2 border-b border-border/10 last:border-0">
+                          <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0", a.type === 'order' ? "bg-amber-50 dark:bg-amber-950/20" : "bg-blue-50 dark:bg-blue-950/20")}>
+                            {a.type === 'order' ? <ShoppingCart className="w-3.5 h-3.5 text-amber-600" /> : <UserPlus className="w-3.5 h-3.5 text-blue-600" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">{a.label}</p>
+                            <p className="text-[10px] text-muted-foreground capitalize">{a.detail}</p>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
+                            {new Date(a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+
+                <SectionCard title="Vendor Health" icon={HeartPulse} action={vendorOverview?.totalVendors > 0 && <Badge variant="outline" className="text-[10px] gap-1">{Number(vendorOverview.avgHealthScore).toFixed(1)} avg</Badge>}>
+                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? <EmptyState icon={HeartPulse} title="No vendors yet" desc="Add vendors to see health scores" /> : (
+                    <div className="space-y-1">
+                      {vendorOverview.vendors.slice(0, 6).map((v: any) => {
+                        const score = v.healthScore || 0;
+                        return (
+                          <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" : score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-red-50 dark:bg-red-950/20")}>
+                                <Store className={cn("w-4 h-4", score >= 4 ? "text-emerald-600" : score >= 3 ? "text-amber-600" : "text-red-600")} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium truncate">{v.name}</p>
+                                {v.category && <p className="text-[10px] text-muted-foreground capitalize">{v.category}</p>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {score > 0 && <span className="text-[11px] tabular-nums text-amber-500">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>}
+                              <Badge variant="outline" className={cn("text-[9px] px-1.5", v.status === 'active' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{v.status}</Badge>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </SectionCard>
+              </div>
+
+              {/* Quick actions */}
+              <Card className="border-dashed border-border/40">
+                <CardContent className="p-4 sm:p-5">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: "Support Queue", icon: MessageSquare, path: "/admin/support", color: "text-violet-500" },
+                      { label: "Manage Stores", icon: Store, path: "/stores", color: "text-emerald-500" },
+                      { label: "Manage Vendors", icon: Boxes, path: "/vendors", color: "text-cyan-500" },
+                      { label: "View Orders", icon: ShoppingCart, path: "/orders", color: "text-amber-500" },
+                      { label: "Site Settings", icon: Settings, path: "/admin/settings", color: "text-gray-500" },
+                    ].map(a => (
+                      <Button key={a.label} variant="outline" size="sm" className="h-8 text-xs gap-1.5 hover:border-primary/30" onClick={() => setLocation(a.path)}>
+                        <a.icon className={cn("w-3.5 h-3.5", a.color)} />{a.label}
+                      </Button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== ANALYTICS ===== */}
+          {activeTab === "analytics" && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" />
+                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="amber" />
+                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
+                <KpiCard label="Pending Orders" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
+              </div>
+
+              <div className="grid lg:grid-cols-2 gap-4">
+                <ChartCard title="Daily Revenue" action={<Badge variant="outline" className="text-[9px]">30 days</Badge>}>
+                  {dailyRevData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <AreaChart data={dailyRevData}>
+                        <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/><stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/></linearGradient></defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
+                        <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+                        <Area type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#revGrad)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">No revenue data yet</div>}
+                </ChartCard>
+
+                <ChartCard title="Monthly Revenue">
+                  {monthlyRevData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={monthlyRevData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
+                        <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+                        <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">No monthly data</div>}
+                </ChartCard>
+              </div>
+
+              <div className="grid lg:grid-cols-3 gap-4">
+                <ChartCard title="User Growth">
+                  {userGrowthData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <LineChart data={userGrowthData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
+                        <XAxis dataKey="name" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#888" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+                        <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No user data yet</div>}
+                </ChartCard>
+
+                <ChartCard title="Daily Orders">
+                  {dailyOrdersData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={dailyOrdersData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
+                        <XAxis dataKey="name" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#888" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
+                        <Bar dataKey="value" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No orders data</div>}
+                </ChartCard>
+
+                <ChartCard title="Sales by Marketplace">
+                  {marketplaceData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <PieChart>
+                        <Pie data={marketplaceData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={40}>
+                          {marketplaceData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} formatter={(v: any) => `$${Number(v).toLocaleString()}`} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No marketplace data</div>}
+                </ChartCard>
+              </div>
+            </div>
+          )}
+
+          {/* ===== USERS ===== */}
+          {activeTab === "users" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
+                <div className="relative flex-1 min-w-[200px] max-w-xs">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input placeholder="Search users..." className="pl-8 h-9 text-xs" value={userSearch} onChange={e => setUserSearch(e.target.value)} />
+                </div>
+                <Badge variant="secondary" className="text-[11px] h-7 px-2.5">{users?.length ?? 0} total</Badge>
+                <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" onClick={exportUsers}>
+                  <Download className="w-3.5 h-3.5" />Export CSV
                 </Button>
-              }>
-                {!activity ? (
-                  <LoadingSkeleton rows={5} />
-                ) : activity.length === 0 ? (
-                  <EmptyState icon={Activity} title="No activity yet" desc="Activity from orders and registrations will appear here" />
-                ) : (
-                  <div className="space-y-0.5">
-                    {activity.slice(0, 8).map((a: any, i: number) => (
-                      <div key={i} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
-                        <div className={cn(
-                          "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-                          a.type === 'order' ? "bg-amber-50 dark:bg-amber-950/20" : "bg-blue-50 dark:bg-blue-950/20"
-                        )}>
-                          {a.type === 'order'
-                            ? <ShoppingCart className="w-3.5 h-3.5 text-amber-600" />
-                            : <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-                          }
+              </div>
+              <Card className="border-border/40">
+                <CardContent className="p-0">
+                  {!users ? <LoadingRows rows={6} /> : (
+                    <DTable
+                      headers={[
+                        { key: "user", label: "User" },
+                        { key: "email", label: "Email", className: "hidden sm:table-cell" },
+                        { key: "role", label: "Role" },
+                        { key: "status", label: "Status", className: "hidden md:table-cell" },
+                        { key: "plan", label: "Plan", className: "hidden md:table-cell" },
+                        { key: "joined", label: "Joined", className: "hidden lg:table-cell" },
+                        { key: "actions", label: "", className: "text-right" },
+                      ]}
+                      rows={filteredUsers.map((u: any) => ({
+                        key: u.id,
+                        cells: [
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xs font-bold text-primary ring-1 ring-primary/20">
+                              {(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}
+                            </div>
+                            <span className="text-xs font-medium">{u.firstName || u.lastName ? `${u.firstName ?? ''} ${u.lastName ?? ''}` : u.email?.split('@')[0]}</span>
+                          </div>,
+                          <span className="text-xs text-muted-foreground hidden sm:inline">{u.email}</span>,
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5", u.role === 'admin' ? "text-primary border-primary/30 bg-primary/5" : "text-muted-foreground")}>{u.role}</Badge>,
+                          <div className="flex items-center gap-1.5 hidden md:flex"><StatusDot status={u.subscriptionStatus || 'inactive'} /><span className="text-xs text-muted-foreground capitalize">{u.subscriptionStatus || 'inactive'}</span></div>,
+                          <span className="text-xs text-muted-foreground hidden md:inline">{u.subscriptionPlan || 'free'}</span>,
+                          <span className="text-xs text-muted-foreground hidden lg:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</span>,
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2" onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}>
+                              {u.role === "admin" ? "Demote" : "Promote"}
+                            </Button>
+                          </div>,
+                        ]
+                      }))}
+                      empty={{ icon: Users, title: userSearch ? "No matches" : "No users", desc: userSearch ? "Try a different search" : "Register a user to get started" }}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== ORDERS ===== */}
+          {activeTab === "orders" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="amber" />
+                <KpiCard label="Pending" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
+                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" />
+                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
+              </div>
+              <div className="flex items-center gap-2 mb-4">
+                <Select value={orderFilter} onValueChange={setOrderFilter}>
+                  <SelectTrigger className="h-9 w-36 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Orders</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="shipped">Shipped</SelectItem>
+                    <SelectItem value="delivered">Delivered</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Badge variant="secondary" className="text-[11px] h-7 px-2.5">{recentOrders?.length ?? 0} orders</Badge>
+              </div>
+              <Card className="border-border/40">
+                <CardContent className="p-0">
+                  {!recentOrders ? <LoadingRows rows={5} /> : (
+                    <DTable
+                      headers={[
+                        { key: "customer", label: "Customer" },
+                        { key: "amount", label: "Amount" },
+                        { key: "status", label: "Status" },
+                        { key: "tracking", label: "Tracking", className: "hidden sm:table-cell" },
+                        { key: "date", label: "Date", className: "hidden md:table-cell" },
+                      ]}
+                      rows={recentOrders.filter((o: any) => orderFilter === "all" || o.status === orderFilter).map((o: any) => ({
+                        key: o.id,
+                        cells: [
+                          <span className="text-xs font-medium">{o.customerName || '—'}</span>,
+                          <span className="text-xs font-medium tabular-nums">${Number(o.totalAmount || 0).toFixed(2)}</span>,
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5", o.status === 'pending' ? "text-amber-600 border-amber-200" : o.status === 'shipped' ? "text-blue-600 border-blue-200" : o.status === 'delivered' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{o.status}</Badge>,
+                          <span className="hidden sm:inline"><Badge variant="outline" className={cn("text-[10px] px-1.5", o.trackingStatus === 'delivered' ? "text-emerald-600" : o.trackingStatus === 'in_transit' ? "text-blue-600" : "text-muted-foreground")}>{o.trackingStatus || 'pending'}</Badge></span>,
+                          <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{o.createdAt ? new Date(o.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</span>,
+                        ]
+                      }))}
+                      empty={{ icon: ShoppingCart, title: "No orders", desc: orderFilter !== "all" ? `No orders with status "${orderFilter}"` : "Orders appear here when customers purchase" }}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== VENDORS ===== */}
+          {activeTab === "vendors" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+                <KpiCard label="Total Vendors" value={stats?.vendors ?? 0} icon={Boxes} color="indigo" />
+                <KpiCard label="Active" value={stats?.activeVendors ?? 0} icon={CheckCircle} color="emerald" />
+                <KpiCard label="Avg Health" value={vendorOverview?.avgHealthScore ? Number(vendorOverview.avgHealthScore).toFixed(1) : '—'} icon={HeartPulse} color="rose" />
+                <KpiCard label="Products" value={stats?.products ?? 0} icon={Package} color="violet" />
+              </div>
+              <Card className="border-border/40">
+                <CardContent className="p-0">
+                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? <EmptyState icon={Boxes} title="No vendors" desc="Add vendors from the Vendors page" /> : (
+                    <div className="divide-y divide-border/10">
+                      {vendorOverview.vendors.map((v: any) => (
+                        <div key={v.id} className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", v.healthScore >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" : v.healthScore >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-muted")}>
+                              <Store className={cn("w-5 h-5", v.healthScore >= 4 ? "text-emerald-600" : v.healthScore >= 3 ? "text-amber-600" : "text-muted-foreground")} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{v.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {v.totalOrdersFulfilled || 0} fulfilled {v.stockUpdateReliability ? `· ${v.stockUpdateReliability}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            {v.healthScore > 0 && <span className="text-xs tabular-nums text-amber-500">{'★'.repeat(v.healthScore)}</span>}
+                            <Badge variant="outline" className={cn("text-[10px]", v.status === 'active' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{v.status}</Badge>
+                            {v.lastHealthCheck && <span className="text-[10px] text-muted-foreground/50 hidden lg:inline">{new Date(v.lastHealthCheck).toLocaleDateString()}</span>}
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium truncate">{a.label}</p>
-                          <p className="text-[10px] text-muted-foreground capitalize">{a.detail}</p>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== SUBSCRIBERS ===== */}
+          {activeTab === "subscribers" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
+                <KpiCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="rose" />
+                <KpiCard label="Total Users" value={stats?.users ?? 0} icon={Users} color="blue" />
+                <KpiCard label="Conversion Rate" value={stats?.users > 0 ? `${Math.round((stats?.subscribers || 0) / stats.users * 100)}%` : '0%'} icon={TrendUp} color="emerald" />
+              </div>
+              <Card className="border-border/40">
+                <CardContent className="p-0">
+                  {!users ? <LoadingRows rows={5} /> : (
+                    <DTable
+                      headers={[
+                        { key: "user", label: "User" },
+                        { key: "email", label: "Email", className: "hidden sm:table-cell" },
+                        { key: "plan", label: "Plan" },
+                        { key: "status", label: "Status" },
+                        { key: "joined", label: "Joined", className: "hidden md:table-cell" },
+                      ]}
+                      rows={users.filter((u: any) => u.subscriptionStatus === 'active').map((u: any) => ({
+                        key: u.id,
+                        cells: [
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-rose-200 to-rose-50 dark:from-rose-800 dark:to-rose-950 flex items-center justify-center text-[10px] font-bold text-rose-700 dark:text-rose-300">{(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}</div>
+                            <span className="text-xs font-medium">{u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email?.split('@')[0]}</span>
+                          </div>,
+                          <span className="text-xs text-muted-foreground hidden sm:inline">{u.email}</span>,
+                          <span className="text-xs font-medium">{u.subscriptionPlan || '—'}</span>,
+                          <Badge variant="outline" className="text-emerald-600 border-emerald-200 text-[10px]">{u.subscriptionStatus}</Badge>,
+                          <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</span>,
+                        ]
+                      }))}
+                      empty={{ icon: CreditCard, title: "No subscribers", desc: "Users who have subscribed will appear here" }}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== API INTEGRATIONS ===== */}
+          {activeTab === "integrations" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <p className="text-xs text-muted-foreground mb-4">Configure and monitor third-party API connections.</p>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {[
+                  { key: "stripe", name: "Stripe", desc: "Payment processing & subscriptions", icon: CreditCard, doc: "https://stripe.com/docs" },
+                  { key: "openai", name: "OpenAI", desc: "AI descriptions & support chat", icon: MessageSquare, doc: "https://openai.com" },
+                  { key: "resend", name: "Resend", desc: "Transactional emails", icon: Mail, doc: "https://resend.com" },
+                  { key: "amazon", name: "Amazon", desc: "Marketplace listings & orders", icon: Store, doc: "https://developer.amazon.com" },
+                  { key: "ebay", name: "eBay", desc: "eBay listings & fulfillment", icon: Globe, doc: "https://developer.ebay.com" },
+                  { key: "shopify", name: "Shopify", desc: "Shopify store integration", icon: ShoppingCart, doc: "https://shopify.dev" },
+                  { key: "tracking", name: "Tracking API", desc: "Shipment tracking updates", icon: Truck, doc: "#" },
+                ].map(svc => {
+                  const status = (serviceStatus as any)?.[svc.key]?.status || 'offline';
+                  return (
+                    <Card key={svc.key} className={cn("border-border/40 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5", status === 'connected' && "border-emerald-200/50 dark:border-emerald-900/30")}>
+                      <CardContent className="p-4 sm:p-5">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", status === 'connected' ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-muted")}>
+                              <svc.icon className={cn("w-5 h-5", status === 'connected' ? "text-emerald-600" : "text-muted-foreground")} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold">{svc.name}</p>
+                              <p className="text-xs text-muted-foreground">{svc.desc}</p>
+                            </div>
+                          </div>
+                          <div className={cn("h-2.5 w-2.5 rounded-full shrink-0 mt-1", status === 'connected' ? "bg-emerald-500" : status === 'warning' ? "bg-amber-500" : "bg-red-500")} />
                         </div>
-                        <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
-                          {new Date(a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <Badge variant={status === 'connected' ? "default" : "outline"} className={cn("text-[10px]", status === 'connected' ? "" : "text-muted-foreground")}>
+                            {status === 'connected' ? 'Connected' : status === 'warning' ? 'Warning' : 'Not connected'}
+                          </Badge>
+                          <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1 text-muted-foreground">
+                            <ExternalLink className="w-3 h-3" /> Docs
+                          </Button>
+                        </div>
+                        {status === 'connected' && (
+                          <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3 text-emerald-500" /> API operational
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ===== SYSTEM ===== */}
+          {activeTab === "system" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <SectionCard title="Server" icon={Server}>
+                  <div className="space-y-2">
+                    {[
+                      { icon: Database, label: "Database Size", value: serverMetrics?.dbSizeMB ? `${serverMetrics.dbSizeMB} MB` : '—' },
+                      { icon: Cpu, label: "Memory Usage", value: serverMetrics?.memoryUsageMB ? `${serverMetrics.memoryUsageMB} MB / ${serverMetrics.memoryTotalMB} MB` : '—' },
+                      { icon: HardDrive, label: "Platform", value: serverMetrics?.platform || '—' },
+                      { icon: Server, label: "Node.js", value: serverMetrics?.nodeVersion || '—' },
+                      { icon: Clock, label: "Uptime", value: serverMetrics?.uptime || '—' },
+                      { icon: Globe, label: "Environment", value: serverMetrics?.environment || '—' },
+                      { icon: Monitor, label: "App URL", value: serverMetrics?.appUrl || '—' },
+                    ].map(item => (
+                      <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
+                        <div className="flex items-center gap-2.5">
+                          <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground">{item.label}</span>
+                        </div>
+                        <span className="text-xs font-medium tabular-nums truncate max-w-[180px] text-right">{item.value}</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </SectionCard>
+                </SectionCard>
 
-              {/* Vendor Health */}
-              <SectionCard title="Vendor Health" icon={HeartPulse} action={
-                vendorOverview?.totalVendors > 0 && (
-                  <Badge variant="outline" className="text-[10px] gap-1">
-                    <Award className="w-2.5 h-2.5 text-amber-500" />
-                    {Number(vendorOverview.avgHealthScore).toFixed(1)} avg
-                  </Badge>
-                )
-              }>
-                {!vendorOverview ? (
-                  <LoadingSkeleton rows={4} />
-                ) : vendorOverview.vendors.length === 0 ? (
-                  <EmptyState icon={HeartPulse} title="No vendors yet" desc="Add vendors to see their health scores here" />
-                ) : (
-                  <div className="space-y-1">
-                    {vendorOverview.vendors.slice(0, 6).map((v: any) => {
-                      const score = v.healthScore || 0;
-                      return (
-                        <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className={cn(
-                              "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                              score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" :
-                              score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-red-50 dark:bg-red-950/20"
-                            )}>
-                              <Store className={cn(
-                                "w-4 h-4",
-                                score >= 4 ? "text-emerald-600" :
-                                score >= 3 ? "text-amber-600" : "text-red-600"
-                              )} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium truncate">{v.name}</p>
-                              {v.category && (
-                                <p className="text-[10px] text-muted-foreground capitalize">{v.category}</p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {score > 0 && (
-                              <span className="text-[11px] tabular-nums">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>
-                            )}
-                            <StatusBadge status={v.status} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {vendorOverview.vendors.length > 6 && (
-                      <button onClick={() => setLocation("/vendors")} className="flex items-center gap-1 text-xs text-primary hover:underline pt-1.5">
-                        View all {vendorOverview.totalVendors} vendors <ChevronRight className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </SectionCard>
-            </div>
-
-            {/* Quick Actions */}
-            <Card className="border-dashed border-border/60">
-              <CardContent className="p-4 sm:p-5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { label: "Support Queue", icon: MessageSquare, path: "/admin/support", color: "text-violet-600" },
-                    { label: "Site Settings", icon: Settings, path: "/admin/settings", color: "text-gray-600" },
-                    { label: "Manage Stores", icon: Store, path: "/stores", color: "text-emerald-600" },
-                    { label: "Manage Vendors", icon: Boxes, path: "/vendors", color: "text-cyan-600" },
-                    { label: "View Orders", icon: ShoppingCart, path: "/orders", color: "text-amber-600" },
-                  ].map(action => (
-                    <Button
-                      key={action.label}
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs gap-1.5 hover:border-primary/30"
-                      onClick={() => setLocation(action.path)}
-                    >
-                      <action.icon className={cn("w-3.5 h-3.5", action.color)} />
-                      {action.label}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* ===== USERS TAB ===== */}
-        {activeTab === "users" && (
-          <SectionCard title="User Management" icon={Users} action={
-            <div className="flex items-center gap-2">
-              <div className="relative hidden sm:block">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                <Input
-                  placeholder="Search users..."
-                  className="pl-7 h-7 text-xs w-48"
-                  value={userSearch}
-                  onChange={e => setUserSearch(e.target.value)}
-                />
-              </div>
-              <Badge variant="secondary" className="text-[10px]">{users?.length ?? 0} total</Badge>
-            </div>
-          }>
-            {/* Mobile search */}
-            <div className="sm:hidden relative mb-3">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-              <Input placeholder="Search users..." className="pl-7 h-8 text-xs" value={userSearch} onChange={e => setUserSearch(e.target.value)} />
-            </div>
-            {!users ? <LoadingSkeleton rows={5} /> : (
-              <DataTable
-                headers={[
-                  { key: "email", label: "Email" },
-                  { key: "name", label: "Name", className: "hidden sm:table-cell" },
-                  { key: "role", label: "Role" },
-                  { key: "plan", label: "Plan", className: "hidden md:table-cell" },
-                  { key: "status", label: "Status", className: "hidden md:table-cell" },
-                  { key: "joined", label: "Joined", className: "hidden lg:table-cell" },
-                  { key: "actions", label: "", className: "text-right" },
-                ]}
-                rows={filteredUsers.map((u: any) => ({
-                  key: u.id,
-                  cells: [
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium truncate max-w-[160px] sm:max-w-none">{u.email}</p>
-                      <p className="text-[10px] text-muted-foreground sm:hidden">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</p>
-                    </div>,
-                    <span className="text-xs hidden sm:inline">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</span>,
-                    <StatusBadge status={u.role} />,
-                    <Badge variant="outline" className="text-[10px] hidden md:inline-flex">{u.subscriptionPlan ?? "free"}</Badge>,
-                    <span className="hidden md:inline"><StatusBadge status={u.subscriptionStatus || "inactive"} /></span>,
-                    <span className="text-xs text-muted-foreground hidden lg:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</span>,
-                    <div className="flex justify-end">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-[11px] px-2"
-                        onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}
-                      >
-                        {u.role === "admin" ? "Demote" : "Promote"}
-                      </Button>
-                    </div>,
-                  ]
-                }))}
-                empty={{ icon: Users, title: userSearch ? "No users match search" : "No users found", desc: userSearch ? "Try a different search term" : "Users will appear here when they register" }}
-              />
-            )}
-          </SectionCard>
-        )}
-
-        {/* ===== ORDERS TAB ===== */}
-        {activeTab === "orders" && (
-          <SectionCard title="Recent Orders" icon={ShoppingCart} action={
-            recentOrders?.length > 0 && (
-              <Badge variant="secondary" className="text-[10px]">{recentOrders.length} latest</Badge>
-            )
-          }>
-            {!recentOrders ? <LoadingSkeleton rows={4} /> : (
-              <DataTable
-                headers={[
-                  { key: "customer", label: "Customer" },
-                  { key: "amount", label: "Amount" },
-                  { key: "status", label: "Status" },
-                  { key: "tracking", label: "Tracking", className: "hidden sm:table-cell" },
-                  { key: "date", label: "Date", className: "hidden md:table-cell" },
-                ]}
-                rows={recentOrders.map((o: any) => ({
-                  key: o.id,
-                  cells: [
-                    <span className="text-xs font-medium">{o.customerName || "—"}</span>,
-                    <span className="text-xs font-medium tabular-nums">{o.totalAmount ? `£${Number(o.totalAmount).toFixed(2)}` : "—"}</span>,
-                    <StatusBadge status={o.status} />,
-                    <span className="hidden sm:inline"><StatusBadge status={o.trackingStatus || "pending"} /></span>,
-                    <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}</span>,
-                  ]
-                }))}
-                empty={{ icon: ShoppingCart, title: "No orders yet", desc: "Orders will appear here when customers start purchasing" }}
-              />
-            )}
-          </SectionCard>
-        )}
-
-        {/* ===== VENDORS TAB ===== */}
-        {activeTab === "vendors" && (
-          <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
-            <SectionCard title="All Vendors" icon={Boxes} action={
-              <Badge variant="secondary" className="text-[10px]">{vendorOverview?.totalVendors ?? 0}</Badge>
-            }>
-              {!vendorOverview ? <LoadingSkeleton rows={4} /> : vendorOverview.vendors.length === 0 ? (
-                <EmptyState icon={Boxes} title="No vendors created" desc="Vendors appear here when you add them from the Vendors page" />
-              ) : (
-                <div className="space-y-1">
-                  {vendorOverview.vendors.map((v: any) => {
-                    const score = v.healthScore || 0;
-                    return (
-                      <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <div className={cn(
-                            "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
-                            score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" :
-                            score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-muted"
-                          )}>
-                            <Store className={cn(
-                              "w-4 h-4",
-                              score >= 4 ? "text-emerald-600" :
-                              score >= 3 ? "text-amber-600" : "text-muted-foreground"
-                            )} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium truncate">{v.name}</p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {v.totalOrdersFulfilled || 0} fulfilled
-                              {v.stockUpdateReliability ? ` · ${v.stockUpdateReliability}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {score > 0 && (
-                            <span className="text-[11px] tabular-nums">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>
-                          )}
-                          <StatusBadge status={v.status} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* Recent Registrations */}
-            <SectionCard title="Recent Registrations" icon={UserPlus}>
-              {!recentRegs ? <LoadingSkeleton rows={4} /> : recentRegs.length === 0 ? (
-                <EmptyState icon={UserPlus} title="No recent registrations" desc="New user signups will appear here" />
-              ) : (
-                <div className="space-y-1">
-                  {recentRegs.map((u: any) => (
-                    <div key={u.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center shrink-0">
-                          <UserPlus className="w-4 h-4 text-blue-600" />
+                <SectionCard title="Service Status" icon={Activity}>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(serviceStatus || {}).map(([key, svc]: any) => (
+                      <div key={key} className={cn(
+                        "flex items-center gap-2.5 p-3 rounded-xl border transition-colors",
+                        svc.status === 'connected' ? "bg-emerald-50/50 border-emerald-200/50 dark:bg-emerald-950/10 dark:border-emerald-900/30" :
+                        svc.status === 'warning' ? "bg-amber-50/50 border-amber-200/50 dark:bg-amber-950/10" :
+                        "bg-muted/20 border-border/30"
+                      )}>
+                        <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", svc.status === 'connected' ? "bg-emerald-500" : svc.status === 'warning' ? "bg-amber-500" : "bg-red-400")}>
+                          {svc.status === 'connected' && <span className="absolute h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping opacity-75" />}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{u.email}</p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}
+                          <p className="text-xs font-medium truncate">{svc.label || key}</p>
+                          <p className={cn("text-[10px]", svc.status === 'connected' ? "text-emerald-600" : "text-muted-foreground")}>
+                            {svc.status === 'connected' ? 'Operational' : svc.status === 'warning' ? 'Degraded' : 'Offline'}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge variant="outline" className="text-[9px]">{u.subscriptionPlan || "free"}</Badge>
-                        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-                          {new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-          </div>
-        )}
-
-        {/* ===== SYSTEM TAB ===== */}
-        {activeTab === "system" && (
-          <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
-            {/* API Keys */}
-            <SectionCard title="API Keys" icon={Key}>
-              {!systemStatus?.apiKeys ? <LoadingSkeleton rows={6} /> : (
-                <div className="space-y-1.5">
-                  {Object.entries(systemStatus.apiKeys).map(([key, configured]) => (
-                    <div key={key} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                      <div className="flex items-center gap-2.5">
-                        {configured
-                          ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                        }
-                        <span className="text-xs capitalize">{key}</span>
-                      </div>
-                      <Badge variant={configured ? "default" : "outline"} className={cn(
-                        "text-[9px] px-2",
-                        configured ? "" : "text-muted-foreground"
-                      )}>
-                        {configured ? "Connected" : "Not set"}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-
-            {/* System Info */}
-            <SectionCard title="System Information" icon={Server}>
-              <div className="space-y-1.5">
-                {[
-                  { icon: Database, label: "Database Size", value: systemStatus?.dbSizeMB ? `${systemStatus.dbSizeMB} MB` : "—" },
-                  { icon: Server, label: "Platform", value: systemStatus?.platform || "—" },
-                  { icon: Server, label: "Node.js", value: systemStatus?.nodeVersion || "—" },
-                  { icon: Activity, label: "App URL", value: "dropandsell.online" },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
-                    <div className="flex items-center gap-2.5">
-                      <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-xs text-muted-foreground">{item.label}</span>
-                    </div>
-                    <span className="text-xs font-medium tabular-nums truncate max-w-[160px] text-right">{item.value}</span>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </SectionCard>
+                </SectionCard>
 
-            {/* Service Status Cards */}
-            <Card className="sm:col-span-2 border-dashed border-border/60">
-              <CardContent className="p-4 sm:p-5">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Service Status</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { name: "Stripe", ok: systemStatus?.apiKeys?.stripe, icon: CreditCard },
-                    { name: "OpenAI", ok: systemStatus?.apiKeys?.openai, icon: MessageSquare },
-                    { name: "eBay", ok: systemStatus?.apiKeys?.ebay, icon: ShoppingCart },
-                    { name: "Amazon", ok: systemStatus?.apiKeys?.amazon, icon: Store },
-                  ].map(s => (
-                    <div key={s.name} className={cn(
-                      "flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border transition-colors",
-                      s.ok
-                        ? "bg-emerald-50/50 border-emerald-200 dark:bg-emerald-950/10 dark:border-emerald-900"
-                        : "bg-muted/20 border-border/40"
-                    )}>
-                      <div className={cn(
-                        "h-8 w-8 rounded-lg flex items-center justify-center",
-                        s.ok ? "bg-emerald-100 dark:bg-emerald-950/30" : "bg-muted"
-                      )}>
-                        <s.icon className={cn(
-                          "w-4 h-4",
-                          s.ok ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"
-                        )} />
+                <SectionCard title="API Keys" icon={Key} className="sm:col-span-2">
+                  <div className="grid sm:grid-cols-2 gap-1.5">
+                    {Object.entries(systemStatus?.apiKeys || {}).map(([key, configured]) => (
+                      <div key={key} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
+                        <div className="flex items-center gap-2.5">
+                          {configured ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                          <span className="text-xs capitalize">{key}</span>
+                        </div>
+                        <Badge variant={configured ? "default" : "outline"} className={cn("text-[9px] px-2", configured ? "" : "text-muted-foreground")}>
+                          {configured ? "Configured" : "Missing"}
+                        </Badge>
                       </div>
-                      <div className="text-center">
-                        <p className="text-xs font-medium">{s.name}</p>
-                        <p className={cn(
-                          "text-[10px]",
-                          s.ok ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"
-                        )}>
-                          {s.ok ? "Connected" : "Not configured"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </main>
+                    ))}
+                  </div>
+                </SectionCard>
+              </div>
+            </div>
+          )}
+
+          {/* ===== SUPPORT ===== */}
+          {activeTab === "support" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-center gap-2 mb-4">
+                <Button variant="default" size="sm" className="h-9 text-xs gap-1.5"><MessageSquare className="w-3.5 h-3.5" />All Conversations</Button>
+                <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Flagged</Button>
+                <Badge variant="secondary" className="text-[11px] h-7 px-2.5 ml-auto">3 open</Badge>
+              </div>
+              <Card className="border-border/40">
+                <CardContent className="p-4 sm:p-5">
+                  <EmptyState icon={MessageSquare} title="Support Inbox" desc="Customer support messages will appear here. Configure email integration to receive tickets." />
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ===== SETTINGS ===== */}
+          {activeTab === "settings" && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
+              <Card className="border-border/40">
+                <CardHeader><CardTitle className="text-sm font-semibold">Site Settings</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div><Label className="text-xs">Site Name</Label><Input className="h-9 text-sm mt-1" defaultValue="DropandSell AI" /></div>
+                    <div><Label className="text-xs">Default Currency</Label><Input className="h-9 text-sm mt-1" defaultValue="USD" /></div>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <div><p className="text-sm font-medium">Maintenance Mode</p><p className="text-xs text-muted-foreground">Disable public access to the platform</p></div>
+                    <Switch />
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <div><p className="text-sm font-medium">Allow New Registrations</p><p className="text-xs text-muted-foreground">Let new users sign up for accounts</p></div>
+                    <Switch defaultChecked />
+                  </div>
+                  <Button className="h-9 text-xs">Save Changes</Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/40">
+                <CardHeader><CardTitle className="text-sm font-semibold">Theme</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="flex gap-3">
+                    {["light", "dark", "system"].map(t => (
+                      <button key={t} onClick={() => setTheme(t as any)} className={cn("px-4 py-2 rounded-lg border text-xs font-medium transition-all", theme === t ? "border-primary bg-primary/5 text-primary" : "border-border/40 text-muted-foreground hover:border-border")}>
+                        {t.charAt(0).toUpperCase() + t.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

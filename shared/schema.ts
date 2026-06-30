@@ -469,6 +469,28 @@ export type AddonCatalogItem = typeof addonCatalog.$inferSelect;
 
 export type CatalogRefreshLog = typeof catalogRefreshLog.$inferSelect;
 
+// Shipping Profiles
+export const shippingProfiles = pgTable("shipping_profiles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  carrier: text("carrier").notNull().default("other"), // 'royal_mail', 'fedex', 'dhl', 'ups', 'usps', 'other'
+  serviceLevel: text("service_level").notNull().default("standard"), // 'standard', 'express', 'overnight', 'economy'
+  baseRate: decimal("base_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  ratePerKg: decimal("rate_per_kg", { precision: 10, scale: 2 }).default("0"),
+  freeShippingThreshold: decimal("free_shipping_threshold", { precision: 10, scale: 2 }),
+  estimatedDaysMin: integer("estimated_days_min").default(3),
+  estimatedDaysMax: integer("estimated_days_max").default(7),
+  regions: text("regions"), // Comma-separated: 'US,UK,EU'
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertShippingProfileSchema = createInsertSchema(shippingProfiles).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
+export type InsertShippingProfile = z.infer<typeof insertShippingProfileSchema>;
+export type ShippingProfile = typeof shippingProfiles.$inferSelect;
+
 // Admin settings
 export const adminSettings = pgTable("admin_settings", {
   id: serial("id").primaryKey(),

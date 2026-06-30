@@ -34,6 +34,10 @@ import AddonCatalog from "@/pages/AddonCatalog";
 import TemuIntegration from "@/pages/TemuIntegration";
 import AdminSupport from "@/pages/AdminSupport";
 import AdminDashboard from "@/pages/AdminDashboard";
+import Analytics from "@/pages/Analytics";
+import BulkEdit from "@/pages/BulkEdit";
+import ShippingProfiles from "@/pages/ShippingProfiles";
+import Customers from "@/pages/Customers";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -134,10 +138,14 @@ function Router() {
       <Route path="/payment-success" component={() => <PaymentSuccess />} />
       <Route path="/install-app" component={() => <InstallApp />} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stores} />} />
       <Route path="/vendors" component={() => <ProtectedRoute component={Vendors} />} />
+      <Route path="/customers" component={() => <ProtectedRoute component={Customers} />} />
       <Route path="/inventory" component={() => <ProtectedRoute component={Inventory} />} />
       <Route path="/orders" component={() => <ProtectedRoute component={Orders} />} />
+      <Route path="/bulk-edit" component={() => <ProtectedRoute component={BulkEdit} />} />
+      <Route path="/shipping" component={() => <ProtectedRoute component={ShippingProfiles} />} />
       <Route path="/wallet" component={() => <ProtectedRoute component={Wallet} />} />
       <Route path="/subscription" component={() => <ProtectedRoute component={Subscription} />} />
       <Route path="/automation" component={() => <ProtectedRoute component={Automation} />} />

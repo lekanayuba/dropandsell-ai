@@ -3346,6 +3346,124 @@ Guidelines:
     } catch { res.json([]); }
   });
 
+  // === ADMIN: DETAILED STATISTICS ===
+  adminApi.get('/admin/detailed-stats', async (req: any, res) => {
+    try {
+      const [userCount] = await db.select({ count: sql<number>`count(*)` }).from(users);
+      const [storeCount] = await db.select({ count: sql<number>`count(*)` }).from(stores);
+      const [productCount] = await db.select({ count: sql<number>`count(*)` }).from(products);
+      const [orderCount] = await db.select({ count: sql<number>`count(*)` }).from(orders);
+      const [vendorCount] = await db.select({ count: sql<number>`count(*)` }).from(vendors);
+      const [subscriberCount] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.subscriptionStatus, 'active'));
+      const [pendingOrders] = await db.select({ count: sql<number>`count(*)` }).from(orders).where(eq(orders.status, 'pending'));
+      const [activeVendors] = await db.select({ count: sql<number>`count(*)` }).from(vendors).where(eq(vendors.status, 'active'));
+      const revenueRow = await db.execute(sql`SELECT COALESCE(SUM(total_amount::numeric), 0) as total FROM orders WHERE status != 'cancelled'`);
+      const totalRevenue = Number((revenueRow.rows[0] as any)?.total || 0);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const todaySalesRow = await db.execute(sql`SELECT COALESCE(SUM(total_amount::numeric), 0) as total FROM orders WHERE created_at >= ${today} AND status != 'cancelled'`);
+      const todaySales = Number((todaySalesRow.rows[0] as any)?.total || 0);
+      const growthRow = await db.execute(sql`SELECT count(*) FROM users WHERE created_at >= NOW() - INTERVAL '7 days'`);
+      const weeklyGrowth = Math.round(((Number((growthRow.rows[0] as any)?.count || 0) / Math.max(1, Number(userCount.count))) * 100));
+      res.json({
+        users: Number(userCount.count), stores: Number(storeCount.count), products: Number(productCount.count),
+        orders: Number(orderCount.count), vendors: Number(vendorCount.count), subscribers: Number(subscriberCount.count),
+        pendingOrders: Number(pendingOrders.count), activeVendors: Number(activeVendors.count),
+        totalRevenue: Math.round(totalRevenue * 100) / 100, todaySales: Math.round(todaySales * 100) / 100,
+        weeklyGrowth,
+      });
+    } catch { res.json({}); }
+  });
+
+  adminApi.get('/admin/revenue-history', async (req: any, res) => {
+    try {
+      const daily = await db.execute(sql`
+        SELECT DATE(created_at) as date, COALESCE(SUM(total_amount::numeric), 0) as total
+        FROM orders WHERE status != 'cancelled' AND created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at) ORDER BY date
+      `);
+      const weekly = await db.execute(sql`
+        SELECT DATE_TRUNC('week', created_at) as week, COALESCE(SUM(total_amount::numeric), 0) as total
+        FROM orders WHERE status != 'cancelled'
+        GROUP BY week ORDER BY week LIMIT 12
+      `);
+      const monthly = await db.execute(sql`
+        SELECT DATE_TRUNC('month', created_at) as month, COALESCE(SUM(total_amount::numeric), 0) as total
+        FROM orders WHERE status != 'cancelled'
+        GROUP BY month ORDER BY month LIMIT 12
+      `);
+      const userGrowth = await db.execute(sql`
+        SELECT DATE(created_at) as date, count(*) as count FROM users
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(created_at) ORDER BY date
+      `);
+      const marketplaceSales = await db.execute(sql`
+        SELECT s.platform, COUNT(*) as orders, COALESCE(SUM(o.total_amount::numeric), 0) as revenue
+        FROM orders o LEFT JOIN stores s ON o.store_id = s.id
+        WHERE o.status != 'cancelled'
+        GROUP BY s.platform ORDER BY revenue DESC
+      `);
+      const dailyOrders = await db.execute(sql`
+        SELECT DATE(created_at) as date, COUNT(*) as count FROM orders
+        WHERE created_at >= NOW() - INTERVAL '14 days'
+        GROUP BY DATE(created_at) ORDER BY date
+      `);
+      res.json({
+        dailyRevenue: daily.rows, weeklyRevenue: weekly.rows, monthlyRevenue: monthly.rows,
+        userGrowth: userGrowth.rows, marketplaceSales: marketplaceSales.rows, dailyOrders: dailyOrders.rows,
+        storePerformance: [],
+      });
+    } catch { res.json({}); }
+  });
+
+  adminApi.get('/admin/server-metrics', async (req: any, res) => {
+    try {
+      const dbResult = await db.execute(sql`SELECT pg_database_size(current_database()) as size`);
+      const dbSizeBytes = Number((dbResult.rows[0] as any)?.size || 0);
+      const dbSizeMB = Math.round(dbSizeBytes / 1024 / 1024);
+      const uptime = process.uptime();
+      const days = Math.floor(uptime / 86400);
+      const hours = Math.floor((uptime % 86400) / 3600);
+      const uptimeStr = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+      res.json({
+        dbSizeMB, nodeVersion: process.version, platform: process.platform,
+        uptime: uptimeStr, environment: process.env.NODE_ENV || 'development',
+        appUrl: 'dropandsell.online',
+        memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        memoryTotalMB: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      });
+    } catch { res.json({}); }
+  });
+
+  adminApi.get('/admin/service-status', async (req: any, res) => {
+    const checks: Record<string, { status: 'connected' | 'warning' | 'offline'; label: string }> = {
+      stripe: { status: !!process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_...' ? 'connected' : 'offline', label: 'Stripe' },
+      openai: { status: !!process.env.OPENAI_API_KEY ? 'connected' : 'offline', label: 'OpenAI' },
+      resend: { status: !!process.env.RESEND_API_KEY ? 'connected' : 'offline', label: 'Email' },
+      amazon: { status: !!process.env.AMAZON_CLIENT_ID && !!process.env.AMAZON_CLIENT_SECRET ? 'connected' : 'offline', label: 'Amazon' },
+      ebay: { status: !!process.env.EBAY_CLIENT_ID && !!process.env.EBAY_CLIENT_SECRET ? 'connected' : 'offline', label: 'eBay' },
+      shopify: { status: !!process.env.SHOPIFY_API_KEY && !!process.env.SHOPIFY_API_SECRET ? 'connected' : 'offline', label: 'Shopify' },
+      tracking: { status: !!process.env.TRACKING_API_KEY ? 'connected' : 'offline', label: 'Tracking' },
+    };
+    res.json(checks);
+  });
+
+  adminApi.get('/admin/export/users', async (req: any, res) => {
+    try {
+      const allUsers = await db.select({
+        id: users.id, email: users.email, firstName: users.firstName, lastName: users.lastName,
+        role: users.role, subscriptionStatus: users.subscriptionStatus, subscriptionPlan: users.subscriptionPlan,
+        emailVerified: users.emailVerified, createdAt: users.createdAt,
+      }).from(users).orderBy(desc(users.createdAt));
+      const header = 'ID,Email,First Name,Last Name,Role,Subscription Status,Plan,Verified,Created At\n';
+      const rows = allUsers.map(u =>
+        `${u.id},"${u.email}","${u.firstName || ''}","${u.lastName || ''}",${u.role},${u.subscriptionStatus || 'inactive'},${u.subscriptionPlan || 'free'},${u.emailVerified ? 'Yes' : 'No'},${u.createdAt?.toISOString() || ''}`
+      ).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="users-export-${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send(header + rows);
+    } catch { res.status(500).send('Export failed'); }
+  });
+
   // Register protected routes
   app.use('/api', protectedApi);
   app.use('/api', adminApi);
@@ -3523,6 +3641,176 @@ Guidelines:
       console.error('[Catalog] Auto-refresh error:', err);
     }
   }, ONE_DAY);
+
+  // === ANALYTICS ===
+  protectedApi.get('/analytics/revenue', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userOrders = await storage.getOrders(userId);
+      const dailyRevenue: Record<string, number> = {};
+      const monthlyRevenue: Record<string, number> = {};
+      for (const o of userOrders) {
+        if (o.totalAmount && o.createdAt) {
+          const day = o.createdAt.toISOString().split('T')[0];
+          const month = day.substring(0, 7);
+          const amount = Number(o.totalAmount);
+          dailyRevenue[day] = (dailyRevenue[day] || 0) + amount;
+          monthlyRevenue[month] = (monthlyRevenue[month] || 0) + amount;
+        }
+      }
+      res.json({ dailyRevenue, monthlyRevenue, totalRevenue: Object.values(dailyRevenue).reduce((a, b) => a + b, 0) });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  protectedApi.get('/analytics/top-products', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userOrders = await storage.getOrders(userId);
+      const orderIds = userOrders.map(o => o.id);
+      if (orderIds.length === 0) return res.json([]);
+      const productCounts = await storage.getProducts(userId);
+      res.json(productCounts
+        .map(p => ({ id: p.id, title: p.title, sku: p.sku, revenue: Number(p.sellingPrice) * Math.max(0, Number(p.quantity)), stock: Number(p.quantity) }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  protectedApi.get('/analytics/profit-summary', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userProducts = await storage.getProducts(userId);
+      let totalCost = 0, totalRevenue = 0;
+      for (const p of userProducts) {
+        totalCost += Number(p.costPrice) * Math.max(0, Number(p.quantity));
+        totalRevenue += Number(p.sellingPrice) * Math.max(0, Number(p.quantity));
+      }
+      const profit = totalRevenue - totalCost;
+      const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
+      res.json({ totalCost, totalRevenue, profit, margin: Math.round(margin * 100) / 100, productCount: userProducts.length });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  protectedApi.get('/analytics/vendor-performance', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userVendors = await storage.getVendors(userId);
+      const vendorIds = userVendors.filter(v => v.id).map(v => v.id);
+      if (vendorIds.length === 0) return res.json([]);
+      const vendorProducts = await db.select({ vendorId: products.vendorId, sellingPrice: products.sellingPrice, quantity: products.quantity, costPrice: products.costPrice })
+        .from(products).where(and(eq(products.userId, userId), inArray(products.vendorId, vendorIds)));
+      const byVendor: Record<number, { count: number; cost: number; revenue: number }> = {};
+      for (const vp of vendorProducts) {
+        if (!vp.vendorId) continue;
+        if (!byVendor[vp.vendorId]) byVendor[vp.vendorId] = { count: 0, cost: 0, revenue: 0 };
+        byVendor[vp.vendorId].count++;
+        byVendor[vp.vendorId].cost += Number(vp.costPrice) * Math.max(0, Number(vp.quantity));
+        byVendor[vp.vendorId].revenue += Number(vp.sellingPrice) * Math.max(0, Number(vp.quantity));
+      }
+      res.json(userVendors.map(v => {
+        const perf = byVendor[v.id] || { count: 0, cost: 0, revenue: 0 };
+        return { ...v, productCount: perf.count, totalCost: perf.cost, totalRevenue: perf.revenue, profit: perf.revenue - perf.cost };
+      }));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // === SHIPPING PROFILES ===
+  protectedApi.get('/shipping-profiles', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profiles = await storage.getShippingProfiles(userId);
+      res.json(profiles);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  protectedApi.post('/shipping-profiles', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { name, carrier, serviceLevel, baseRate, ratePerKg, freeShippingThreshold, estimatedDaysMin, estimatedDaysMax, regions, isActive } = req.body;
+      const profile = await storage.createShippingProfile({
+        userId, name, carrier: carrier || 'other', serviceLevel: serviceLevel || 'standard',
+        baseRate: baseRate?.toString() || '0', ratePerKg: ratePerKg?.toString(),
+        freeShippingThreshold: freeShippingThreshold?.toString(),
+        estimatedDaysMin: estimatedDaysMin || 3, estimatedDaysMax: estimatedDaysMax || 7,
+        regions: regions || null, isActive: isActive !== false,
+      });
+      res.status(201).json(profile);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  protectedApi.put('/shipping-profiles/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const updates = req.body;
+      if (updates.baseRate) updates.baseRate = updates.baseRate.toString();
+      if (updates.ratePerKg) updates.ratePerKg = updates.ratePerKg.toString();
+      if (updates.freeShippingThreshold) updates.freeShippingThreshold = updates.freeShippingThreshold.toString();
+      const profile = await storage.updateShippingProfile(id, userId, updates);
+      if (!profile) return res.status(404).json({ message: 'Shipping profile not found' });
+      res.json(profile);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  protectedApi.delete('/shipping-profiles/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const id = Number(req.params.id);
+    await storage.deleteShippingProfile(id, userId);
+    res.status(204).send();
+  });
+
+  // === CUSTOMERS (derived from orders) ===
+  protectedApi.get('/customers', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userOrders = await storage.getOrders(userId);
+      const customerMap = new Map<string, { name: string; email: string; totalOrders: number; totalSpent: number; lastOrder: Date | null; orders: number[] }>();
+      for (const o of userOrders) {
+        if (!o.customerEmail) continue;
+        const key = o.customerEmail.toLowerCase();
+        const existing = customerMap.get(key) || { name: o.customerName || 'Unknown', email: o.customerEmail!, totalOrders: 0, totalSpent: 0, lastOrder: null, orders: [] as number[] };
+        existing.totalOrders++;
+        existing.totalSpent += Number(o.totalAmount || 0);
+        if (o.createdAt && (!existing.lastOrder || o.createdAt > existing.lastOrder)) existing.lastOrder = o.createdAt;
+        existing.orders.push(o.id);
+        customerMap.set(key, existing);
+      }
+      res.json(Array.from(customerMap.values()).sort((a, b) => b.totalSpent - a.totalSpent));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // === BULK PRODUCT UPDATE ===
+  protectedApi.post('/products/bulk-update', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { productIds, updates } = req.body;
+      if (!Array.isArray(productIds) || productIds.length === 0) {
+        return res.status(400).json({ message: 'productIds must be a non-empty array' });
+      }
+      if (!updates || Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: 'No updates provided' });
+      }
+      let updated = 0;
+      for (const id of productIds) {
+        const product = await storage.getProduct(Number(id), userId);
+        if (!product) continue;
+        const updateData: Record<string, any> = {};
+        if (updates.sellingPrice !== undefined) updateData.sellingPrice = updates.sellingPrice.toString();
+        if (updates.costPrice !== undefined) updateData.costPrice = updates.costPrice.toString();
+        if (updates.quantity !== undefined) updateData.quantity = updates.quantity;
+        if (updates.vendorId !== undefined) updateData.vendorId = updates.vendorId;
+        if (updates.deliveryType !== undefined) updateData.deliveryType = updates.deliveryType;
+        if (updates.deliveryCost !== undefined) updateData.deliveryCost = updates.deliveryCost.toString();
+        if (Object.keys(updateData).length > 0) {
+          await storage.updateProduct(Number(id), userId, updateData as any);
+          updated++;
+        }
+      }
+      res.json({ updated, total: productIds.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Bulk update failed' });
+    }
+  });
 
   // === BACKGROUND STOCK SYNC JOB (runs every 2 minutes) ===
   const SYNC_INTERVAL = 2 * 60 * 1000;
