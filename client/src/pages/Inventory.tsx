@@ -1,6 +1,7 @@
 import { useProducts, useCreateProduct, useDeleteProduct } from "@/hooks/use-products";
 import { useStores } from "@/hooks/use-stores";
 import { useBulkAddToPublishQueue, usePricingRules } from "@/hooks/use-automation";
+import { useVendors } from "@/hooks/use-vendors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2 } from "lucide-react";
+import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2, Store, HeartPulse, MapPin } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
@@ -430,6 +431,7 @@ export default function Inventory() {
 
 function ProductForm({ onSuccess }: { onSuccess: () => void }) {
   const createProduct = useCreateProduct();
+  const { data: vendors } = useVendors();
   const form = useForm<InsertProduct>({
     resolver: zodResolver(insertProductSchema),
     defaultValues: {
@@ -565,6 +567,47 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
             )}
           />
         </div>
+
+        {/* Supplier / Vendor selection */}
+        <FormField
+          control={form.control}
+          name="vendorId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Supplier</FormLabel>
+              <Select
+                onValueChange={(val) => field.onChange(val ? Number(val) : null)}
+                value={field.value?.toString() || ""}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a supplier (optional)" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="">No supplier</SelectItem>
+                  {vendors?.map((v: any) => (
+                    <SelectItem key={v.id} value={v.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <span>{v.name}</span>
+                        {v.healthScore && (
+                          <span className="text-amber-500 text-xs">{'★'.repeat(v.healthScore)}</span>
+                        )}
+                        {v.isGlobal && (
+                          <span className="text-[10px] text-blue-500 ml-1">Global</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                <a href="/vendors" className="text-primary underline">Add a supplier</a> to source products and track their reliability.
+              </p>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         
         <Button type="submit" className="w-full mt-4" disabled={createProduct.isPending}>
           {createProduct.isPending ? "Creating..." : "Create Product"}
