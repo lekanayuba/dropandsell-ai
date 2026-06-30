@@ -3269,6 +3269,83 @@ Guidelines:
     }
   });
 
+  // Admin: Recent orders
+  adminApi.get('/admin/recent-orders', async (req: any, res) => {
+    try {
+      const recentOrders = await db.select({
+        id: orders.id, storeId: orders.storeId, customerName: orders.customerName,
+        totalAmount: orders.totalAmount, status: orders.status, trackingStatus: orders.trackingStatus,
+        createdAt: orders.createdAt,
+      }).from(orders).orderBy(desc(orders.createdAt)).limit(10);
+      res.json(recentOrders);
+    } catch { res.json([]); }
+  });
+
+  // Admin: Recent registrations
+  adminApi.get('/admin/recent-registrations', async (req: any, res) => {
+    try {
+      const recent = await db.select({
+        id: users.id, email: users.email, firstName: users.firstName,
+        lastName: users.lastName, subscriptionPlan: users.subscriptionPlan,
+        subscriptionStatus: users.subscriptionStatus, createdAt: users.createdAt,
+      }).from(users).orderBy(desc(users.createdAt)).limit(10);
+      res.json(recent);
+    } catch { res.json([]); }
+  });
+
+  // Admin: Vendor health overview
+  adminApi.get('/admin/vendor-overview', async (req: any, res) => {
+    try {
+      const vendorStats = await db.select({
+        id: vendors.id, name: vendors.name, healthScore: vendors.healthScore,
+        status: vendors.status, category: vendors.category,
+        totalOrdersFulfilled: vendors.totalOrdersFulfilled,
+        stockUpdateReliability: vendors.stockUpdateReliability,
+        lastHealthCheck: vendors.lastHealthCheck,
+      }).from(vendors).orderBy(desc(vendors.healthScore)).limit(20);
+      const count = (await db.select({ count: sql<number>`count(*)` }).from(vendors))[0]?.count || 0;
+      const avgHealth = await db.execute(sql`SELECT COALESCE(AVG(health_score), 0) as avg FROM vendors WHERE health_score IS NOT NULL`);
+      res.json({ vendors: vendorStats, totalVendors: Number(count), avgHealthScore: Number((avgHealth.rows[0] as any)?.avg || 0) });
+    } catch { res.json({ vendors: [], totalVendors: 0, avgHealthScore: 0 }); }
+  });
+
+  // Admin: System status
+  adminApi.get('/admin/system-status', async (req: any, res) => {
+    try {
+      const dbResult = await db.execute(sql`SELECT pg_database_size(current_database()) as size`);
+      const dbSizeBytes = Number((dbResult.rows[0] as any)?.size || 0);
+      const dbSizeMB = Math.round(dbSizeBytes / 1024 / 1024);
+      const apiKeys = {
+        stripe: !!process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_...',
+        openai: !!process.env.OPENAI_API_KEY,
+        resend: !!process.env.RESEND_API_KEY,
+        ebay: !!process.env.EBAY_CLIENT_ID && !!process.env.EBAY_CLIENT_SECRET,
+        amazon: !!process.env.AMAZON_CLIENT_ID && !!process.env.AMAZON_CLIENT_SECRET,
+        shopify: !!process.env.SHOPIFY_API_KEY && !!process.env.SHOPIFY_API_SECRET,
+        tracking: !!process.env.TRACKING_API_KEY,
+      };
+      res.json({ dbSizeMB, apiKeys, nodeVersion: process.version, platform: process.platform });
+    } catch { res.json({ dbSizeMB: 0, apiKeys: {} }); }
+  });
+
+  // Admin: Activity feed
+  adminApi.get('/admin/activity', async (req: any, res) => {
+    try {
+      const recentOrders = await db.select({
+        id: orders.id, type: sql<string>`'order'`, label: orders.customerName,
+        detail: orders.status, createdAt: orders.createdAt,
+      }).from(orders).orderBy(desc(orders.createdAt)).limit(5);
+      const recentUsers = await db.select({
+        id: users.id, type: sql<string>`'registration'`, label: users.email,
+        detail: sql<string>`'new user'`, createdAt: users.createdAt,
+      }).from(users).orderBy(desc(users.createdAt)).limit(5);
+      const all = [...recentOrders, ...recentUsers]
+        .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0))
+        .slice(0, 15);
+      res.json(all);
+    } catch { res.json([]); }
+  });
+
   // Register protected routes
   app.use('/api', protectedApi);
   app.use('/api', adminApi);
