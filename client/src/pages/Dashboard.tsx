@@ -8,15 +8,27 @@ import {
   DollarSign, ShoppingBag, Store, Wallet, ArrowUpRight, AlertTriangle,
   GripVertical, Package, Truck, Clock, RefreshCw, CheckCircle2, XCircle,
   ShoppingCart, TrendingUp, TrendingDown, Boxes, Bell, Eye, EyeOff,
+  Plus, Users, Globe, Phone, Mail, MapPin, Tag, HeartPulse,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { insertVendorSchema, type InsertVendor } from "@shared/schema";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor,
   useSensor, useSensors, type DragEndEvent,
@@ -91,6 +103,118 @@ function StatusDot({ status }: { status: string }) {
   return <span className={cn("h-2 w-2 rounded-full inline-block shrink-0", colors[status] || "bg-gray-400")} />;
 }
 
+function VendorForm({ onSuccess }: { onSuccess: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const form = useForm<InsertVendor>({
+    resolver: zodResolver(insertVendorSchema),
+    defaultValues: { name: "", website: "", integrationType: "custom", config: {}, contactPerson: "", contactEmail: "", contactPhone: "", category: "", tags: "", country: "", leadTime: "", paymentTerms: "", minOrderAmount: "", notes: "", status: "active" },
+  });
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/vendors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to create vendor");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+      toast({ title: "Vendor added" });
+      onSuccess();
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit((data) => createMutation.mutate(data))} className="space-y-4">
+        <FormField control={form.control} name="name" render={({ field }) => (
+          <FormItem><FormLabel>Vendor Name *</FormLabel><FormControl><Input placeholder="Supplier Inc." {...field} /></FormControl><FormMessage /></FormItem>
+        )} />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="contactPerson" render={({ field }) => (
+            <FormItem><FormLabel>Contact</FormLabel><FormControl><Input placeholder="John Doe" {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+          <FormField control={form.control} name="contactEmail" render={({ field }) => (
+            <FormItem><FormLabel>Email</FormLabel><FormControl><Input placeholder="john@supplier.com" type="email" {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="contactPhone" render={({ field }) => (
+            <FormItem><FormLabel>Phone</FormLabel><FormControl><Input placeholder="+1 234 567 8900" {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+          <FormField control={form.control} name="country" render={({ field }) => (
+            <FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="China, USA..." {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <FormField control={form.control} name="category" render={({ field }) => (
+            <FormItem><FormLabel>Category</FormLabel><Select value={field.value || ""} onValueChange={field.onChange}>
+              <FormControl><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></FormControl>
+              <SelectContent>
+                <SelectItem value="wholesale">Wholesale</SelectItem>
+                <SelectItem value="manufacturer">Manufacturer</SelectItem>
+                <SelectItem value="dropshipper">Dropshipper</SelectItem>
+                <SelectItem value="distributor">Distributor</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select></FormItem>
+          )} />
+          <FormField control={form.control} name="website" render={({ field }) => (
+            <FormItem><FormLabel>Website</FormLabel><FormControl><Input placeholder="https://..." {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+        </div>
+        <FormField control={form.control} name="notes" render={({ field }) => (
+          <FormItem><FormLabel>Notes</FormLabel><FormControl><Textarea placeholder="Internal notes..." className="min-h-[60px]" {...field} value={field.value || ""} /></FormControl></FormItem>
+        )} />
+        <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+          {createMutation.isPending ? "Saving..." : "Add Vendor"}
+        </Button>
+      </form>
+    </Form>
+  );
+}
+
+function ImportVendorsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [csvText, setCsvText] = useState("");
+  const importMutation = useMutation({
+    mutationFn: async (vendors: any[]) => {
+      const res = await fetch("/api/vendors/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vendors }), credentials: "include" });
+      if (!res.ok) throw new Error("Import failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+      toast({ title: "Imported", description: `${data.imported} vendors added` });
+      setCsvText("");
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast({ title: "Import Failed", description: err.message, variant: "destructive" }),
+  });
+  const parseAndImport = () => {
+    const vendors = csvText.trim().split("\n").filter(Boolean).map(line => {
+      const p = line.split(",").map(s => s.trim());
+      return { name: p[0] || "", website: p[1] || "", contactPerson: p[2] || "", contactEmail: p[3] || "", contactPhone: p[4] || "", country: p[5] || "", category: p[6] || "", tags: p[7] || "" };
+    }).filter(v => v.name);
+    if (vendors.length === 0) { toast({ title: "No valid vendors", description: "Each line needs at least a name", variant: "destructive" }); return; }
+    importMutation.mutate(vendors);
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Bulk Import Vendors</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Paste CSV data. Format: <code className="text-xs bg-muted px-1 py-0.5 rounded">name, website, contact, email, phone, country, category, tags</code></p>
+          <Textarea placeholder={"AliExpress, https://aliexpress.com, Ali Baba, support@aliexpress.com, +86 123, China, dropshipper, electronics"} className="min-h-[160px] font-mono text-xs" value={csvText} onChange={(e) => setCsvText(e.target.value)} />
+          <Button className="w-full" onClick={parseAndImport} disabled={importMutation.isPending || !csvText.trim()}>
+            {importMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing...</> : <>Import Vendors</>}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
@@ -144,6 +268,15 @@ export default function Dashboard() {
     queryKey: ["/api/notifications"],
     queryFn: async () => { const r = await fetch("/api/notifications", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
   });
+
+  // Fetch vendors
+  const { data: vendors } = useQuery({
+    queryKey: ["/api/vendors"],
+    queryFn: async () => { const r = await fetch("/api/vendors", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+  });
+
+  // Add vendor dialog state
+  const [addVendorOpen, setAddVendorOpen] = useState(false);
 
   // Compute daily revenue from orders for chart
   const revenueChartData = useMemo(() => {
@@ -455,6 +588,83 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Vendors Section */}
+      <div className="px-4 md:px-6 lg:px-0">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold font-display flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            Vendors
+          </h3>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setAddVendorOpen(true)}>
+              <Plus className="w-3 h-3 mr-1" /> Add Vendor
+            </Button>
+          </div>
+        </div>
+        {!vendors ? (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
+          </div>
+        ) : vendors.length === 0 ? (
+          <Card className="border-dashed border-border/50">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <Users className="w-10 h-10 mb-3 text-muted-foreground/60" />
+              <p className="text-sm font-medium">No vendors yet</p>
+              <p className="text-xs mt-1 mb-4">Add a supplier to start sourcing products</p>
+              <Button size="sm" onClick={() => setAddVendorOpen(true)}>Add Your First Vendor</Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {vendors.slice(0, 6).map((v: any) => (
+              <Card key={v.id} className="border-border/40 hover:border-primary/30 transition-colors cursor-pointer" onClick={() => setLocation("/vendors")}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <Users className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{v.name}</p>
+                        {v.website && <p className="text-[10px] text-muted-foreground truncate">{v.website}</p>}
+                      </div>
+                    </div>
+                    {v.healthScore && (
+                      <span className="text-xs shrink-0 ml-2" title={`Health: ${v.healthScore}/5`}>
+                        {"★".repeat(v.healthScore)}{"☆".repeat(5 - v.healthScore)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center flex-wrap gap-1.5 mb-2">
+                    {v.category && <Badge variant="secondary" className="text-[9px] capitalize">{v.category}</Badge>}
+                    {v.country && <Badge variant="outline" className="text-[9px]"><MapPin className="w-2.5 h-2.5 mr-0.5" />{v.country}</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                    {v.contactPerson && <span className="flex items-center gap-1"><Users className="w-3 h-3" />{v.contactPerson}</span>}
+                    {v.contactEmail && <span className="flex items-center gap-1 truncate"><Mail className="w-3 h-3" />{v.contactEmail}</span>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {vendors.length > 6 && (
+              <Card className="border-dashed border-border/40 hover:border-primary/30 transition-colors cursor-pointer" onClick={() => setLocation("/vendors")}>
+                <CardContent className="flex items-center justify-center h-full py-6 text-sm text-muted-foreground">
+                  <ArrowUpRight className="w-4 h-4 mr-1.5" /> View all {vendors.length} vendors
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add Vendor Dialog */}
+      <Dialog open={addVendorOpen} onOpenChange={setAddVendorOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Add New Vendor</DialogTitle></DialogHeader>
+          <VendorForm onSuccess={() => setAddVendorOpen(false)} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
