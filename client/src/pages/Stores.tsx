@@ -167,7 +167,7 @@ export default function Stores() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Connect a New Store</DialogTitle>
+                <DialogTitle>Connect New Store</DialogTitle>
               </DialogHeader>
               <StoreForm onSuccess={() => setOpen(false)} />
             </DialogContent>
@@ -243,18 +243,6 @@ function OAuthStoreSection({ store }: { store: any }) {
   const creds = (store.credentials as any) || {};
   const plat = store.platform;
 
-  const infoFields: Record<string, { label: string; value: string }[]> = {
-    ebay: [
-      { label: 'Seller ID', value: creds?.sellerId || '' },
-    ],
-    shopify: [
-      { label: 'Shop Domain', value: creds?.shopDomain || '' },
-    ],
-    woocommerce: [
-      { label: 'Site URL', value: creds?.siteUrl || '' },
-    ],
-  };
-
   const isAuthorized = plat === 'ebay' ? !!creds?.ebayRefreshToken
     : plat === 'shopify' ? !!creds?.accessToken
     : plat === 'woocommerce' ? !!(creds?.consumerKey && creds?.consumerSecret)
@@ -271,18 +259,6 @@ function OAuthStoreSection({ store }: { store: any }) {
 
   return (
     <div className="space-y-2">
-      {infoFields[plat]?.filter(f => f.value).map(f => (
-        <div key={f.label} className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
-          <span className="text-muted-foreground">{f.label}</span>
-          <span className="font-medium">{f.value}</span>
-        </div>
-      ))}
-      {store.email && (
-        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 rounded-lg text-xs">
-          <span className="text-muted-foreground">Email</span>
-          <span className="font-medium truncate ml-2">{store.email}</span>
-        </div>
-      )}
       <div className="flex items-center justify-between px-3 py-2 bg-muted/30 rounded-lg text-sm">
         <span className="text-muted-foreground">{platformLabel} Auth</span>
         {isAuthorized ? (
@@ -647,18 +623,28 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
   });
   const plat = form.watch('platform');
 
+  function getOAuthUrl(storeId: number, platform: string): string | null {
+    const urls: Record<string, string> = {
+      ebay: `/api/ebay/auth?storeId=${storeId}`,
+      shopify: `/api/oauth/shopify/auth?storeId=${storeId}`,
+      woocommerce: `/api/oauth/woocommerce/auth?storeId=${storeId}`,
+      amazon: `/api/oauth/amazon/auth?storeId=${storeId}`,
+      jumia: `/api/oauth/jumia/auth?storeId=${storeId}`,
+    };
+    return urls[platform] || null;
+  }
+
   const onSubmit = (data: InsertStore) => {
-    const creds = data.credentials as any;
-    if (data.platform === 'ebay') {
-      data.credentials = { sellerId: creds?.sellerId || "", ebayRefreshToken: "" };
-    } else if (data.platform === 'shopify') {
-      data.credentials = { shopDomain: creds?.shopDomain || "", accessToken: "" };
-    } else if (data.platform === 'woocommerce') {
-      data.credentials = { siteUrl: creds?.siteUrl || "", consumerKey: "", consumerSecret: "" };
-    } else {
-      data.credentials = {};
-    }
-    createStore.mutate(data, { onSuccess });
+    data.credentials = {};
+    createStore.mutate(data, {
+      onSuccess: (store) => {
+        onSuccess();
+        const authUrl = getOAuthUrl(store.id, store.platform);
+        if (authUrl) {
+          window.open(authUrl, '_blank');
+        }
+      },
+    });
   };
 
   return (
@@ -685,72 +671,14 @@ function StoreForm({ onSuccess }: { onSuccess: () => void }) {
         <FormField control={form.control} name="name" render={({ field }) => (
           <FormItem>
             <FormLabel>Store Name</FormLabel>
-            <FormControl><Input placeholder={plat === 'ebay' ? 'My eBay Store' : "My Awesome Store"} {...field} /></FormControl>
+            <FormControl><Input placeholder="My Awesome Store" {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )} />
-        {plat === 'ebay' && (
-          <>
-            <FormField control={form.control} name="email" render={({ field }) => (
-              <FormItem>
-                <FormLabel>eBay Account Email</FormLabel>
-                <FormControl><Input type="email" placeholder="your@email.com" {...field} value={field.value || ""} /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-            <FormField control={form.control} name="credentials" render={({ field }) => (
-              <FormItem>
-                <FormLabel>eBay Seller ID</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Your eBay seller/user ID"
-                    value={(field.value as any)?.sellerId ?? ""}
-                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), sellerId: e.target.value, ebayRefreshToken: "" })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-          </>
-        )}
-        {plat === 'shopify' && (
-          <FormField control={form.control} name="credentials" render={({ field }) => (
-            <FormItem>
-              <FormLabel>Shopify Store Domain</FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="mystore.myshopify.com"
-                  value={(field.value as any)?.shopDomain ?? ""}
-                  onChange={(e) => field.onChange({ ...(field.value as any ?? {}), shopDomain: e.target.value, accessToken: "" })}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-        )}
-        {plat === 'woocommerce' && (
-          <>
-            <FormField control={form.control} name="credentials" render={({ field }) => (
-              <FormItem>
-                <FormLabel>WooCommerce Site URL</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="https://mystore.com"
-                    value={(field.value as any)?.siteUrl ?? ""}
-                    onChange={(e) => field.onChange({ ...(field.value as any ?? {}), siteUrl: e.target.value, consumerKey: "", consumerSecret: "" })}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-          </>
-        )}
-        {plat === 'amazon' && (
-          <p className="text-xs text-muted-foreground">After creating the store, authorize with Amazon via the store card below.</p>
-        )}
-        {plat === 'jumia' && (
-          <p className="text-xs text-muted-foreground">After creating the store, authorize with Jumia via the store card below.</p>
-        )}
+        <div className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+          <p>After connecting, you'll be redirected to {plat.charAt(0).toUpperCase() + plat.slice(1)} to authorize access.</p>
+          <p>API credentials are configured by the admin in Settings &gt; Integrations.</p>
+        </div>
         <Button type="submit" className="w-full" disabled={createStore.isPending}>
           {createStore.isPending ? "Creating..." : "Connect Store"}
         </Button>

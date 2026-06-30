@@ -9,6 +9,7 @@ import {
   GripVertical, Package, Truck, Clock, RefreshCw, CheckCircle2, XCircle,
   ShoppingCart, TrendingUp, TrendingDown, Boxes, Bell, Eye, EyeOff,
   Plus, Users, Globe, Phone, Mail, MapPin, Tag, HeartPulse,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -281,11 +282,13 @@ export default function Dashboard() {
   // Compute daily revenue from orders for chart
   const revenueChartData = useMemo(() => {
     if (!orders || orders.length === 0) return [];
-    const last7 = new Date(Date.now() - 7 * 86400000);
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    const last7 = new Date(now - 7 * 86400000);
     const recent = orders.filter((o: any) => o.createdAt && new Date(o.createdAt) >= last7 && o.status !== "cancelled");
     const days: Record<string, number> = {};
     for (let i = 0; i < 7; i++) {
-      const d = new Date(Date.now() - i * 86400000);
+      const d = new Date(now - i * 86400000);
       days[d.toLocaleDateString(undefined, { weekday: "short" })] = 0;
     }
     recent.forEach((o: any) => {

@@ -80,7 +80,7 @@ function TopProductsChart({ products }: { products: any[] }) {
   );
 }
 
-export default function Analytics() {
+export default function Getstarted() {
   const [tab, setTab] = useState("overview");
   const { data: revenue, isLoading: revLoading } = useQuery({ queryKey: ["/api/analytics/revenue"], queryFn: async () => { const r = await fetch("/api/analytics/revenue", { credentials: "include" }); return r.json(); } });
   const { data: topProducts, isLoading: prodLoading } = useQuery({ queryKey: ["/api/analytics/top-products"], queryFn: async () => { const r = await fetch("/api/analytics/top-products", { credentials: "include" }); return r.json(); } });
@@ -92,7 +92,7 @@ export default function Analytics() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h2 className="text-2xl md:text-3xl font-bold font-display">Analytics</h2>
+        <h2 className="text-2xl md:text-3xl font-bold font-display">Getting Started</h2>
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div>
         <Skeleton className="h-[350px] rounded-xl" />
       </div>
@@ -102,7 +102,7 @@ export default function Analytics() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Analytics</h2>
+        <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight">Getting Started</h2>
       </div>
 
       <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">

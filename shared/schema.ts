@@ -18,7 +18,6 @@ export const stores = pgTable("stores", {
   userId: varchar("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   platform: text("platform").notNull(), // 'shopify', 'amazon', 'ebay', etc.
-  email: text("email"),
   credentials: jsonb("credentials").notNull(), // Encrypted API keys, tokens
   status: text("status").notNull().default("active"), // 'active', 'inactive', 'error'
   autoRestock: boolean("auto_restock").notNull().default(false), // Auto-restock out-of-stock items when quantity becomes available

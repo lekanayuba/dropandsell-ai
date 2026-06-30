@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
+import { notifyUser } from "./websocket";
 import { eq, desc, and, or, ilike, sql, inArray } from "drizzle-orm";
 
 export interface IStorage {
@@ -323,6 +324,9 @@ export class DatabaseStorage implements IStorage {
 
   async createNotification(notification: InsertNotification) {
     const [newNotification] = await db.insert(notifications).values(notification).returning();
+    try {
+      notifyUser(Number(notification.userId), 'notification_new', { notification: newNotification });
+    } catch { /* ws not ready */ }
     return newNotification;
   }
 

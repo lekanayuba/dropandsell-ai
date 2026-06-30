@@ -93,15 +93,15 @@ const steps = [
               </li>
               <li className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs shrink-0">2</span>
-                <span>Click <strong>Add Store</strong> and select your marketplace</span>
+                <span>Click <strong>Connect Store</strong>, select your marketplace, and name your store</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs shrink-0">3</span>
-                <span>Enter your API credentials (found in your marketplace settings)</span>
+                <span>Authorize via the platform's official login page (OAuth) — no API keys needed</span>
               </li>
               <li className="flex items-start gap-3">
                 <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs shrink-0">4</span>
-                <span>DropandSell AI will verify and sync your store data</span>
+                <span>DropandSell AI will verify and sync your store data automatically</span>
               </li>
             </ol>
           </CardContent>

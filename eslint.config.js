@@ -1,8 +1,6 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
-import react from "@eslint-react/eslint-plugin";
-
 export default tseslint.config(
   { ignores: ["dist/**", "build/**", "node_modules/**", "attached_assets/**"] },
   js.configs.recommended,

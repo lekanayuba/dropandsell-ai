@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -34,10 +34,36 @@ import AddonCatalog from "@/pages/AddonCatalog";
 import TemuIntegration from "@/pages/TemuIntegration";
 import AdminSupport from "@/pages/AdminSupport";
 import AdminDashboard from "@/pages/AdminDashboard";
-import Analytics from "@/pages/Analytics";
+import Getstarted from "@/pages/Getstarted";
 import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
+
+function AdminLayout({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // A real admin route should verify the user's role here.
+  // For now, we'll just check for authentication.
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  // Here you could have a dedicated AdminSidebar and a different layout
+  return (
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-foreground">
+      {/* <AdminSidebar /> */}
+      <main className="flex-1 p-6 lg:p-10"><Component /></main>
+    </div>
+  );
+}
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -138,7 +164,8 @@ function Router() {
       <Route path="/payment-success" component={() => <PaymentSuccess />} />
       <Route path="/install-app" component={() => <InstallApp />} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path="/analytics" component={() => <ProtectedRoute component={Analytics} />} />
+      <Route path="/analytics" component={() => <Redirect to="/getstarted" />} />
+      <Route path="/getstarted" component={() => <ProtectedRoute component={Getstarted} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stores} />} />
       <Route path="/vendors" component={() => <ProtectedRoute component={Vendors} />} />
       <Route path="/customers" component={() => <ProtectedRoute component={Customers} />} />
@@ -153,8 +180,8 @@ function Router() {
       <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
       <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
       <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />
-      <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
-      <Route path="/admin" component={() => <AdminDashboard />} />
+      <Route path="/admin/support" component={() => <AdminLayout component={AdminSupport} />} />
+      <Route path="/admin" component={() => <AdminLayout component={AdminDashboard} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>

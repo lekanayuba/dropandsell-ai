@@ -1,10 +1,19 @@
+import { loadEnvFile } from "process";
+import { existsSync } from "fs";
+
+// Load .env file for local development
+if (existsSync(".env")) loadEnvFile(".env");
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { setupWebSocket, broadcast, notifyUser } from "./websocket";
+import { checkAndFulfillPendingOrders } from "./auto-fulfillment";
 
 const app = express();
 const httpServer = createServer(app);
+const wss = setupWebSocket(httpServer);
 
 declare module "http" {
   interface IncomingMessage {
@@ -90,14 +99,21 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  const listenOpts: any = { port, host: "0.0.0.0" };
+  if (process.platform !== "win32") {
+    listenOpts.reusePort = true;
+  }
+  httpServer.listen(listenOpts, () => {
+    log(`serving on port ${port}`);
+  });
+
+  // Background auto-fulfillment check every 5 minutes
+  setInterval(async () => {
+    try {
+      const count = await checkAndFulfillPendingOrders();
+      if (count > 0) log(`Auto-fulfilled ${count} pending orders`, "fulfillment");
+    } catch (err) {
+      console.error("[Fulfillment] Background check failed:", err);
+    }
+  }, 5 * 60 * 1000);
 })();

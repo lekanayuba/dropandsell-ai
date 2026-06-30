@@ -21,6 +21,9 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking } from "./tracking-monitor";
 import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
+import { broadcast, notifyUser } from "./websocket";
+import { getPriceRecommendations } from "./ai-price-optimizer";
+import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -546,6 +549,8 @@ export async function registerRoutes(
         inStockCount,
         message: `${store.platform} store synced — ${outOfStockCount} out of stock, ${inStockCount} in stock`
       });
+
+      notifyUser(req.user.claims.sub, 'store_synced', { storeId: id });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Sync failed' });
     }
@@ -1074,6 +1079,7 @@ export async function registerRoutes(
       const input = api.products.create.input.parse(req.body);
       const product = await storage.createProduct({ ...input, userId: req.user.claims.sub });
       res.status(201).json(product);
+      notifyUser(req.user.claims.sub, 'product_updated', { action: 'created', product });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -1133,6 +1139,7 @@ export async function registerRoutes(
       }
 
       res.json(product);
+      notifyUser(req.user.claims.sub, 'product_updated', { action: 'updated', product });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });
@@ -1263,8 +1270,33 @@ export async function registerRoutes(
       }
 
       res.json(updated);
+      notifyUser(req.user.claims.sub, 'order_updated', { action: 'tracking_updated', order: updated });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to update tracking' });
+    }
+  });
+
+  // === AUTO-FULFILLMENT ===
+  protectedApi.post('/orders/:id/fulfill', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const order = await storage.getOrder(id, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      const result = await autoFulfillOrder(id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Fulfillment failed' });
+    }
+  });
+
+  protectedApi.post('/orders/fulfill-pending', async (_req: any, res) => {
+    try {
+      const count = await checkAndFulfillPendingOrders();
+      res.json({ fulfilledCount: count, message: `${count} orders auto-fulfilled` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Bulk fulfillment failed' });
     }
   });
 
@@ -1832,6 +1864,11 @@ export async function registerRoutes(
     res.json({ publishableKey: key });
   });
 
+  protectedApi.get('/currencies', async (_req, res) => {
+    const { getSupportedCurrencies } = await import("../shared/currency");
+    res.json({ currencies: getSupportedCurrencies() });
+  });
+
   // Stripe subscription products for payment setup (public endpoint)
   protectedApi.get('/stripe/products', async (req, res) => {
     const planFeatures: Record<string, string[]> = {
@@ -2160,6 +2197,42 @@ Guidelines:
     } catch (err: any) {
       console.error('Support chat error:', err?.message || err);
       res.status(500).json({ message: 'Failed to get response' });
+    }
+  });
+
+  // === AI: PRICE OPTIMIZER ===
+  protectedApi.post('/ai/optimize-prices', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userProducts = await storage.getProducts(userId);
+      const vendorsList = await storage.getVendors(userId);
+      const vendorMap = new Map(vendorsList.map((v: any) => [v.id, v.name]));
+
+      const productData = userProducts.map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description || '',
+        sku: p.sku || '',
+        costPrice: Number(p.costPrice) || 0,
+        sellingPrice: Number(p.sellingPrice) || 0,
+        quantity: Number(p.quantity) || 0,
+        category: p.category || 'general',
+        vendorName: vendorMap.get(p.vendorId) || '',
+      })).filter((p: any) => p.costPrice > 0);
+
+      if (productData.length === 0) {
+        return res.json({ recommendations: [], message: 'No products with cost data to analyze' });
+      }
+
+      const recommendations = await getPriceRecommendations(productData, process.env.OPENAI_API_KEY || '');
+      res.json({ recommendations, analyzedCount: productData.length });
+
+      if (recommendations.length > 0) {
+        notifyUser(userId, 'price_optimized', { count: recommendations.length });
+      }
+    } catch (err: any) {
+      console.error('[AI Price Optimizer] Error:', err?.message || err);
+      res.status(500).json({ message: 'Price optimization failed: ' + (err?.message || 'Unknown error') });
     }
   });
 
@@ -2673,6 +2746,56 @@ Guidelines:
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to get wallet' });
+    }
+  });
+
+  protectedApi.post('/wallet/deposit', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { amount } = req.body;
+
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ message: 'Invalid deposit amount' });
+      }
+
+      const user = await storage.getUser(userId);
+      const stripe = await getUncachableStripeClient();
+
+      // Create a Stripe PaymentIntent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100),
+        currency: 'gbp',
+        customer: user?.stripeCustomerId || undefined,
+        metadata: { userId: String(userId), type: 'wallet_deposit' },
+        automatic_payment_methods: { enabled: true },
+      });
+
+      // Confirm in test mode automatically
+      if (process.env.NODE_ENV !== 'production') {
+        const confirmed = await stripe.paymentIntents.confirm(paymentIntent.id, {
+          payment_method: 'pm_card_visa',
+        });
+
+        if (confirmed.status === 'succeeded') {
+          const userWallet = await storage.getWallet(userId);
+          if (userWallet) {
+            await storage.updateWalletBalance(userWallet.id, Number(userWallet.balance) + amount);
+          }
+          await storage.createTransaction({
+            walletId: userWallet?.id || 0,
+            type: 'deposit',
+            amount,
+            description: 'Wallet deposit',
+            status: 'completed',
+          });
+          return res.json({ success: true, newBalance: Number(userWallet?.balance || 0) + amount });
+        }
+      }
+
+      // In production, return client_secret for frontend confirmation
+      res.json({ success: true, clientSecret: paymentIntent.client_secret, requiresAction: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to process deposit' });
     }
   });
 
@@ -3758,14 +3881,22 @@ Guidelines:
   });
 
   adminApi.get('/admin/service-status', async (req: any, res) => {
+    // Check app_settings table for platforms that store creds there
+    const settingKeys = ["EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET", "STRIPE_SECRET_KEY", "OPENAI_API_KEY", "RESEND_API_KEY", "AMAZON_CLIENT_ID", "AMAZON_CLIENT_SECRET", "SHOPIFY_API_KEY", "SHOPIFY_API_SECRET", "TRACKING_API_KEY"];
+    const rows = await db.select().from(appSettings).where(inArray(appSettings.key, settingKeys));
+    const dbSettings: Record<string, string> = {};
+    for (const row of rows) dbSettings[row.key] = row.value;
+
+    const hasEnvOrDb = (key: string) => !!(process.env[key] || dbSettings[key]);
+
     const checks: Record<string, { status: 'connected' | 'warning' | 'offline'; label: string }> = {
-      stripe: { status: !!process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'sk_test_...' ? 'connected' : 'offline', label: 'Stripe' },
-      openai: { status: !!process.env.OPENAI_API_KEY ? 'connected' : 'offline', label: 'OpenAI' },
-      resend: { status: !!process.env.RESEND_API_KEY ? 'connected' : 'offline', label: 'Email' },
-      amazon: { status: !!process.env.AMAZON_CLIENT_ID && !!process.env.AMAZON_CLIENT_SECRET ? 'connected' : 'offline', label: 'Amazon' },
-      ebay: { status: !!process.env.EBAY_CLIENT_ID && !!process.env.EBAY_CLIENT_SECRET ? 'connected' : 'offline', label: 'eBay' },
-      shopify: { status: !!process.env.SHOPIFY_API_KEY && !!process.env.SHOPIFY_API_SECRET ? 'connected' : 'offline', label: 'Shopify' },
-      tracking: { status: !!process.env.TRACKING_API_KEY ? 'connected' : 'offline', label: 'Tracking' },
+      stripe: { status: hasEnvOrDb('STRIPE_SECRET_KEY') && process.env.STRIPE_SECRET_KEY !== 'sk_test_...' && dbSettings['STRIPE_SECRET_KEY'] !== 'sk_test_...' ? 'connected' : 'offline', label: 'Stripe' },
+      openai: { status: hasEnvOrDb('OPENAI_API_KEY') ? 'connected' : 'offline', label: 'OpenAI' },
+      resend: { status: hasEnvOrDb('RESEND_API_KEY') ? 'connected' : 'offline', label: 'Email' },
+      amazon: { status: hasEnvOrDb('AMAZON_CLIENT_ID') && hasEnvOrDb('AMAZON_CLIENT_SECRET') ? 'connected' : 'offline', label: 'Amazon' },
+      ebay: { status: hasEnvOrDb('EBAY_CLIENT_ID') && hasEnvOrDb('EBAY_CLIENT_SECRET') ? 'connected' : 'offline', label: 'eBay' },
+      shopify: { status: hasEnvOrDb('SHOPIFY_API_KEY') && hasEnvOrDb('SHOPIFY_API_SECRET') ? 'connected' : 'offline', label: 'Shopify' },
+      tracking: { status: hasEnvOrDb('TRACKING_API_KEY') ? 'connected' : 'offline', label: 'Tracking' },
     };
     res.json(checks);
   });

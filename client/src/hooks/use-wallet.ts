@@ -29,18 +29,16 @@ export function useDeposit() {
 
   return useMutation({
     mutationFn: async (amount: number) => {
-      const payload = { amount, paymentMethodId: "mock_pm_123" };
-      const res = await apiRequest("POST", api.wallet.deposit.path, payload);
-      if (!res.ok) throw new Error("Failed to deposit funds");
-      return api.wallet.deposit.responses[200].parse(await res.json());
+      const res = await apiRequest("POST", "/api/wallet/deposit", { amount });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: [api.wallet.get.path] });
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/full"] });
-      toast({ title: "Success", description: "Funds deposited successfully" });
+      toast({ title: "Success", description: `Deposit of £${data.amount} initiated` });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Deposit failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Deposit Failed", description: err.message, variant: "destructive" });
     },
   });
 }

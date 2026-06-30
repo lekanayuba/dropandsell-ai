@@ -22,16 +22,17 @@ import {
   SlidersHorizontal, RefreshCw, Wifi, WifiOff, Zap, Globe,
   Link, ExternalLink, MoreHorizontal, Plus, Bell, HelpCircle,
   FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
-  PieChart, LineChart, TrendingUp as TrendUp, ArrowUpRight,
+  TrendingUp as TrendUp, ArrowUpRight,
   ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
   Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2, ShoppingBag,
+  Edit3, Trash2,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
 } from "recharts";
 
-type TabId = "overview" | "analytics" | "users" | "orders" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
+type TabId = "overview" | "getstarted" | "users" | "orders" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
 
 const COLORS = ["hsl(var(--primary))", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899", "#14b8a6", "#6366f1"];
 
@@ -296,17 +297,17 @@ export default function AdminDashboard() {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  const dailyRevData = useMemo(() => ((revenueHist as any)?.dailyRevenue || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.total) })), [revenueHist]);
+  const dailyRevData = useMemo(() => ((revenueHist as any)?.dailyRevenue || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.total) })), [revenueHist]) as { name: string; value: number }[];
   const getWeekNumber = (d: Date) => { const start = new Date(d.getFullYear(), 0, 1); return Math.ceil(((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7); };
   const weeklyRevData = useMemo(() => ((revenueHist as any)?.weeklyRevenue || []).map((r: any) => ({ name: `W${getWeekNumber(new Date(r.week))}`, value: Number(r.total) })), [revenueHist]);
   const monthlyRevData = useMemo(() => ((revenueHist as any)?.monthlyRevenue || []).map((r: any) => ({ name: new Date(r.month).toLocaleDateString(undefined, { month: 'short' }), value: Number(r.total) })), [revenueHist]);
-  const userGrowthData = useMemo(() => ((revenueHist as any)?.userGrowth || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]);
+  const userGrowthData = useMemo(() => ((revenueHist as any)?.userGrowth || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
   const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
-  const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]);
+  const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
 
   const sidebarNav = [
     { id: "overview" as TabId, label: "Overview", icon: LayoutDashboard },
-    { id: "analytics" as TabId, label: "Analytics", icon: BarChart3 },
+    { id: "getstarted" as TabId, label: "Getting Started", icon: BarChart3 },
     { id: "users" as TabId, label: "Users", icon: Users },
     { id: "orders" as TabId, label: "Orders", icon: ShoppingCart },
     { id: "vendors" as TabId, label: "Vendors", icon: Boxes },
@@ -553,8 +554,8 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* ===== ANALYTICS ===== */}
-          {activeTab === "analytics" && (
+          {/* ===== GET STARTED ===== */}
+          {activeTab === "getstarted" && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" />
@@ -1109,10 +1110,10 @@ function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docU
         fields.forEach(f => vals[f.key] = data[f.key] || "");
         setValues(vals);
       }
-    } catch {}
+    } catch (e) {
+      // settings not configured yet
+    }
   };
-
-  useEffect(() => { if (open) fetchSettings(); }, [open]);
 
   const save = async () => {
     setSaving(true);
@@ -1165,7 +1166,7 @@ function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docU
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) fetchSettings(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

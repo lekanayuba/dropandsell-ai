@@ -1,6 +1,5 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
   Store, 
@@ -17,13 +16,14 @@ import {
   HelpCircle,
   Shield,
   Gift,
-  Bell,
-  Globe,
-  MessageSquare,
-  BarChart3,
-  Pencil,
   Truck,
-  Contact
+  BarChart3,
+  BookOpen,
+  Lightbulb,
+  User,
+  Database,
+  Globe,
+  List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -35,38 +35,28 @@ export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
 
-  const { data: unreadData } = useQuery({
-    queryKey: ["/api/notifications/unread-count"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications/unread-count", { credentials: "include" });
-      return res.json();
-    },
-    refetchInterval: 30000,
-  });
-
-  const unreadCount = unreadData?.count ?? 0;
-
   const links = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/getstarted", label: "Getting Started", icon: Zap, featured: true },
+    { href: "/orders", label: "Orders", icon: ShoppingCart },
+    { href: "/shipping", label: "Fulfillment", icon: Truck },
     { href: "/stores", label: "Stores", icon: Store },
     { href: "/vendors", label: "Vendors", icon: Users },
-    { href: "/customers", label: "Customers", icon: Contact },
     { href: "/inventory", label: "Inventory", icon: Package },
-    { href: "/orders", label: "Orders", icon: ShoppingCart },
-    { href: "/bulk-edit", label: "Bulk Edit", icon: Pencil },
-    { href: "/shipping", label: "Tracking", icon: Truck },
-    { href: "/automation", label: "Automation", icon: Zap },
-    { href: "/notifications", label: "Notifications", icon: Bell, badge: unreadCount },
-    { href: "/addon-catalog", label: "Catalog", icon: PackageOpen },
-    { href: "/temu", label: "Temu", icon: Globe },
+    { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/manual", label: "Manual", icon: BookOpen },
     { href: "/wallet", label: "Wallet", icon: Wallet },
     { href: "/referrals", label: "Referrals", icon: Gift },
     { href: "/subscription", label: "Subscription", icon: CreditCard },
+    { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
+    { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
+    { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+    { href: "/profile", label: "Profile", icon: User },
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
-    { href: "/admin/support", label: "Support Inbox", icon: MessageSquare },
     { href: "/settings", label: "Settings", icon: Settings },
+    { href: "/subscribers-db", label: "Subscriber's DB", icon: Database },
+    { href: "/global-vaso", label: "Global VASO", icon: Globe },
   ];
 
   const NavContent = () => (
@@ -85,18 +75,30 @@ export function Sidebar() {
         {links.map((link) => {
           const Icon = link.icon;
           const isActive = location === link.href;
+          const isFeatured = (link as any).featured;
           return (
             <Link key={link.href} href={link.href}>
               <div
                 className={cn(
                   "flex items-center gap-3 px-4 py-3.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer group min-h-[44px]",
-                  isActive
+                  isFeatured && !isActive && "bg-gradient-to-r from-primary/5 to-transparent border border-primary/10",
+                  isFeatured && isActive && "bg-gradient-to-r from-primary/15 to-primary/5 border border-primary/20",
+                  isActive && !isFeatured
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    : !isFeatured && "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
-                <Icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-                <span className="truncate">{link.label}</span>
+                <div className={cn(
+                  "w-5 h-5 shrink-0 flex items-center justify-center rounded-md transition-all duration-200",
+                  isFeatured ? "bg-primary/10 text-primary" : "",
+                  !isFeatured && !isActive && "text-muted-foreground group-hover:text-foreground"
+                )}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <span className={cn("truncate", isFeatured && "text-foreground font-semibold")}>{link.label}</span>
+                {isFeatured && !isActive && (
+                  <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-primary/70">Start</span>
+                )}
                 {(link as any).badge > 0 && (
                   <Badge className="ml-auto h-5 min-w-5 flex items-center justify-center text-xs" variant="default">
                     {(link as any).badge}
