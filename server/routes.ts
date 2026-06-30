@@ -457,11 +457,9 @@ export async function registerRoutes(
   protectedApi.post('/stores', async (req: any, res) => {
     try {
       const input = api.stores.create.input.parse(req.body);
-      const userEmail = req.user.claims.email;
       
       const store = await storage.createStore({ 
         ...input, 
-        email: userEmail,
         userId: req.user.claims.sub 
       });
       res.status(201).json(store);
