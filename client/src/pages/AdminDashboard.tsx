@@ -4,38 +4,59 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
   Users, Store, Package, ShoppingCart, CreditCard, Shield, Settings,
   MessageSquare, LogOut, TrendingUp, TrendingDown, Activity, Clock,
-  AlertTriangle, CheckCircle, XCircle, Database, Key, Globe, Server,
-  ArrowUpRight, UserPlus, RefreshCw, Search, ChevronRight, Star,
-  HeartPulse, Truck, Boxes, DollarSign, BarChart3, Inbox,
+  AlertTriangle, CheckCircle, XCircle, Database, Key, Server,
+  UserPlus, Search, ChevronRight, HeartPulse, Boxes, BarChart3,
+  LayoutDashboard, Sun, Moon, SlidersHorizontal, RefreshCw,
+  ChevronDown, ChevronUp, PanelLeft, PanelLeftClose,
+  UserCheck, UserX, Mail, Phone, Calendar, DollarSign, Award,
 } from "lucide-react";
 
-function StatCard({ label, value, icon: Icon, color, trend }: {
-  label: string; value: number | string; icon: any; color: string; trend?: { up: boolean; pct: string };
+type TabId = "overview" | "users" | "orders" | "vendors" | "system";
+
+const TABS: { id: TabId; label: string; icon: any }[] = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "users", label: "Users", icon: Users },
+  { id: "orders", label: "Orders", icon: ShoppingCart },
+  { id: "vendors", label: "Vendors", icon: Boxes },
+  { id: "system", label: "System", icon: Server },
+];
+
+function StatCard({ label, value, icon: Icon, sub, color, trend }: {
+  label: string; value: number | string; icon: any; sub?: string;
+  color: string; trend?: { up: boolean; pct: string };
 }) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div className={cn("h-10 w-10 rounded-lg flex items-center justify-center", color.replace("text", "bg").replace("-500", "-100 dark:bg-opacity-20"))}>
+    <Card className="overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5">
+      <CardContent className="p-0">
+        <div className="flex items-center gap-3 p-4">
+          <div className={cn(
+            "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
+            `bg-${color.split("-")[0]}-50 dark:bg-${color.split("-")[0]}-950/20`
+          )}>
             <Icon className={cn("w-5 h-5", color)} />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-2xl font-bold tabular-nums">{value}</p>
-            <p className="text-xs text-muted-foreground truncate">{label}</p>
-          </div>
-          {trend && (
-            <div className={cn("flex items-center gap-0.5 text-xs shrink-0", trend.up ? "text-emerald-600" : "text-red-600")}>
-              {trend.up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {trend.pct}
+            <div className="flex items-center gap-2">
+              <p className="text-2xl font-bold tabular-nums leading-none">{value}</p>
+              {trend && (
+                <span className={cn(
+                  "flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5",
+                  trend.up ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20" : "text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-950/20"
+                )}>
+                  {trend.up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                  {trend.pct}
+                </span>
+              )}
             </div>
-          )}
+            <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+            {sub && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</p>}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -44,20 +65,114 @@ function StatCard({ label, value, icon: Icon, color, trend }: {
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    active: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
-    inactive: "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400",
-    pending: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400",
-    shipped: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400",
-    processing: "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-950/20 dark:text-violet-400",
-    cancelled: "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400",
-    completed: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
+    active: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800",
+    inactive: "bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-900/20 dark:text-gray-400",
+    pending: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400",
+    shipped: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400",
+    processing: "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/20 dark:text-violet-400",
+    cancelled: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400",
+    completed: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
+    delivered: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400",
     admin: "bg-primary/10 text-primary border-primary/20",
-    user: "bg-muted text-muted-foreground border-border/50",
+    user: "bg-muted text-muted-foreground",
+    free: "bg-gray-50 text-gray-500 border-gray-200",
   };
   return (
-    <Badge variant="outline" className={cn("text-[10px] capitalize", colors[status] || "bg-muted text-muted-foreground")}>
+    <Badge variant="outline" className={cn("text-[10px] font-medium px-2 py-0.5", colors[status] || "bg-muted text-muted-foreground")}>
       {status}
     </Badge>
+  );
+}
+
+function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2.5">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="h-10 bg-muted/40 rounded-lg animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
+        <Icon className="w-6 h-6 text-muted-foreground/60" />
+      </div>
+      <p className="text-sm font-medium text-foreground/80">{title}</p>
+      <p className="text-xs text-muted-foreground mt-1 max-w-xs">{desc}</p>
+    </div>
+  );
+}
+
+function SectionCard({ title, icon: Icon, action, children, className }: {
+  title: string; icon: any; action?: React.ReactNode; children: React.ReactNode; className?: string;
+}) {
+  return (
+    <Card className={cn("overflow-hidden", className)}>
+      <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Icon className="w-4 h-4 text-muted-foreground" />
+            {title}
+          </CardTitle>
+          {action}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="p-4">
+          {children}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataTable({ headers, rows, empty }: {
+  headers: { key: string; label: string; className?: string }[];
+  rows: { key: string; cells: (string | React.ReactNode)[] }[];
+  empty?: { icon: any; title: string; desc: string };
+}) {
+  if (rows.length === 0 && empty) {
+    return <EmptyState {...empty} />;
+  }
+  return (
+    <div className="overflow-x-auto -mx-4 sm:-mx-0">
+      <div className="inline-block min-w-full align-middle">
+        <div className="overflow-hidden">
+          <table className="min-w-full divide-y divide-border/40">
+            <thead>
+              <tr className="border-b border-border/40">
+                {headers.map((h, i) => (
+                  <th key={h.key} className={cn(
+                    "pb-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider",
+                    i === 0 ? "text-left" : "text-left",
+                    h.className
+                  )}>
+                    {h.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/20">
+              {rows.map((row) => (
+                <tr key={row.key} className="hover:bg-muted/20 transition-colors">
+                  {row.cells.map((cell, i) => (
+                    <td key={i} className={cn(
+                      "py-2.5 text-sm",
+                      headers[i]?.className
+                    )}>
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -67,14 +182,16 @@ export default function AdminDashboard() {
   const [authed, setAuthed] = useState(!!localStorage.getItem("adminAuthed"));
   const [creds, setCreds] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [userSearch, setUserSearch] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useQuery({
     queryKey: ["/api/admin/check"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/stats", { credentials: "include" });
-      if (res.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); }
-      return res.json();
+      const r = await fetch("/api/admin/stats", { credentials: "include" });
+      if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); }
+      return r.json();
     },
     enabled: authed,
   });
@@ -143,458 +260,526 @@ export default function AdminDashboard() {
     setAuthed(false);
   };
 
+  const filteredUsers = useMemo(() => {
+    if (!users) return [];
+    if (!userSearch) return users;
+    const q = userSearch.toLowerCase();
+    return users.filter((u: any) =>
+      u.email?.toLowerCase().includes(q) ||
+      u.firstName?.toLowerCase().includes(q) ||
+      u.lastName?.toLowerCase().includes(q)
+    );
+  }, [users, userSearch]);
+
   if (!authed) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted/30">
-        <Card className="w-full max-w-md mx-4 shadow-xl">
-          <CardHeader className="text-center">
-            <Shield className="w-12 h-12 mx-auto mb-2 text-primary" />
-            <CardTitle className="text-2xl">Admin Login</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">DropandSell AI Administration</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted/20 to-background p-4">
+        <Card className="w-full max-w-sm shadow-2xl border-border/40">
+          <CardHeader className="text-center pb-6">
+            <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-7 h-7 text-primary" />
+            </div>
+            <CardTitle className="text-xl">Admin Panel</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">DropandSell AI Administration</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Username</Label>
-              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Username" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Username</Label>
+              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9" />
             </div>
-            <div className="space-y-2">
-              <Label>Password</Label>
-              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Password" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Password</Label>
+              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9" onKeyDown={e => e.key === "Enter" && handleLogin()} />
             </div>
-            {loginError && <p className="text-sm text-destructive flex items-center gap-1"><XCircle className="w-3 h-3" />{loginError}</p>}
-            <Button className="w-full" onClick={handleLogin}>Sign In</Button>
+            {loginError && (
+              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
+                <XCircle className="w-3.5 h-3.5 shrink-0" />
+                {loginError}
+              </div>
+            )}
+            <Button className="w-full h-9" onClick={handleLogin}>Sign In</Button>
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const filteredUsers = users?.filter((u: any) => {
-    if (!userSearch) return true;
-    const q = userSearch.toLowerCase();
-    return u.email?.toLowerCase().includes(q) || u.firstName?.toLowerCase().includes(q) || u.lastName?.toLowerCase().includes(q);
-  });
-
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 p-4 md:p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight">Admin Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Manage your DropandSell AI platform</p>
+    <div className="min-h-screen bg-background">
+      {/* Top Navigation Bar */}
+      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center"
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <Shield className="w-3.5 h-3.5 text-primary" />
+            </div>
+            <span className="text-sm font-semibold truncate">Admin</span>
+          </div>
+
+          {/* Desktop Nav Tabs */}
+          <nav className="hidden lg:flex items-center gap-0.5 ml-4">
+            {TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  activeTab === tab.id
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setLocation("/admin/support")}>
+              <MessageSquare className="w-3.5 h-3.5 lg:mr-1.5" />
+              <span className="hidden lg:inline">Support</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setLocation("/admin/settings")}>
+              <Settings className="w-3.5 h-3.5 lg:mr-1.5" />
+              <span className="hidden lg:inline">Settings</span>
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground hover:text-destructive" onClick={handleLogout}>
+              <LogOut className="w-3.5 h-3.5 lg:mr-1.5" />
+              <span className="hidden lg:inline">Logout</span>
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setLocation("/admin/support")}>
-            <MessageSquare className="w-4 h-4 mr-2" />Support
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setLocation("/admin/settings")}>
-            <Settings className="w-4 h-4 mr-2" />Settings
-          </Button>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="w-4 h-4 mr-2" />Logout
-          </Button>
+
+        {/* Mobile Tab Bar */}
+        <div className="flex lg:hidden overflow-x-auto gap-1 px-4 pb-2 -mt-1 scrollbar-none">
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors shrink-0",
+                activeTab === tab.id
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground"
+              )}
+            >
+              <tab.icon className="w-3 h-3" />
+              {tab.label}
+            </button>
+          ))}
         </div>
-      </div>
+      </header>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <StatCard label="Users" value={stats?.users ?? 0} icon={Users} color="text-blue-500" />
-        <StatCard label="Stores" value={stats?.stores ?? 0} icon={Store} color="text-emerald-500" />
-        <StatCard label="Products" value={stats?.products ?? 0} icon={Package} color="text-violet-500" />
-        <StatCard label="Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="text-amber-500" />
-        <StatCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="text-rose-500" />
-        <StatCard label="Vendors" value={vendorOverview?.totalVendors ?? 0} icon={Boxes} color="text-cyan-500" />
-      </div>
+      {/* Main Content */}
+      <main className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto">
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3 mb-6">
+          <StatCard label="Users" value={stats?.users ?? 0} icon={Users} color="text-blue-600" />
+          <StatCard label="Stores" value={stats?.stores ?? 0} icon={Store} color="text-emerald-600" />
+          <StatCard label="Products" value={stats?.products ?? 0} icon={Package} color="text-violet-600" />
+          <StatCard label="Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="text-amber-600" />
+          <StatCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="text-rose-600" />
+          <StatCard label="Vendors" value={vendorOverview?.totalVendors ?? 0} icon={Boxes} color="text-cyan-600" />
+        </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="overview"><BarChart3 className="w-4 h-4 mr-2" />Overview</TabsTrigger>
-          <TabsTrigger value="users"><Users className="w-4 h-4 mr-2" />Users</TabsTrigger>
-          <TabsTrigger value="orders"><ShoppingCart className="w-4 h-4 mr-2" />Orders</TabsTrigger>
-          <TabsTrigger value="vendors"><Boxes className="w-4 h-4 mr-2" />Vendors</TabsTrigger>
-          <TabsTrigger value="system"><Server className="w-4 h-4 mr-2" />System</TabsTrigger>
-        </TabsList>
-
-        {/* === OVERVIEW TAB === */}
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Recent Activity */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Activity className="w-4 h-4" /> Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {!activity || activity.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No recent activity</p>
+        {/* ===== OVERVIEW TAB ===== */}
+        {activeTab === "overview" && (
+          <div className="space-y-6">
+            <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
+              {/* Activity Feed */}
+              <SectionCard title="Recent Activity" icon={Activity} action={
+                <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={() => { queryClient.invalidateQueries({ queryKey: ["/api/admin/activity"] }); }}>
+                  <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                </Button>
+              }>
+                {!activity ? (
+                  <LoadingSkeleton rows={5} />
+                ) : activity.length === 0 ? (
+                  <EmptyState icon={Activity} title="No activity yet" desc="Activity from orders and registrations will appear here" />
                 ) : (
-                  activity.slice(0, 10).map((a: any, i: number) => (
-                    <div key={i} className="flex items-center gap-3 text-sm py-1.5 border-b border-border/30 last:border-0">
-                      <div className={cn(
-                        "h-7 w-7 rounded-full flex items-center justify-center shrink-0",
-                        a.type === 'order' ? "bg-amber-100 dark:bg-amber-950/30" : "bg-blue-100 dark:bg-blue-950/30"
-                      )}>
-                        {a.type === 'order' ? <ShoppingCart className="w-3.5 h-3.5 text-amber-600" /> : <UserPlus className="w-3.5 h-3.5 text-blue-600" />}
+                  <div className="space-y-0.5">
+                    {activity.slice(0, 8).map((a: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
+                        <div className={cn(
+                          "h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
+                          a.type === 'order' ? "bg-amber-50 dark:bg-amber-950/20" : "bg-blue-50 dark:bg-blue-950/20"
+                        )}>
+                          {a.type === 'order'
+                            ? <ShoppingCart className="w-3.5 h-3.5 text-amber-600" />
+                            : <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate">{a.label}</p>
+                          <p className="text-[10px] text-muted-foreground capitalize">{a.detail}</p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground/60 shrink-0 tabular-nums">
+                          {new Date(a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate font-medium text-xs">{a.label}</p>
-                        <p className="text-[10px] text-muted-foreground capitalize">{a.detail}</p>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground shrink-0">
-                        {new Date(a.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
-              </CardContent>
-            </Card>
+              </SectionCard>
 
-            {/* Vendor Health Overview */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <HeartPulse className="w-4 h-4" /> Vendor Health
-                  {vendorOverview?.totalVendors > 0 && (
-                    <Badge variant="outline" className="text-[10px] ml-auto">
-                      Avg: {Number(vendorOverview.avgHealthScore).toFixed(1)} ★
-                    </Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {!vendorOverview?.vendors?.length ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No vendors yet</p>
+              {/* Vendor Health */}
+              <SectionCard title="Vendor Health" icon={HeartPulse} action={
+                vendorOverview?.totalVendors > 0 && (
+                  <Badge variant="outline" className="text-[10px] gap-1">
+                    <Award className="w-2.5 h-2.5 text-amber-500" />
+                    {Number(vendorOverview.avgHealthScore).toFixed(1)} avg
+                  </Badge>
+                )
+              }>
+                {!vendorOverview ? (
+                  <LoadingSkeleton rows={4} />
+                ) : vendorOverview.vendors.length === 0 ? (
+                  <EmptyState icon={HeartPulse} title="No vendors yet" desc="Add vendors to see their health scores here" />
                 ) : (
-                  vendorOverview.vendors.slice(0, 8).map((v: any) => (
-                    <div key={v.id} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="text-xs font-medium truncate">{v.name}</span>
-                        <Badge variant="outline" className="text-[9px] capitalize">{v.category || 'N/A'}</Badge>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {v.healthScore ? (
-                          <span className="text-xs tabular-nums">{'★'.repeat(v.healthScore)}{'☆'.repeat(5 - v.healthScore)}</span>
-                        ) : <span className="text-[10px] text-muted-foreground">—</span>}
-                        <StatusBadge status={v.status} />
-                      </div>
-                    </div>
-                  ))
+                  <div className="space-y-1">
+                    {vendorOverview.vendors.slice(0, 6).map((v: any) => {
+                      const score = v.healthScore || 0;
+                      return (
+                        <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className={cn(
+                              "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+                              score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" :
+                              score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-red-50 dark:bg-red-950/20"
+                            )}>
+                              <Store className={cn(
+                                "w-4 h-4",
+                                score >= 4 ? "text-emerald-600" :
+                                score >= 3 ? "text-amber-600" : "text-red-600"
+                              )} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium truncate">{v.name}</p>
+                              {v.category && (
+                                <p className="text-[10px] text-muted-foreground capitalize">{v.category}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {score > 0 && (
+                              <span className="text-[11px] tabular-nums">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>
+                            )}
+                            <StatusBadge status={v.status} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {vendorOverview.vendors.length > 6 && (
+                      <button onClick={() => setLocation("/vendors")} className="flex items-center gap-1 text-xs text-primary hover:underline pt-1.5">
+                        View all {vendorOverview.totalVendors} vendors <ChevronRight className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 )}
-                {vendorOverview?.vendors?.length > 8 && (
-                  <button onClick={() => setLocation("/vendors")} className="flex items-center gap-1 text-xs text-primary hover:underline pt-1">
-                    View all <ChevronRight className="w-3 h-3" />
-                  </button>
-                )}
+              </SectionCard>
+            </div>
+
+            {/* Quick Actions */}
+            <Card className="border-dashed border-border/60">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: "Support Queue", icon: MessageSquare, path: "/admin/support", color: "text-violet-600" },
+                    { label: "Site Settings", icon: Settings, path: "/admin/settings", color: "text-gray-600" },
+                    { label: "Manage Stores", icon: Store, path: "/stores", color: "text-emerald-600" },
+                    { label: "Manage Vendors", icon: Boxes, path: "/vendors", color: "text-cyan-600" },
+                    { label: "View Orders", icon: ShoppingCart, path: "/orders", color: "text-amber-600" },
+                  ].map(action => (
+                    <Button
+                      key={action.label}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs gap-1.5 hover:border-primary/30"
+                      onClick={() => setLocation(action.path)}
+                    >
+                      <action.icon className={cn("w-3.5 h-3.5", action.color)} />
+                      {action.label}
+                    </Button>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           </div>
+        )}
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Activity className="w-4 h-4" /> Quick Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => setLocation("/admin/support")}>
-                <MessageSquare className="w-3.5 h-3.5 mr-1.5" /> Support Queue
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setLocation("/admin/settings")}>
-                <Settings className="w-3.5 h-3.5 mr-1.5" /> Site Settings
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setLocation("/stores")}>
-                <Store className="w-3.5 h-3.5 mr-1.5" /> Manage Stores
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setLocation("/vendors")}>
-                <Boxes className="w-3.5 h-3.5 mr-1.5" /> Manage Vendors
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setLocation("/orders")}>
-                <ShoppingCart className="w-3.5 h-3.5 mr-1.5" /> All Orders
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* === USERS TAB === */}
-        <TabsContent value="users">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5" /> User Management
-                  <Badge variant="secondary" className="text-xs ml-1">{users?.length ?? 0}</Badge>
-                </CardTitle>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input placeholder="Search users..." className="pl-8 h-8 text-xs" value={userSearch} onChange={e => setUserSearch(e.target.value)} />
-                </div>
+        {/* ===== USERS TAB ===== */}
+        {activeTab === "users" && (
+          <SectionCard title="User Management" icon={Users} action={
+            <div className="flex items-center gap-2">
+              <div className="relative hidden sm:block">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  placeholder="Search users..."
+                  className="pl-7 h-7 text-xs w-48"
+                  value={userSearch}
+                  onChange={e => setUserSearch(e.target.value)}
+                />
               </div>
-            </CardHeader>
-            <CardContent>
-              {!filteredUsers || filteredUsers.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">
-                  {userSearch ? "No users match your search" : "No users found"}
-                </p>
+              <Badge variant="secondary" className="text-[10px]">{users?.length ?? 0} total</Badge>
+            </div>
+          }>
+            {/* Mobile search */}
+            <div className="sm:hidden relative mb-3">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <Input placeholder="Search users..." className="pl-7 h-8 text-xs" value={userSearch} onChange={e => setUserSearch(e.target.value)} />
+            </div>
+            {!users ? <LoadingSkeleton rows={5} /> : (
+              <DataTable
+                headers={[
+                  { key: "email", label: "Email" },
+                  { key: "name", label: "Name", className: "hidden sm:table-cell" },
+                  { key: "role", label: "Role" },
+                  { key: "plan", label: "Plan", className: "hidden md:table-cell" },
+                  { key: "status", label: "Status", className: "hidden md:table-cell" },
+                  { key: "joined", label: "Joined", className: "hidden lg:table-cell" },
+                  { key: "actions", label: "", className: "text-right" },
+                ]}
+                rows={filteredUsers.map((u: any) => ({
+                  key: u.id,
+                  cells: [
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate max-w-[160px] sm:max-w-none">{u.email}</p>
+                      <p className="text-[10px] text-muted-foreground sm:hidden">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</p>
+                    </div>,
+                    <span className="text-xs hidden sm:inline">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</span>,
+                    <StatusBadge status={u.role} />,
+                    <Badge variant="outline" className="text-[10px] hidden md:inline-flex">{u.subscriptionPlan ?? "free"}</Badge>,
+                    <span className="hidden md:inline"><StatusBadge status={u.subscriptionStatus || "inactive"} /></span>,
+                    <span className="text-xs text-muted-foreground hidden lg:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</span>,
+                    <div className="flex justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-[11px] px-2"
+                        onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}
+                      >
+                        {u.role === "admin" ? "Demote" : "Promote"}
+                      </Button>
+                    </div>,
+                  ]
+                }))}
+                empty={{ icon: Users, title: userSearch ? "No users match search" : "No users found", desc: userSearch ? "Try a different search term" : "Users will appear here when they register" }}
+              />
+            )}
+          </SectionCard>
+        )}
+
+        {/* ===== ORDERS TAB ===== */}
+        {activeTab === "orders" && (
+          <SectionCard title="Recent Orders" icon={ShoppingCart} action={
+            recentOrders?.length > 0 && (
+              <Badge variant="secondary" className="text-[10px]">{recentOrders.length} latest</Badge>
+            )
+          }>
+            {!recentOrders ? <LoadingSkeleton rows={4} /> : (
+              <DataTable
+                headers={[
+                  { key: "customer", label: "Customer" },
+                  { key: "amount", label: "Amount" },
+                  { key: "status", label: "Status" },
+                  { key: "tracking", label: "Tracking", className: "hidden sm:table-cell" },
+                  { key: "date", label: "Date", className: "hidden md:table-cell" },
+                ]}
+                rows={recentOrders.map((o: any) => ({
+                  key: o.id,
+                  cells: [
+                    <span className="text-xs font-medium">{o.customerName || "—"}</span>,
+                    <span className="text-xs font-medium tabular-nums">{o.totalAmount ? `£${Number(o.totalAmount).toFixed(2)}` : "—"}</span>,
+                    <StatusBadge status={o.status} />,
+                    <span className="hidden sm:inline"><StatusBadge status={o.trackingStatus || "pending"} /></span>,
+                    <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}</span>,
+                  ]
+                }))}
+                empty={{ icon: ShoppingCart, title: "No orders yet", desc: "Orders will appear here when customers start purchasing" }}
+              />
+            )}
+          </SectionCard>
+        )}
+
+        {/* ===== VENDORS TAB ===== */}
+        {activeTab === "vendors" && (
+          <div className="grid lg:grid-cols-2 gap-4 sm:gap-6">
+            <SectionCard title="All Vendors" icon={Boxes} action={
+              <Badge variant="secondary" className="text-[10px]">{vendorOverview?.totalVendors ?? 0}</Badge>
+            }>
+              {!vendorOverview ? <LoadingSkeleton rows={4} /> : vendorOverview.vendors.length === 0 ? (
+                <EmptyState icon={Boxes} title="No vendors created" desc="Vendors appear here when you add them from the Vendors page" />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left pb-2 font-medium text-xs">Email</th>
-                        <th className="text-left pb-2 font-medium text-xs">Name</th>
-                        <th className="text-left pb-2 font-medium text-xs">Role</th>
-                        <th className="text-left pb-2 font-medium text-xs">Plan</th>
-                        <th className="text-left pb-2 font-medium text-xs">Status</th>
-                        <th className="text-left pb-2 font-medium text-xs">Joined</th>
-                        <th className="text-left pb-2 font-medium text-xs">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsers.map((u: any) => (
-                        <tr key={u.id} className="border-b border-border/50 hover:bg-muted/30">
-                          <td className="py-2.5 text-xs">{u.email}</td>
-                          <td className="py-2.5 text-xs">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</td>
-                          <td className="py-2.5"><StatusBadge status={u.role} /></td>
-                          <td className="py-2.5"><Badge variant="outline" className="text-[10px]">{u.subscriptionPlan ?? "free"}</Badge></td>
-                          <td className="py-2.5"><StatusBadge status={u.subscriptionStatus || "inactive"} /></td>
-                          <td className="py-2.5 text-muted-foreground text-[11px]">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}</td>
-                          <td className="py-2.5">
-                            <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}>
-                              <Shield className="w-3 h-3 mr-1" />{u.role === "admin" ? "Demote" : "Promote"}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-1">
+                  {vendorOverview.vendors.map((v: any) => {
+                    const score = v.healthScore || 0;
+                    return (
+                      <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={cn(
+                            "h-8 w-8 rounded-lg flex items-center justify-center shrink-0",
+                            score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" :
+                            score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-muted"
+                          )}>
+                            <Store className={cn(
+                              "w-4 h-4",
+                              score >= 4 ? "text-emerald-600" :
+                              score >= 3 ? "text-amber-600" : "text-muted-foreground"
+                            )} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate">{v.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {v.totalOrdersFulfilled || 0} fulfilled
+                              {v.stockUpdateReliability ? ` · ${v.stockUpdateReliability}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {score > 0 && (
+                            <span className="text-[11px] tabular-nums">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>
+                          )}
+                          <StatusBadge status={v.status} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </SectionCard>
 
-        {/* === ORDERS TAB === */}
-        <TabsContent value="orders">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5" /> Recent Orders
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {!recentOrders || recentOrders.length === 0 ? (
-                <p className="text-muted-foreground text-sm py-8 text-center">No orders yet</p>
+            {/* Recent Registrations */}
+            <SectionCard title="Recent Registrations" icon={UserPlus}>
+              {!recentRegs ? <LoadingSkeleton rows={4} /> : recentRegs.length === 0 ? (
+                <EmptyState icon={UserPlus} title="No recent registrations" desc="New user signups will appear here" />
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left pb-2 font-medium text-xs">Customer</th>
-                        <th className="text-left pb-2 font-medium text-xs">Amount</th>
-                        <th className="text-left pb-2 font-medium text-xs">Status</th>
-                        <th className="text-left pb-2 font-medium text-xs">Tracking</th>
-                        <th className="text-left pb-2 font-medium text-xs">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentOrders.map((o: any) => (
-                        <tr key={o.id} className="border-b border-border/50 hover:bg-muted/30">
-                          <td className="py-2.5 text-xs">{o.customerName || "—"}</td>
-                          <td className="py-2.5 text-xs font-medium tabular-nums">{o.totalAmount ? `£${Number(o.totalAmount).toFixed(2)}` : "—"}</td>
-                          <td className="py-2.5"><StatusBadge status={o.status} /></td>
-                          <td className="py-2.5"><StatusBadge status={o.trackingStatus || "pending"} /></td>
-                          <td className="py-2.5 text-muted-foreground text-[11px]">{o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* === VENDORS TAB === */}
-        <TabsContent value="vendors">
-          <div className="grid lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Boxes className="w-4 h-4" /> All Vendors
-                  <Badge variant="secondary" className="text-xs ml-1">{vendorOverview?.totalVendors ?? 0}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {!vendorOverview?.vendors?.length ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No vendors created yet</p>
-                ) : (
-                  vendorOverview.vendors.map((v: any) => (
-                    <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <div className={cn(
-                          "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
-                          v.healthScore && v.healthScore >= 4 ? "bg-emerald-100 dark:bg-emerald-950/30" :
-                          v.healthScore && v.healthScore >= 3 ? "bg-amber-100 dark:bg-amber-950/30" :
-                          "bg-red-100 dark:bg-red-950/30"
-                        )}>
-                          <Store className={cn(
-                            "w-4 h-4",
-                            v.healthScore && v.healthScore >= 4 ? "text-emerald-600" :
-                            v.healthScore && v.healthScore >= 3 ? "text-amber-600" : "text-red-600"
-                          )} />
+                <div className="space-y-1">
+                  {recentRegs.map((u: any) => (
+                    <div key={u.id} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center shrink-0">
+                          <UserPlus className="w-4 h-4 text-blue-600" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{v.name}</p>
+                          <p className="text-xs font-medium truncate">{u.email}</p>
                           <p className="text-[10px] text-muted-foreground">
-                            {v.totalOrdersFulfilled || 0} orders · {v.stockUpdateReliability || 'N/A'} reliability
+                            {u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        {v.healthScore && (
-                          <span className="text-xs tabular-nums">{'★'.repeat(v.healthScore)}{'☆'.repeat(5 - v.healthScore)}</span>
-                        )}
-                        <StatusBadge status={v.status} />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Recent Registrations */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" /> Recent Registrations
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {!recentRegs || recentRegs.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No recent registrations</p>
-                ) : (
-                  recentRegs.map((u: any) => (
-                    <div key={u.id} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <div className="h-7 w-7 rounded-full bg-blue-100 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
-                          <UserPlus className="w-3.5 h-3.5 text-blue-600" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs truncate font-medium">{u.email}</p>
-                          <p className="text-[10px] text-muted-foreground">{u.firstName || u.lastName ? `${u.firstName ?? ""} ${u.lastName ?? ""}` : "—"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
                         <Badge variant="outline" className="text-[9px]">{u.subscriptionPlan || "free"}</Badge>
-                        <span className="text-[10px] text-muted-foreground">{new Date(u.createdAt).toLocaleDateString()}</span>
+                        <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                          {new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
                       </div>
                     </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
           </div>
-        </TabsContent>
+        )}
 
-        {/* === SYSTEM TAB === */}
-        <TabsContent value="system">
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* API Keys Status */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Key className="w-4 h-4" /> API Keys Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {systemStatus?.apiKeys ? (
-                  Object.entries(systemStatus.apiKeys).map(([key, configured]) => (
-                    <div key={key} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
-                      <div className="flex items-center gap-2">
-                        {configured ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> : <XCircle className="w-3.5 h-3.5 text-red-400" />}
+        {/* ===== SYSTEM TAB ===== */}
+        {activeTab === "system" && (
+          <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
+            {/* API Keys */}
+            <SectionCard title="API Keys" icon={Key}>
+              {!systemStatus?.apiKeys ? <LoadingSkeleton rows={6} /> : (
+                <div className="space-y-1.5">
+                  {Object.entries(systemStatus.apiKeys).map(([key, configured]) => (
+                    <div key={key} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                      <div className="flex items-center gap-2.5">
+                        {configured
+                          ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                        }
                         <span className="text-xs capitalize">{key}</span>
                       </div>
-                      <Badge variant={configured ? "default" : "outline"} className="text-[10px]">{configured ? "Configured" : "Missing"}</Badge>
+                      <Badge variant={configured ? "default" : "outline"} className={cn(
+                        "text-[9px] px-2",
+                        configured ? "" : "text-muted-foreground"
+                      )}>
+                        {configured ? "Connected" : "Not set"}
+                      </Badge>
                     </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                )}
-              </CardContent>
-            </Card>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
 
             {/* System Info */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Server className="w-4 h-4" /> System Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between py-1.5 border-b border-border/30">
-                  <div className="flex items-center gap-2"><Database className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-xs">Database Size</span></div>
-                  <span className="text-xs font-medium">{systemStatus?.dbSizeMB ? `${systemStatus.dbSizeMB} MB` : "—"}</span>
-                </div>
-                <div className="flex items-center justify-between py-1.5 border-b border-border/30">
-                  <div className="flex items-center gap-2"><Globe className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-xs">Platform</span></div>
-                  <span className="text-xs font-medium capitalize">{systemStatus?.platform || "—"}</span>
-                </div>
-                <div className="flex items-center justify-between py-1.5 border-b border-border/30">
-                  <div className="flex items-center gap-2"><Server className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-xs">Node.js</span></div>
-                  <span className="text-xs font-medium">{systemStatus?.nodeVersion || "—"}</span>
-                </div>
-                <div className="flex items-center justify-between py-1.5">
-                  <div className="flex items-center gap-2"><Activity className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-xs">App URL</span></div>
-                  <span className="text-xs font-medium text-primary truncate max-w-[200px]">{process.env.APP_URL || "dropandsell.online"}</span>
-                </div>
-              </CardContent>
-            </Card>
+            <SectionCard title="System Information" icon={Server}>
+              <div className="space-y-1.5">
+                {[
+                  { icon: Database, label: "Database Size", value: systemStatus?.dbSizeMB ? `${systemStatus.dbSizeMB} MB` : "—" },
+                  { icon: Server, label: "Platform", value: systemStatus?.platform || "—" },
+                  { icon: Server, label: "Node.js", value: systemStatus?.nodeVersion || "—" },
+                  { icon: Activity, label: "App URL", value: "dropandsell.online" },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/20 last:border-0">
+                    <div className="flex items-center gap-2.5">
+                      <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-xs text-muted-foreground">{item.label}</span>
+                    </div>
+                    <span className="text-xs font-medium tabular-nums truncate max-w-[160px] text-right">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
 
-            {/* Config Status */}
-            <Card className="md:col-span-2">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Settings className="w-4 h-4" /> Configuration Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className="flex flex-col items-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <CreditCard className={cn("w-6 h-6 mb-2", systemStatus?.apiKeys?.stripe ? "text-emerald-500" : "text-red-400")} />
-                    <span className="text-xs font-medium">Stripe</span>
-                    <Badge variant={systemStatus?.apiKeys?.stripe ? "default" : "outline"} className="text-[9px] mt-1">
-                      {systemStatus?.apiKeys?.stripe ? "Active" : "Not Set"}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-col items-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <MessageSquare className={cn("w-6 h-6 mb-2", systemStatus?.apiKeys?.openai ? "text-emerald-500" : "text-red-400")} />
-                    <span className="text-xs font-medium">OpenAI</span>
-                    <Badge variant={systemStatus?.apiKeys?.openai ? "default" : "outline"} className="text-[9px] mt-1">
-                      {systemStatus?.apiKeys?.openai ? "Active" : "Not Set"}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-col items-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <ShoppingCart className={cn("w-6 h-6 mb-2", systemStatus?.apiKeys?.ebay ? "text-emerald-500" : "text-red-400")} />
-                    <span className="text-xs font-medium">eBay</span>
-                    <Badge variant={systemStatus?.apiKeys?.ebay ? "default" : "outline"} className="text-[9px] mt-1">
-                      {systemStatus?.apiKeys?.ebay ? "Active" : "Not Set"}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-col items-center p-4 bg-muted/20 rounded-xl border border-border/30">
-                    <Store className={cn("w-6 h-6 mb-2", systemStatus?.apiKeys?.amazon ? "text-emerald-500" : "text-red-400")} />
-                    <span className="text-xs font-medium">Amazon</span>
-                    <Badge variant={systemStatus?.apiKeys?.amazon ? "default" : "outline"} className="text-[9px] mt-1">
-                      {systemStatus?.apiKeys?.amazon ? "Active" : "Not Set"}
-                    </Badge>
-                  </div>
+            {/* Service Status Cards */}
+            <Card className="sm:col-span-2 border-dashed border-border/60">
+              <CardContent className="p-4 sm:p-5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Service Status</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { name: "Stripe", ok: systemStatus?.apiKeys?.stripe, icon: CreditCard },
+                    { name: "OpenAI", ok: systemStatus?.apiKeys?.openai, icon: MessageSquare },
+                    { name: "eBay", ok: systemStatus?.apiKeys?.ebay, icon: ShoppingCart },
+                    { name: "Amazon", ok: systemStatus?.apiKeys?.amazon, icon: Store },
+                  ].map(s => (
+                    <div key={s.name} className={cn(
+                      "flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border transition-colors",
+                      s.ok
+                        ? "bg-emerald-50/50 border-emerald-200 dark:bg-emerald-950/10 dark:border-emerald-900"
+                        : "bg-muted/20 border-border/40"
+                    )}>
+                      <div className={cn(
+                        "h-8 w-8 rounded-lg flex items-center justify-center",
+                        s.ok ? "bg-emerald-100 dark:bg-emerald-950/30" : "bg-muted"
+                      )}>
+                        <s.icon className={cn(
+                          "w-4 h-4",
+                          s.ok ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"
+                        )} />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-medium">{s.name}</p>
+                        <p className={cn(
+                          "text-[10px]",
+                          s.ok ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground/50"
+                        )}>
+                          {s.ok ? "Connected" : "Not configured"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
-      </Tabs>
+        )}
+      </main>
     </div>
   );
 }
