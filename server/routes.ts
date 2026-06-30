@@ -77,6 +77,22 @@ export async function registerRoutes(
     console.error("[Migration] vendors.is_global column failed:", e.message);
   }
 
+  // Safe migration: add verification columns to vendors
+  try {
+    await db.execute(sql`
+      ALTER TABLE vendors ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'pending'
+    `);
+    await db.execute(sql`
+      ALTER TABLE vendors ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP
+    `);
+    await db.execute(sql`
+      ALTER TABLE vendors ADD COLUMN IF NOT EXISTS verified_by VARCHAR
+    `);
+    console.log("[Migration] vendors verification columns ready");
+  } catch (e: any) {
+    console.error("[Migration] vendors verification columns failed:", e.message);
+  }
+
   // === STANDALONE EMAIL/PASSWORD AUTH ===
   app.post('/api/auth/register', async (req, res) => {
     try {
@@ -3413,6 +3429,29 @@ Guidelines:
       const id = Number(req.params.id);
       await db.delete(vendors).where(and(eq(vendors.id, id), eq(vendors.isGlobal, true)));
       res.status(204).send();
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Admin: Verify / block a global supplier
+  adminApi.put('/admin/vendors/global/:id/verify', async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { verificationStatus } = req.body;
+      if (!['pending', 'verified', 'blocked'].includes(verificationStatus)) {
+        return res.status(400).json({ message: 'Invalid status. Use pending, verified, or blocked.' });
+      }
+      const adminId = (req.session as any)?.userId;
+      const updates: Record<string, any> = { verificationStatus };
+      if (verificationStatus === 'verified') {
+        updates.verifiedAt = new Date();
+        updates.verifiedBy = adminId;
+      } else {
+        updates.verifiedAt = null;
+        updates.verifiedBy = null;
+      }
+      const [vendor] = await db.update(vendors).set(updates).where(eq(vendors.id, id)).returning();
+      if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+      res.json(vendor);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

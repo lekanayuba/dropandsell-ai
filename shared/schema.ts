@@ -62,6 +62,9 @@ export const vendors = pgTable("vendors", {
   totalOrdersFulfilled: integer("total_orders_fulfilled").default(0),
   lastHealthCheck: timestamp("last_health_check"),
   isGlobal: boolean("is_global").notNull().default(false),
+  verificationStatus: text("verification_status").notNull().default("pending"), // 'pending', 'verified', 'blocked'
+  verifiedAt: timestamp("verified_at"),
+  verifiedBy: varchar("verified_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -385,7 +388,7 @@ export type InsertStore = z.infer<typeof insertStoreSchema>;
 export type Store = typeof stores.$inferSelect;
 
 // Vendors
-export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true, isGlobal: true });
+export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true, isGlobal: true, verificationStatus: true, verifiedAt: true, verifiedBy: true });
 export type InsertVendor = z.infer<typeof insertVendorSchema>;
 export type Vendor = typeof vendors.$inferSelect;
 

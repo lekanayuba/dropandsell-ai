@@ -1184,11 +1184,27 @@ function GlobalVendorList() {
     onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
+  const verifyMutation = useMutation({
+    mutationFn: async ({ id, verificationStatus }: { id: number; verificationStatus: string }) => {
+      const r = await fetch(`/api/admin/vendors/global/${id}/verify`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verificationStatus }), credentials: "include" });
+      if (!r.ok) throw new Error("Failed to update status");
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/vendors/global"] }); toast({ title: "Vendor status updated" }); },
+    onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { const r = await fetch(`/api/admin/vendors/global/${id}`, { method: "DELETE", credentials: "include" }); if (!r.ok) throw new Error("Failed to delete"); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/vendors/global"] }); toast({ title: "Vendor deleted" }); },
     onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
+
+  const statusBadge = (v: any) => {
+    if (v.verificationStatus === 'verified') return <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800">Verified</Badge>;
+    if (v.verificationStatus === 'blocked') return <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-800">Blocked</Badge>;
+    return <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800">Pending</Badge>;
+  };
 
   return (
     <>
@@ -1201,15 +1217,26 @@ function GlobalVendorList() {
               {vendors.map((v: any) => (
                 <div key={v.id} className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-950/20 flex items-center justify-center shrink-0">
-                      <Globe className="w-4 h-4 text-blue-500" />
+                    <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", v.verificationStatus === 'verified' ? "bg-emerald-50 dark:bg-emerald-950/20" : v.verificationStatus === 'blocked' ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20")}>
+                      <Globe className={cn("w-4 h-4", v.verificationStatus === 'verified' ? "text-emerald-500" : v.verificationStatus === 'blocked' ? "text-red-500" : "text-amber-500")} />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{v.name}</p>
                       <p className="text-xs text-muted-foreground truncate">{v.category || v.contactEmail || v.country || "—"}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {statusBadge(v)}
+                    {v.verificationStatus !== 'verified' && (
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] text-emerald-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'verified' })} disabled={verifyMutation.isPending}>
+                        Approve
+                      </Button>
+                    )}
+                    {v.verificationStatus !== 'blocked' && (
+                      <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'blocked' })} disabled={verifyMutation.isPending}>
+                        Block
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Edit3 className="w-3.5 h-3.5" /></Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm("Delete this global vendor?")) deleteMutation.mutate(v.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
                   </div>

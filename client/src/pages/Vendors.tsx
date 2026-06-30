@@ -632,10 +632,24 @@ export default function Vendors() {
               <CardContent className="space-y-4 pt-0">
                 {/* Tags & Category Row */}
                 <div className="flex items-center flex-wrap gap-1.5">
-                  {vendor.isGlobal && (
-                    <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-800">
-                      <Globe className="w-3 h-3 mr-1" />
-                      Global
+                  {vendor.isGlobal && vendor.verificationStatus === 'verified' && (
+                    <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800">
+                      Verified
+                    </Badge>
+                  )}
+                  {vendor.isGlobal && vendor.verificationStatus === 'pending' && (
+                    <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800">
+                      Pending Verification
+                    </Badge>
+                  )}
+                  {vendor.isGlobal && vendor.verificationStatus === 'blocked' && (
+                    <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-800">
+                      Blocked
+                    </Badge>
+                  )}
+                  {!vendor.isGlobal && (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Private
                     </Badge>
                   )}
                   {vendor.category && (

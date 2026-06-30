@@ -159,7 +159,10 @@ export class DatabaseStorage implements IStorage {
   // Vendors
   async getVendors(userId: string) {
     return await db.select().from(vendors).where(
-      or(eq(vendors.userId, userId), eq(vendors.isGlobal, true))
+      or(
+        eq(vendors.userId, userId),
+        and(eq(vendors.isGlobal, true), eq(vendors.verificationStatus, 'verified'))
+      )
     );
   }
 
