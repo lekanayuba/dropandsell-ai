@@ -3069,34 +3069,6 @@ Guidelines:
     }
   });
 
-  // === Admin: eBay App Settings ===
-  protectedApi.get('/admin/app-settings/ebay', async (req: any, res) => {
-    try {
-      const all = await db.select().from(appSettings);
-      const getVal = (key: string) => all.find(r => r.key === key)?.value || process.env[key] || "";
-      res.json({ clientId: getVal("EBAY_CLIENT_ID"), clientSecret: getVal("EBAY_CLIENT_SECRET"), ruName: getVal("EBAY_RU_NAME") });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  protectedApi.put('/admin/app-settings/ebay', async (req: any, res) => {
-    try {
-      const { clientId, clientSecret, ruName } = req.body;
-      const upsert = async (key: string, value: string) => {
-        if (!value) return;
-        const existing = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
-        if (existing.length) {
-          await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
-        } else {
-          await db.insert(appSettings).values({ key, value });
-        }
-      };
-      await upsert("EBAY_CLIENT_ID", clientId);
-      await upsert("EBAY_CLIENT_SECRET", clientSecret);
-      await upsert("EBAY_RU_NAME", ruName);
-      res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
   // === eBay OAuth Flow (uses DB settings, supports per-store tokens) ===
   app.get('/api/ebay/auth', async (req, res) => {
     try {
@@ -3544,6 +3516,34 @@ Guidelines:
       res.setHeader('Content-Disposition', `attachment; filename="users-export-${new Date().toISOString().split('T')[0]}.csv"`);
       res.send(header + rows);
     } catch { res.status(500).send('Export failed'); }
+  });
+
+  // Admin: eBay App Settings (stored in DB, fallback to env)
+  adminApi.get('/admin/app-settings/ebay', async (req: any, res) => {
+    try {
+      const all = await db.select().from(appSettings);
+      const getVal = (key: string) => all.find(r => r.key === key)?.value || process.env[key] || "";
+      res.json({ clientId: getVal("EBAY_CLIENT_ID"), clientSecret: getVal("EBAY_CLIENT_SECRET"), ruName: getVal("EBAY_RU_NAME") });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  adminApi.put('/admin/app-settings/ebay', async (req: any, res) => {
+    try {
+      const { clientId, clientSecret, ruName } = req.body;
+      const upsert = async (key: string, value: string) => {
+        if (!value) return;
+        const existing = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+        if (existing.length) {
+          await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+        } else {
+          await db.insert(appSettings).values({ key, value });
+        }
+      };
+      await upsert("EBAY_CLIENT_ID", clientId);
+      await upsert("EBAY_CLIENT_SECRET", clientSecret);
+      await upsert("EBAY_RU_NAME", ruName);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // Register protected routes
