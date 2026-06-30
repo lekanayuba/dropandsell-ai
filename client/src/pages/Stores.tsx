@@ -363,10 +363,12 @@ function StoreCard({
         <CardTitle className="mt-4">{store.name}</CardTitle>
         <CardDescription className="flex items-center gap-2">
           <span className="capitalize">{store.platform}</span>
-          {store.credentials?.apiKey ? (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800">Connected</Badge>
-          ) : (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground">No API Key</Badge>
+          {store.platform !== 'ebay' && (
+            store.credentials?.apiKey ? (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20 dark:text-green-400 dark:border-green-800">Connected</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-muted-foreground">No API Key</Badge>
+            )
           )}
         </CardDescription>
       </CardHeader>
