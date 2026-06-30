@@ -3118,6 +3118,31 @@ Guidelines:
     }
   });
 
+  // === eBay Connection Status ===
+  app.get('/api/ebay/status', async (req, res) => {
+    try {
+      const clientId = process.env.EBAY_CLIENT_ID;
+      const clientSecret = process.env.EBAY_CLIENT_SECRET;
+      const refreshToken = process.env.EBAY_REFRESH_TOKEN;
+      if (!clientId || !clientSecret || !refreshToken) {
+        return res.json({ connected: false, message: "eBay credentials not configured" });
+      }
+      // Try to get a token to verify credentials
+      const { getAccessToken } = await import("./platforms/ebay");
+      await getAccessToken();
+      res.json({ connected: true, message: "eBay API connected and authenticated" });
+    } catch (err: any) {
+      const msg = err.message || "";
+      if (msg.includes("expired") || msg.includes("invalid") || msg.includes("revoked")) {
+        res.json({ connected: false, message: "eBay refresh token expired or revoked. Re-authorize via /api/ebay/auth" });
+      } else if (msg.includes("not configured")) {
+        res.json({ connected: false, message: "eBay API credentials missing. Set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_REFRESH_TOKEN" });
+      } else {
+        res.json({ connected: false, message: `eBay connection error: ${msg}` });
+      }
+    }
+  });
+
   // === ADMIN AUTH ===
   const ADMIN_USERNAME = "Dropandsell";
   const ADMIN_PASSWORD = "Olalekan25#";
