@@ -38,10 +38,13 @@ import Getstarted from "@/pages/Getstarted";
 import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
+import AdminLogin from "@/pages/AdminLogin";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   useReferralHandler();
+
+  const isAdminRoute = Component === AdminDashboard;
 
   if (isLoading) {
     return (
@@ -52,11 +55,14 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!isAuthenticated) {
+    if (isAdminRoute) {
+      return <AdminLogin />;
+    }
     return <Login />;
   }
 
   // For admin routes, check the user's role.
-  if (Component === AdminDashboard && user?.role !== 'admin') {
+  if (isAdminRoute && user?.role !== 'admin') {
     return <Redirect to="/" />;
   }
 
