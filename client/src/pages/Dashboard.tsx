@@ -9,7 +9,7 @@ import {
   GripVertical, Package, Truck, Clock, RefreshCw, CheckCircle2, XCircle,
   ShoppingCart, TrendingUp, TrendingDown, Boxes, Bell, Eye, EyeOff,
   Plus, Users, Globe, Phone, Mail, MapPin, Tag, HeartPulse,
-  Loader2,
+  Loader2, ListOrdered,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -590,6 +590,92 @@ export default function Dashboard() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Recent Orders Section */}
+      <div className="px-4 md:px-6 lg:px-0">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold font-display flex items-center gap-2">
+            <ListOrdered className="w-4 h-4" />
+            Recent Orders
+          </h3>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setLocation("/orders")}>
+            View All <ArrowUpRight className="w-3 h-3 ml-1" />
+          </Button>
+        </div>
+        {!orders ? (
+          <div className="rounded-xl border border-border/50 p-8 text-center text-sm text-muted-foreground">
+            <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin" />
+            Loading orders...
+          </div>
+        ) : orders.length === 0 ? (
+          <Card className="border-dashed border-border/50">
+            <CardContent className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <ShoppingBag className="w-10 h-10 mb-3 text-muted-foreground/60" />
+              <p className="text-sm font-medium">No orders yet</p>
+              <p className="text-xs mt-1">Orders from your stores will appear here</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-border/50 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border/30 bg-muted/20">
+                    <th className="text-left py-3 px-4 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Order</th>
+                    <th className="text-left py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hidden sm:table-cell">Customer</th>
+                    <th className="text-left py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hidden md:table-cell">Date</th>
+                    <th className="text-right py-3 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Total</th>
+                    <th className="text-left py-3 pr-4 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/10">
+                  {orders.slice(0, 8).map((order: any) => (
+                    <tr key={order.id}
+                      className="hover:bg-muted/20 transition-colors cursor-pointer"
+                      onClick={() => setLocation("/orders")}
+                    >
+                      <td className="py-3 px-4">
+                        <span className="text-xs font-medium">#{order.id}</span>
+                        {order.trackingNumber && (
+                          <span className="text-[10px] text-muted-foreground block font-mono truncate max-w-[120px]">
+                            {order.trackingNumber}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 text-xs text-muted-foreground hidden sm:table-cell">
+                        {order.customerName || "—"}
+                      </td>
+                      <td className="py-3 text-xs text-muted-foreground hidden md:table-cell">
+                        {order.createdAt
+                          ? new Date(order.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                          : "—"}
+                      </td>
+                      <td className="py-3 text-xs text-right font-medium tabular-nums">
+                        ${Number(order.totalAmount || 0).toFixed(2)}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className={cn("text-[10px] capitalize",
+                            order.status === "cancelled" ? "text-red-600 border-red-200" :
+                            order.status === "shipped" ? "text-blue-600 border-blue-200" :
+                            order.status === "processing" ? "text-amber-600 border-amber-200" :
+                            "text-muted-foreground"
+                          )}>
+                            {order.status || "pending"}
+                          </Badge>
+                          {order.fulfillmentStatus === "fulfilled" && (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* Vendors Section */}
