@@ -38,7 +38,6 @@ import Getstarted from "@/pages/Getstarted";
 import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
-import AdminLogin from "@/pages/AdminLogin";
 import Manual from "@/pages/Manual";
 import DrosellAutoListing from "@/pages/DrosellAutoListing";
 import Suggestions from "@/pages/Suggestions";
@@ -50,8 +49,6 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   const { isAuthenticated, isLoading, user } = useAuth();
   useReferralHandler();
 
-  const isAdminRoute = Component === AdminDashboard;
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -61,16 +58,9 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!isAuthenticated) {
-    if (isAdminRoute) {
-      return <AdminLogin />;
-    }
     return <Login />;
   }
 
-  // For admin routes, check the user's role.
-  if (isAdminRoute && user?.role !== 'admin') {
-    return <Redirect to="/" />;
-  }
 
   // Check if email is verified
   if (!user?.emailVerified) {
@@ -172,7 +162,7 @@ function Router() {
       <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
       <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />      
       <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
-      <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} />} />
+      <Route path="/admin" component={() => <AdminDashboard />} />
       <Route path="/manual" component={() => <ProtectedRoute component={Manual} />} />
       <Route path="/drosell-auto-listing" component={() => <ProtectedRoute component={DrosellAutoListing} />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />

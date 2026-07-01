@@ -202,8 +202,12 @@ export default function AdminDashboard() {
   const [vendorCurrentPage, setVendorCurrentPage] = useState(1);
   const vendorRowsPerPage = 5;
   const { toast } = useToast();
+  const [, setAuthed] = useState(true);
+  const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    const isDark = theme === "dark" || (theme === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", isDark);
   }, [theme]);
 
   useQuery({
