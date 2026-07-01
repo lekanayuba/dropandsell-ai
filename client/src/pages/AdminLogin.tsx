@@ -20,7 +20,7 @@ export default function AdminLogin() {
       return response.json();
     },
     onSuccess: (data) => {
-      if (data.role !== "admin") {
+      if (data.user?.role !== "admin") {
         toast({ title: "Access Denied", description: "Only administrators can access this area.", variant: "destructive" });
         return;
       }

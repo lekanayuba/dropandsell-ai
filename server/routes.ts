@@ -201,6 +201,7 @@ export async function registerRoutes(
           email: user.email, 
           firstName: user.firstName, 
           lastName: user.lastName,
+          role: user.role,
           emailVerified: user.emailVerified,
           policiesAccepted: user.policiesAccepted,
           onboardingCompleted: user.onboardingCompleted

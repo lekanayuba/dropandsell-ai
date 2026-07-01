@@ -34,7 +34,7 @@ import {
   LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
 } from "recharts";
 
-type TabId = "overview" | "getstarted" | "users" | "orders" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
+type TabId = "overview" | "users" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
 
 const COLORS = ["hsl(var(--primary))", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899", "#14b8a6", "#6366f1"];
 
