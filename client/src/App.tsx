@@ -39,6 +39,12 @@ import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
 import AdminLogin from "@/pages/AdminLogin";
+import Manual from "@/pages/Manual";
+import DrosellAutoListing from "@/pages/DrosellAutoListing";
+import Suggestions from "@/pages/Suggestions";
+import ProfilePage from "@/pages/Profile";
+import SubscribersDB from "@/pages/SubscribersDB";
+import GlobalVASO from "@/pages/GlobalVASO";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -167,6 +173,12 @@ function Router() {
       <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />      
       <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
       <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} />} />
+      <Route path="/manual" component={() => <ProtectedRoute component={Manual} />} />
+      <Route path="/drosell-auto-listing" component={() => <ProtectedRoute component={DrosellAutoListing} />} />
+      <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />
+      <Route path="/profile" component={() => <ProtectedRoute component={ProfilePage} />} />
+      <Route path="/subscribers-db" component={() => <ProtectedRoute component={SubscribersDB} />} />
+      <Route path="/global-vaso" component={() => <ProtectedRoute component={GlobalVASO} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>

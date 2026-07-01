@@ -69,7 +69,7 @@ function TrackingDialog({ orderId, onClose, onSuccess }: { orderId: number | nul
   );
 }
 
-export default function Tracking() {
+export default function ShippingProfiles() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
