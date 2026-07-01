@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db, pool } from "../db";
 import { products, vendors, stores, notifications, supplierReplacementLog } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -183,9 +183,16 @@ export async function batchAutoReplaceSuppliers(userId: string): Promise<{
   const userProducts = await db.select().from(products)
     .where(and(eq(products.userId, userId), eq(products.quantity, 0)));
 
-  const enabledStores = await db.select().from(stores)
-    .where(and(eq(stores.userId, userId), eq(stores.autoSwitchSupplier, true)))
-    .limit(1);
+  let enabledStores: any[] = [];
+  try {
+    const result = await pool.query(
+      `SELECT id FROM stores WHERE user_id = $1 AND auto_switch_supplier = true LIMIT 1`,
+      [userId]
+    );
+    enabledStores = result.rows;
+  } catch {
+    return { total: userProducts.length, replaced: 0, failed: 0, results: [] };
+  }
 
   if (enabledStores.length === 0) {
     return { total: userProducts.length, replaced: 0, failed: 0, results: [] };

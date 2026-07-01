@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db, pool, STORE_COLUMNS } from "../db";
 import { orders, stores, appSettings, marketplaceListings, products } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 
@@ -89,7 +89,8 @@ export async function getAccessToken(storeRefreshToken?: string): Promise<string
 }
 
 async function getStoreRefreshToken(storeId: number): Promise<string | null> {
-  const store = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  const result = await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [storeId]);
+  const store = result.rows;
   if (!store.length) return null;
   const creds = store[0].credentials as any;
   return creds?.ebayRefreshToken || null;

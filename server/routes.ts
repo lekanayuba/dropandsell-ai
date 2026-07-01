@@ -10,7 +10,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
-import { db } from "./db";
+import { db, pool, STORE_COLUMNS } from "./db";
 import { sql, eq, and, inArray, desc } from "drizzle-orm";
 import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings } from "@shared/schema";
 import { conversations, messages } from "@shared/models/chat";
@@ -94,6 +94,28 @@ export async function registerRoutes(
     console.log("[Migration] vendors verification columns ready");
   } catch (e: any) {
     console.error("[Migration] vendors verification columns failed:", e.message);
+  }
+
+  // Safe migration: add auto-settings columns to stores
+  try {
+    await db.execute(sql`
+      ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_restock boolean NOT NULL DEFAULT false
+    `);
+    await db.execute(sql`
+      ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_pause_listings boolean NOT NULL DEFAULT false
+    `);
+    await db.execute(sql`
+      ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_mark_out_of_stock boolean NOT NULL DEFAULT false
+    `);
+    await db.execute(sql`
+      ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_switch_supplier boolean NOT NULL DEFAULT false
+    `);
+    await db.execute(sql`
+      ALTER TABLE stores ADD COLUMN IF NOT EXISTS restock_threshold integer NOT NULL DEFAULT 1
+    `);
+    console.log("[Migration] stores auto-settings columns ready");
+  } catch (e: any) {
+    console.error("[Migration] stores auto-settings columns failed:", e.message);
   }
 
   // === STANDALONE EMAIL/PASSWORD AUTH ===
@@ -485,6 +507,30 @@ export async function registerRoutes(
   });
 
   // === STORES ===
+
+  // Inline migration: ensure auto-settings columns exist on stores table
+  let storesMigrated = false;
+  async function ensureStoresColumns() {
+    if (storesMigrated) return;
+    try {
+      await db.execute(sql`ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_restock boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_pause_listings boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_mark_out_of_stock boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`ALTER TABLE stores ADD COLUMN IF NOT EXISTS auto_switch_supplier boolean NOT NULL DEFAULT false`);
+      await db.execute(sql`ALTER TABLE stores ADD COLUMN IF NOT EXISTS restock_threshold integer NOT NULL DEFAULT 1`);
+      console.log("[Stores] Auto-settings columns ensured");
+      storesMigrated = true;
+    } catch (e: any) {
+      console.error("[Stores] Column migration failed:", e.message);
+    }
+  }
+
+  // Apply migration before any stores route
+  protectedApi.use('/stores', async (_req: any, _res: any, next: any) => {
+    await ensureStoresColumns();
+    next();
+  });
+
   protectedApi.get('/stores', async (req: any, res) => {
     const userId = req.user.claims.sub;
     const storesList = await storage.getStores(userId);
@@ -3268,7 +3314,8 @@ Guidelines:
 
       // If a storeId was passed, save the refresh token to the store's credentials
       if (storeId) {
-        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        const storeResult = await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [storeId]);
+        const storeRows = storeResult.rows;
         if (storeRows.length) {
           const creds = (storeRows[0].credentials as any) || {};
           creds.ebayRefreshToken = refreshToken;
@@ -3317,7 +3364,7 @@ Guidelines:
       if (!clientId || !redirectUri) {
         return res.status(400).send('Shopify not configured. Admin must set Client ID and Redirect URI in Admin > Integrations.');
       }
-      const store = storeId ? (await db.select().from(stores).where(eq(stores.id, parseInt(storeId))).limit(1))[0] : null;
+      const store = storeId ? (await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [parseInt(storeId)])).rows[0] : null;
       if (!store) return res.status(400).send('Store not found');
       const creds = store.credentials as any;
       const shopDomain = creds?.shopDomain;
@@ -3343,7 +3390,8 @@ Guidelines:
       if (state.startsWith("store_")) storeId = parseInt(state.replace("store_", ""), 10) || null;
       let shopDomain = shop;
       if (!shopDomain && storeId) {
-        const storeRows2 = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        const storeResult2 = await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [storeId]);
+        const storeRows2 = storeResult2.rows;
         if (storeRows2.length) shopDomain = (storeRows2[0].credentials as any).shopDomain || null;
       }
       if (!shopDomain) return res.status(400).send('Could not determine shop domain');
@@ -3356,7 +3404,8 @@ Guidelines:
       const data = await tokenRes.json();
       const accessToken = data.access_token;
       if (storeId) {
-        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        const storeResult = await pool.query('SELECT id, user_id, name, platform, credentials, status, last_sync, created_at FROM stores WHERE id = $1 LIMIT 1', [storeId]);
+        const storeRows = storeResult.rows;
         if (storeRows.length) {
           const creds = (storeRows[0].credentials as any) || {};
           creds.accessToken = accessToken;
@@ -3450,7 +3499,8 @@ Guidelines:
       const { platform } = req.params;
       const storeId = req.query.storeId ? parseInt(req.query.storeId as string, 10) : null;
       if (!storeId) return res.json({ connected: false, message: "No store specified" });
-      const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+      const storeResult = await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [storeId]);
+      const storeRows = storeResult.rows;
       if (!storeRows.length) return res.json({ connected: false, message: "Store not found" });
       const creds = storeRows[0].credentials as any;
       if (platform === 'shopify') {
@@ -3478,7 +3528,8 @@ Guidelines:
 
       // If checking a specific store, use its token
       if (storeId) {
-        const storeRows = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+        const storeResult = await pool.query(`SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 LIMIT 1`, [storeId]);
+        const storeRows = storeResult.rows;
         if (storeRows.length) {
           const creds = storeRows[0].credentials as any;
           refreshToken = creds?.ebayRefreshToken || refreshToken;

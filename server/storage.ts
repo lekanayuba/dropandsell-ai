@@ -8,7 +8,7 @@ import {
   type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
-import { db } from "./db";
+import { db, pool, STORE_COLUMNS, STORE_INSERT_COLUMNS } from "./db";
 import { notifyUser } from "./websocket";
 import { eq, desc, and, or, ilike, sql, inArray } from "drizzle-orm";
 
@@ -129,28 +129,66 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   // Stores
   async getStores(userId: string) {
-    return await db.select().from(stores).where(eq(stores.userId, userId));
+    const result = await pool.query(
+      `SELECT ${STORE_COLUMNS} FROM stores WHERE user_id = $1 ORDER BY id`,
+      [userId]
+    );
+    return result.rows as typeof stores.$inferSelect[];
   }
 
   async getStore(id: number, userId?: string) {
+    let result;
     if (userId) {
-      const [store] = await db.select().from(stores).where(and(eq(stores.id, id), eq(stores.userId, userId)));
-      return store;
+      result = await pool.query(
+        `SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+    } else {
+      result = await pool.query(
+        `SELECT ${STORE_COLUMNS} FROM stores WHERE id = $1`,
+        [id]
+      );
     }
-    const [store] = await db.select().from(stores).where(eq(stores.id, id));
-    return store;
+    return result.rows[0] as typeof stores.$inferSelect | undefined;
   }
 
   async createStore(store: InsertStore & { userId: string }) {
-    const [newStore] = await db.insert(stores).values(store).returning();
-    return newStore;
+    const result = await pool.query(
+      `INSERT INTO stores (${STORE_INSERT_COLUMNS})
+       VALUES ($1, $2, $3, $4::jsonb, $5)
+       RETURNING ${STORE_COLUMNS}`,
+      [store.userId, store.name, store.platform, JSON.stringify(store.credentials), store.status || 'active']
+    );
+    return result.rows[0] as typeof stores.$inferSelect;
   }
 
   async updateStore(id: number, userId: string, updates: Partial<InsertStore>) {
-    const [updated] = await db.update(stores).set(updates)
-      .where(and(eq(stores.id, id), eq(stores.userId, userId)))
-      .returning();
-    return updated;
+    const validFields = ['name', 'platform', 'credentials', 'status'] as const;
+    const setEntries: { field: string; value: any }[] = [];
+
+    for (const field of validFields) {
+      if ((updates as any)[field] !== undefined) {
+        const value = field === 'credentials' && typeof (updates as any)[field] === 'object'
+          ? JSON.stringify((updates as any)[field])
+          : (updates as any)[field];
+        setEntries.push({ field, value });
+      }
+    }
+
+    if (setEntries.length === 0) {
+      return await this.getStore(id, userId);
+    }
+
+    const setClauses = setEntries.map((_, i) => `${setEntries[i].field} = $${i + 1}`);
+    const values = setEntries.map(e => e.value);
+    values.push(id, userId);
+
+    const paramIdx = setEntries.length;
+    const result = await pool.query(
+      `UPDATE stores SET ${setClauses.join(', ')} WHERE id = $${paramIdx + 1} AND user_id = $${paramIdx + 2} RETURNING ${STORE_COLUMNS}`,
+      values
+    );
+    return result.rows[0] as typeof stores.$inferSelect | undefined;
   }
 
   async deleteStore(id: number, userId: string) {
