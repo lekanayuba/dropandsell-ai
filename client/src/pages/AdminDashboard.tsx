@@ -82,28 +82,28 @@ function KpiCard({ label, value, icon: Icon, trend, color = "primary", sparkline
 }) {
   const cc = COLOR_CLASSES[color] || COLOR_CLASSES.primary;
   return (
-    <Card className="group relative overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 border-border/40">
+    <Card className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 border-border/30 rounded-2xl">
       <div className={cn("absolute inset-0 opacity-[0.03] bg-gradient-to-br", cc.from)} />
-      <CardContent className="p-4 sm:p-5">
+      <CardContent className="p-5 sm:p-6">
         <div className="flex items-start justify-between mb-3">
-          <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", cc.bg)}>
-            <Icon className={cn("w-4.5 h-4.5", cc.text)} />
+          <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center ring-1 ring-inset", cc.bg, cc.text.replace('text-', 'ring-').replace('-600', '-200').replace('-500', '-200').replace('-500', '-200').replace('-400', '-200'))}>
+            <Icon className={cn("w-5 h-5", cc.text)} />
           </div>
           {sparklineData && <Sparkline data={sparklineData} color={`hsl(var(--primary))`} />}
         </div>
-        <p className="text-2xl font-bold tabular-nums leading-none tracking-tight">{value}</p>
-        <div className="flex items-center gap-1.5 mt-1.5">
-          <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-2xl font-bold tabular-nums leading-none tracking-tight font-display">{value}</p>
+        <div className="flex items-center gap-1.5 mt-2">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
           {trend && (
             <span className={cn(
-              "flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5",
+              "flex items-center gap-0.5 text-[11px] font-semibold rounded-full px-2 py-0.5",
               trend.up ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20" : "text-red-600 bg-red-50 dark:bg-red-950/20"
             )}>
-              {trend.up ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+              {trend.up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {trend.pct}
             </span>
           )}
-          {subtitle && <span className="text-[10px] text-muted-foreground ml-auto">{subtitle}</span>}
+          {subtitle && <span className="text-xs text-muted-foreground/60 ml-auto font-medium">{subtitle}</span>}
         </div>
       </CardContent>
     </Card>
@@ -114,8 +114,8 @@ function ChartCard({ title, action, children, className }: {
   title: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <Card className={cn("border-border/40", className)}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-4 sm:px-5">
+    <Card className={cn("border-border/30 rounded-2xl shadow-sm", className)}>
+      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-5 sm:px-6">
         <CardTitle className="text-sm font-semibold">{title}</CardTitle>
         {action}
       </CardHeader>
@@ -128,28 +128,28 @@ function SectionCard({ title, icon: Icon, action, children, className }: {
   title: string; icon: any; action?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <Card className={cn("border-border/40 overflow-hidden", className)}>
-      <CardHeader className="pb-2 border-b border-border/30 bg-muted/5 pt-3.5 px-4 sm:px-5">
+    <Card className={cn("border-border/30 overflow-hidden rounded-2xl shadow-sm", className)}>
+      <CardHeader className="pb-2.5 border-b border-border/20 bg-muted/10 pt-4 px-5 sm:px-6">
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-xs font-semibold flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
-            <Icon className="w-3.5 h-3.5" />{title}
+          <CardTitle className="text-xs font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+            <Icon className="w-4 h-4" />{title}
           </CardTitle>
           {action}
         </div>
       </CardHeader>
-      <CardContent className="p-4 sm:p-5">{children}</CardContent>
+      <CardContent className="p-5 sm:p-6">{children}</CardContent>
     </Card>
   );
 }
 
 function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
-      <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
-        <Icon className="w-6 h-6 text-muted-foreground/60" />
+    <div className="flex flex-col items-center justify-center py-14 text-center">
+      <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4 ring-1 ring-border/20">
+        <Icon className="w-7 h-7 text-muted-foreground/50" />
       </div>
-      <p className="text-sm font-medium text-foreground/80">{title}</p>
-      <p className="text-xs text-muted-foreground mt-1 max-w-xs">{desc}</p>
+      <p className="text-sm font-semibold text-foreground/70">{title}</p>
+      <p className="text-sm text-muted-foreground/60 mt-1 max-w-sm">{desc}</p>
     </div>
   );
 }
@@ -334,29 +334,29 @@ export default function AdminDashboard() {
           <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl" />
           <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-blue-500/5 blur-3xl" />
         </div>
-        <Card className="w-full max-w-sm shadow-xl border-border/40 relative">
-          <CardHeader className="text-center pb-2 pt-8">
-            <div className="mx-auto mb-3 h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Shield className="w-8 h-8 text-primary" />
+        <Card className="w-full max-w-sm shadow-2xl border-border/40 relative rounded-2xl">
+          <CardHeader className="text-center pb-2 pt-10">
+            <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
+              <Shield className="w-9 h-9 text-primary" />
             </div>
-            <CardTitle className="text-xl font-bold">Admin Panel</CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">DropandSell AI Administration</p>
+            <CardTitle className="text-2xl font-display font-bold tracking-tight">Admin Panel</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1.5">DropandSell AI Administration</p>
           </CardHeader>
-          <CardContent className="space-y-4 pb-8">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Username</Label>
-              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9 text-sm" />
+          <CardContent className="space-y-5 pb-10 px-8">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Username</Label>
+              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter admin username" className="h-10 text-sm" />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Password</Label>
-              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Password</Label>
+              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter admin password" className="h-10 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
             </div>
             {loginError && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2 border border-destructive/10">
-                <XCircle className="w-3.5 h-3.5 shrink-0" />{loginError}
+              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 rounded-xl px-4 py-3 border border-destructive/10">
+                <XCircle className="w-4 h-4 shrink-0" />{loginError}
               </div>
             )}
-            <Button className="w-full h-9 text-sm font-medium" onClick={handleLogin}>Sign In</Button>
+            <Button className="w-full h-10 text-sm font-semibold" onClick={handleLogin}>Sign In</Button>
           </CardContent>
         </Card>
       </div>
@@ -364,24 +364,36 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold md:text-2xl">Admin Dashboard</h1>
-        <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-red-500/70 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20" onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}>
-          <LogOut className="w-3.5 h-3.5" />Logout
-        </Button>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20 shrink-0">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-display font-bold tracking-tight">Admin Dashboard</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">System administration &amp; monitoring</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="hidden sm:inline-flex text-primary border-primary/30 bg-primary/5 text-xs font-medium px-3 py-1">Admin</Badge>
+              <Button variant="outline" size="sm" className="h-9 text-xs gap-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-border/40" onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}>
+                <LogOut className="w-4 h-4" /> Logout
+              </Button>
+            </div>
+          </div>
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="vendors">Vendors</TabsTrigger>
-          <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
-          <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="support">Support</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
+        <div className="border-b border-border/40 -mx-4 sm:-mx-6 lg:-mx-8 mb-6 px-4 sm:px-6 lg:px-8">
+          <TabsList className="w-full justify-start bg-transparent h-auto p-0 gap-0">
+            {["overview","users","vendors","subscribers","integrations","system","support","settings"].map(tab => (
+              <TabsTrigger key={tab} value={tab} className="relative px-4 py-3 text-sm font-medium capitalize rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-foreground text-muted-foreground hover:text-foreground transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:scale-x-0 data-[state=active]:after:scale-x-100 after:transition-transform">
+                {tab}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
         <TabsContent value="overview" className="mt-4">
           {/* ===== OVERVIEW ===== */}
           <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -914,6 +926,8 @@ export default function AdminDashboard() {
             </div>          
         </TabsContent>
       </Tabs>
+        </div>
+      </div>
     </div>
   );
 }
