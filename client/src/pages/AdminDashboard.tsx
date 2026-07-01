@@ -28,6 +28,7 @@ import {
   ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
   Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2, ShoppingBag,
   Edit3, Trash2,
+  LogOut,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -194,6 +195,9 @@ export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();  
   const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [authed, setAuthed] = useState(!!localStorage.getItem("adminAuthed"));
+  const [creds, setCreds] = useState({ username: "", password: "" });
+  const [loginError, setLoginError] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [orderFilter, setOrderFilter] = useState("all");
   const [globalVendorOpen, setGlobalVendorOpen] = useState(false);
@@ -202,8 +206,15 @@ export default function AdminDashboard() {
   const [vendorCurrentPage, setVendorCurrentPage] = useState(1);
   const vendorRowsPerPage = 5;
   const { toast } = useToast();
-  const [, setAuthed] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+
+  const handleLogin = async () => {
+    setLoginError("");
+    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds), credentials: "include" });
+    if (!r.ok) { setLoginError("Invalid credentials"); return; }
+    localStorage.setItem("adminAuthed", "true");
+    setAuthed(true);
+  };
 
   useEffect(() => {
     const isDark = theme === "dark" || (theme === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
@@ -213,61 +224,61 @@ export default function AdminDashboard() {
   useQuery({
     queryKey: ["/api/admin/check"],
     queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); } return r.json(); },
-    enabled: true,
+    enabled: authed,
   });
 
   const { data: stats } = useQuery({
     queryKey: ["/api/admin/detailed-stats"],
     queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: true, refetchInterval: 30000,
+    enabled: authed, refetchInterval: 30000,
   });
 
   const { data: revenueHist } = useQuery({
     queryKey: ["/api/admin/revenue-history"],
     queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: true, refetchInterval: 60000,
+    enabled: authed, refetchInterval: 60000,
   });
 
   const { data: users } = useQuery({
     queryKey: ["/api/admin/users"],
     queryFn: async () => { const r = await fetch("/api/admin/users", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: true, refetchInterval: 30000,
+    enabled: authed, refetchInterval: 30000,
   });
 
   const { data: recentOrders } = useQuery({
     queryKey: ["/api/admin/recent-orders"],
     queryFn: async () => { const r = await fetch("/api/admin/recent-orders", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: true, refetchInterval: 30000,
+    enabled: authed, refetchInterval: 30000,
   });
 
   const { data: vendorOverview } = useQuery({
     queryKey: ["/api/admin/vendor-overview"],
     queryFn: async () => { const r = await fetch("/api/admin/vendor-overview", { credentials: "include" }); if (!r.ok) return { vendors: [], totalVendors: 0, avgHealthScore: 0 }; return r.json(); },
-    enabled: true, refetchInterval: 60000,
+    enabled: authed, refetchInterval: 60000,
   });
 
   const { data: systemStatus } = useQuery({
     queryKey: ["/api/admin/system-status"],
     queryFn: async () => { const r = await fetch("/api/admin/system-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: true, refetchInterval: 120000,
+    enabled: authed, refetchInterval: 120000,
   });
 
   const { data: serverMetrics } = useQuery({
     queryKey: ["/api/admin/server-metrics"],
     queryFn: async () => { const r = await fetch("/api/admin/server-metrics", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: true, refetchInterval: 120000,
+    enabled: authed, refetchInterval: 120000,
   });
 
   const { data: serviceStatus } = useQuery({
     queryKey: ["/api/admin/service-status"],
     queryFn: async () => { const r = await fetch("/api/admin/service-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: true, refetchInterval: 60000,
+    enabled: authed, refetchInterval: 60000,
   });
 
   const { data: activity } = useQuery({
     queryKey: ["/api/admin/activity"],
     queryFn: async () => { const r = await fetch("/api/admin/activity", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: true, refetchInterval: 30000,
+    enabled: authed, refetchInterval: 30000,
   });
 
   const roleMutation = useMutation({
@@ -316,10 +327,49 @@ export default function AdminDashboard() {
   const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
   const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
 
+  if (!authed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 p-4">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl" />
+          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-blue-500/5 blur-3xl" />
+        </div>
+        <Card className="w-full max-w-sm shadow-xl border-border/40 relative">
+          <CardHeader className="text-center pb-2 pt-8">
+            <div className="mx-auto mb-3 h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Shield className="w-8 h-8 text-primary" />
+            </div>
+            <CardTitle className="text-xl font-bold">Admin Panel</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">DropandSell AI Administration</p>
+          </CardHeader>
+          <CardContent className="space-y-4 pb-8">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Username</Label>
+              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9 text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Password</Label>
+              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
+            </div>
+            {loginError && (
+              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2 border border-destructive/10">
+                <XCircle className="w-3.5 h-3.5 shrink-0" />{loginError}
+              </div>
+            )}
+            <Button className="w-full h-9 text-sm font-medium" onClick={handleLogin}>Sign In</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center">
+      <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold md:text-2xl">Admin Dashboard</h1>
+        <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5 text-red-500/70 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20" onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}>
+          <LogOut className="w-3.5 h-3.5" />Logout
+        </Button>
       </div>
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="w-full">
         <TabsList className="grid w-full grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
