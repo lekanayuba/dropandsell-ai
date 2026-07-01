@@ -19,7 +19,7 @@ import OpenAI from "openai";
 import crypto from "crypto";
 import { registerChatRoutes } from "./replit_integrations/chat";
 import { rateLimiter } from "./middleware/rateLimiter";
-import { getTrackingUrlForOrder, monitorTracking } from "./tracking-monitor";
+import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
 import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
@@ -1435,9 +1435,18 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Order not found' });
       }
 
-      const { trackingNumber, carrier } = req.body;
-      if (!trackingNumber || !carrier) {
-        return res.status(400).json({ message: 'Tracking number and carrier are required' });
+      let { trackingNumber, carrier } = req.body;
+      if (!trackingNumber) {
+        return res.status(400).json({ message: 'Tracking number is required' });
+      }
+      if (!carrier) {
+        const detected = detectCarrier(trackingNumber);
+        if (detected) {
+          carrier = detected;
+          console.log(`[Tracking] Auto-detected carrier "${carrier}" for tracking ${trackingNumber}`);
+        } else {
+          return res.status(400).json({ message: 'Carrier is required (could not auto-detect from tracking number)' });
+        }
       }
 
       const trackingUrl = getTrackingUrlForOrder(carrier, trackingNumber);

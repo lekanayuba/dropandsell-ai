@@ -3,13 +3,11 @@ import { db } from "./db";
 import { orders } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { notifyUser } from "./websocket";
-import { sendTrackingUpdate } from "./email";
 
 interface FulfillmentResult {
   success: boolean;
   supplierNotified: boolean;
   message: string;
-  trackingNumber?: string;
   estimatedDelivery?: string;
 }
 
@@ -18,41 +16,25 @@ export async function autoFulfillOrder(orderId: number): Promise<FulfillmentResu
     const order = await storage.getOrder(orderId);
     if (!order) return { success: false, supplierNotified: false, message: "Order not found" };
 
-    const trackingNumber = "DS" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
-
     await storage.updateOrder(orderId, {
       fulfillmentStatus: "fulfilled",
-      trackingNumber,
       status: "shipped",
-      trackingStatus: "in_transit",
-      trackingUpdatedAt: new Date(),
     });
 
     await storage.createNotification({
       userId: order.userId,
       type: "order_shipped",
-      title: `Order #${orderId} Auto-Fulfilled`,
-      message: `Your order has been automatically fulfilled. Tracking: ${trackingNumber}`,
+      title: `Order #${orderId} — Awaiting Tracking`,
+      message: `Order placed with supplier. Add the real tracking number when you receive it to notify the customer and update the marketplace.`,
       orderId,
     });
 
-    notifyUser(Number(order.userId), "order_fulfilled", { orderId, trackingNumber });
-
-    if (order.customerEmail) {
-      sendTrackingUpdate(
-        order.customerEmail,
-        order.customerName,
-        trackingNumber,
-        "in_transit",
-        order.carrier ?? "",
-      );
-    }
+    notifyUser(Number(order.userId), "order_fulfilled", { orderId, needsTracking: true });
 
     return {
       success: true,
       supplierNotified: true,
-      message: "Order placed with supplier",
-      trackingNumber,
+      message: "Order placed with supplier. Add tracking from the Orders page to notify your customer.",
       estimatedDelivery: "5-10 business days",
     };
   } catch (err: any) {

@@ -177,3 +177,31 @@ export async function monitorTracking(): Promise<void> {
 export function getTrackingUrlForOrder(carrier: string, trackingNumber: string): string {
   return getTrackingUrl(carrier, trackingNumber);
 }
+
+// Auto-detect carrier from tracking number pattern (for supplier tracking conversion)
+export function detectCarrier(trackingNumber: string): string | null {
+  const t = trackingNumber.trim().toUpperCase();
+
+  // UPS: 1Z + alphanumeric
+  if (/^1Z[A-Z0-9]{16,18}$/i.test(t)) return "ups";
+  // FedEx: 12-15 digits, or FX/RF prefix
+  if (/^(FX|RF|D\.P\.|W\.B\.)/i.test(t) || /^\d{12,15}$/.test(t)) return "fedex";
+  // USPS: 20-22 digits starting with 9, or 2 letters + 9 digits + US
+  if (/^(94|93|92|91|90|95|96|97|98|99)\d{18,20}$/.test(t) || /^[A-Z]{2}\d{9}US$/i.test(t)) return "usps";
+  // DHL: starts with JD, or 10 digits, or 3 letters + 7 digits
+  if (/^JD\d{18}/i.test(t) || /^\d{10}$/.test(t) || /^[A-Z]{3}\d{7}$/i.test(t)) return "dhl";
+  // Royal Mail: 2 letters + 9 digits + GB
+  if (/^[A-Z]{2}\d{9}GB$/i.test(t)) return "royal mail";
+  // Evri/Hermes: starts with H, or 16 digits
+  if (/^H[A-Z0-9]{12,15}$/i.test(t) || /^\d{16}$/.test(t)) return "evri";
+  // DPD: 14 digits
+  if (/^\d{14}$/.test(t)) return "dpd";
+  // Parcelforce: starts with CF, CP, P, or 10-12 digits
+  if (/^(CF|CP|PG|P[A-Z])/i.test(t) || /^\d{10,12}$/.test(t)) return "parcelforce";
+  // China Post / AliExpress: starts with LP or CP
+  if (/^LP\d{13,16}$/i.test(t) || /^CP\d{13,16}$/i.test(t) || /^[A-Z]{2}\d{9}CN$/i.test(t)) return "china post";
+  // Australia Post: 3 letters + 7 digits
+  if (/^[A-Z]{3}\d{7}$/i.test(t)) return "australia post";
+
+  return null;
+}
