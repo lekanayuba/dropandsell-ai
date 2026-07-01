@@ -3,6 +3,7 @@ import { orders } from "@shared/schema";
 import { eq, and, inArray, lte, isNotNull } from "drizzle-orm";
 import { updateEbayOrderStatus } from "./platforms/ebay";
 import { storage } from "./storage";
+import { sendTrackingUpdate } from "./email";
 
 const CARRIER_TRACKING_URLS: Record<string, (tracking: string) => string> = {
   "royal mail": (t) => `https://www.royalmail.com/track-your-item#/tracking-results/${t}`,
@@ -93,6 +94,17 @@ async function checkTrackingStatus(
 
 export async function monitorTracking(): Promise<void> {
   try {
+    // Step 0: pull tracking from eBay for unfulfilled eBay orders
+    try {
+      const { syncEbayFulfillmentTracking } = await import("./platforms/ebay");
+      const synced = await syncEbayFulfillmentTracking();
+      if (synced > 0) {
+        console.log(`[TrackingMonitor] Synced ${synced} tracking numbers from eBay`);
+      }
+    } catch (err) {
+      console.error("[TrackingMonitor] eBay tracking sync error:", err);
+    }
+
     // Find orders that are shipped but not yet delivered, checked >1h ago
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
 
@@ -117,6 +129,19 @@ export async function monitorTracking(): Promise<void> {
         await db.update(orders)
           .set({ trackingStatus: status, trackingUpdatedAt: new Date() })
           .where(eq(orders.id, order.id));
+
+        if (status !== order.trackingStatus) {
+          // Notify customer via email on any status change
+          if (order.customerEmail) {
+            sendTrackingUpdate(
+              order.customerEmail,
+              order.customerName,
+              order.trackingNumber!,
+              status,
+              order.carrier ?? "",
+            );
+          }
+        }
 
         if (status === "delivered" && order.trackingStatus !== "delivered") {
           await storage.createNotification({

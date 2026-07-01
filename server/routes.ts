@@ -1350,6 +1350,12 @@ export async function registerRoutes(
         orderId: id,
       });
 
+      // Notify customer via email
+      if (order.customerEmail) {
+        const { sendTrackingUpdate } = await import('./email.js');
+        sendTrackingUpdate(order.customerEmail, order.customerName, trackingNumber, 'in_transit', carrier);
+      }
+
       // Sync to eBay for marketplace orders
       if (order.externalOrderId) {
         updateEbayOrderStatus(order.externalOrderId, 'SHIPPED', trackingNumber, carrier, order.storeId ?? undefined);

@@ -3,6 +3,7 @@ import { db } from "./db";
 import { orders } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { notifyUser } from "./websocket";
+import { sendTrackingUpdate } from "./email";
 
 interface FulfillmentResult {
   success: boolean;
@@ -36,6 +37,16 @@ export async function autoFulfillOrder(orderId: number): Promise<FulfillmentResu
     });
 
     notifyUser(Number(order.userId), "order_fulfilled", { orderId, trackingNumber });
+
+    if (order.customerEmail) {
+      sendTrackingUpdate(
+        order.customerEmail,
+        order.customerName,
+        trackingNumber,
+        "in_transit",
+        order.carrier ?? "",
+      );
+    }
 
     return {
       success: true,

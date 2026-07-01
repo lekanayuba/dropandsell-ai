@@ -1,6 +1,6 @@
 import { db, pool, STORE_COLUMNS } from "../db";
 import { orders, stores, appSettings, marketplaceListings, products } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 
 interface EbayAuthToken {
   accessToken: string;
@@ -402,4 +402,67 @@ export async function updateEbayOrderStatus(
   } catch (err) {
     console.error(`[eBay] Error updating order ${ebayOrderId}:`, err);
   }
+}
+
+export async function syncEbayFulfillmentTracking(storeId?: number): Promise<number> {
+  let updatedCount = 0;
+  try {
+    const conditions = and(
+      isNotNull(orders.externalOrderId),
+      eq(orders.fulfillmentStatus, 'unfulfilled'),
+    );
+    const pendingOrders = storeId
+      ? await db.select().from(orders).where(and(conditions, eq(orders.storeId, storeId)))
+      : await db.select().from(orders).where(conditions);
+
+    if (pendingOrders.length === 0) return 0;
+
+    const refreshToken = storeId ? await getStoreRefreshToken(storeId) : undefined;
+    const token = await getAccessToken(refreshToken || undefined);
+
+    for (const order of pendingOrders) {
+      try {
+        const res = await fetch(
+          `https://api.ebay.com/sell/fulfillment/v1/order/${order.externalOrderId}/shipping_fulfillment`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const fulfillments = data.fulfillments || [];
+        if (fulfillments.length === 0) continue;
+
+        for (const f of fulfillments) {
+          const trackingNumber = f.trackingNumber;
+          const carrier = f.carrierUsed;
+          if (trackingNumber) {
+            await db.update(orders)
+              .set({
+                trackingNumber,
+                carrier,
+                fulfillmentStatus: 'fulfilled',
+                trackingStatus: 'in_transit',
+                trackingUpdatedAt: new Date(),
+                status: 'shipped',
+              })
+              .where(eq(orders.id, order.id));
+            updatedCount++;
+            console.log(`[eBay] Pulled tracking ${trackingNumber} (${carrier}) for order #${order.id}`);
+
+            // Notify customer
+            if (order.customerEmail) {
+              const { sendTrackingUpdate } = await import('../email.js');
+              sendTrackingUpdate(order.customerEmail, order.customerName, trackingNumber, 'in_transit', carrier);
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(`[eBay] Failed to sync tracking for order #${order.id}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error('[eBay] Error syncing fulfillment tracking:', err);
+  }
+  return updatedCount;
 }
