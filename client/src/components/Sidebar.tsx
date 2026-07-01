@@ -46,6 +46,7 @@ const navGroups: NavGroup[] = [
     links: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/orders", label: "Orders", icon: ShoppingCart },
       { href: "/shipping", label: "Fulfillment", icon: Truck },
       { href: "/customers", label: "Customers", icon: Users },
     ],
