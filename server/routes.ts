@@ -11,7 +11,7 @@ import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db, pool, STORE_COLUMNS } from "./db";
-import { sql, eq, and, inArray, desc } from "drizzle-orm";
+import { sql, eq, and, inArray, desc, lte, gt, or, isNotNull } from "drizzle-orm";
 import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings } from "@shared/schema";
 import { conversations, messages } from "@shared/models/chat";
 import { users } from "@shared/models/auth";
@@ -501,6 +501,117 @@ export async function registerRoutes(
       console.log(`[BackgroundSync] Completed — ${allStores.length} stores synced`);
     } catch (err) {
       console.error('[BackgroundSync] Error:', err);
+    }
+  }
+
+  // Sync all out-of-stock products to their marketplace listings
+  // Also checks vendor-supplied stock status for API-integrated suppliers
+  async function syncOutOfStockProducts(): Promise<void> {
+    try {
+      // Step 1: find all products with quantity <= 0
+      const oosProducts = await db.select({
+        id: products.id,
+        userId: products.userId,
+        quantity: products.quantity,
+        vendorId: products.vendorId,
+      }).from(products).where(lte(products.quantity, 0));
+
+      if (oosProducts.length === 0) return;
+
+      const ids = oosProducts.map(p => p.id);
+
+      // Step 1b: also check vendor API stock for products with API-integrated vendors
+      const vendorIds = [...new Set(oosProducts.filter(p => p.vendorId != null).map(p => p.vendorId!))];
+      if (vendorIds.length > 0) {
+        const apiVendors = await db.select({ id: vendors.id, config: vendors.config })
+          .from(vendors)
+          .where(and(inArray(vendors.id, vendorIds), eq(vendors.integrationType, 'api')));
+        for (const v of apiVendors) {
+          checkVendorStockStatus(v.id, v.config as any).catch(err =>
+            console.error(`[VendorStock] Vendor ${v.id} check failed:`, err)
+          );
+        }
+      }
+
+      // Step 2: find marketplace listings that are still 'in_stock' for OOS products
+      const oosListings = await db.select({
+        id: marketplaceListings.id,
+        productId: marketplaceListings.productId,
+        storeId: marketplaceListings.storeId,
+        stockStatus: marketplaceListings.stockStatus,
+        externalId: marketplaceListings.externalId,
+      }).from(marketplaceListings)
+        .where(and(inArray(marketplaceListings.productId, ids), eq(marketplaceListings.stockStatus, 'in_stock')));
+
+      if (oosListings.length === 0) return;
+
+      // Step 3: preload store settings
+      const storeIds = [...new Set(oosListings.map(l => l.storeId))];
+      const storeRows = storeIds.length > 0
+        ? await db.select({
+            id: stores.id, platform: stores.platform, userId: stores.userId,
+            autoPauseListings: stores.autoPauseListings,
+          }).from(stores).where(inArray(stores.id, storeIds))
+        : [];
+      const storeMap = new Map(storeRows.map(s => [s.id, s]));
+
+      // Step 4: update listings and end on marketplaces if configured
+      let count = 0;
+      for (const listing of oosListings) {
+        await db.update(marketplaceListings)
+          .set({ stockStatus: 'out_of_stock', outOfStockAt: new Date(), lastSync: new Date() })
+          .where(eq(marketplaceListings.id, listing.id));
+
+        await db.insert(restockLogs).values({
+          storeId: listing.storeId, productId: listing.productId,
+          previousQuantity: 0, newQuantity: 0,
+          marketplaceListingId: listing.id, triggeredBy: 'auto_supplier',
+        });
+
+        const store = storeMap.get(listing.storeId);
+        if (store?.autoPauseListings) {
+          await storage.updateMarketplaceListingStatus(listing.id, 'ended');
+          if (store.platform === 'ebay' && listing.externalId) {
+            endEbayListing(listing.externalId);
+          }
+        }
+        count++;
+      }
+
+      console.log(`[SyncOOS] Marked ${count} listings OOS across ${oosProducts.length} products`);
+    } catch (err) {
+      console.error('[SyncOOS] Error:', err);
+    }
+  }
+
+  // Check vendor API stock status — extendable per-vendor integration type
+  async function checkVendorStockStatus(vendorId: number, config: Record<string, any> | null): Promise<void> {
+    try {
+      if (!config?.stockEndpoint) return; // no API endpoint configured
+
+      const res = await fetch(config.stockEndpoint, {
+        method: config.stockMethod || 'GET',
+        headers: { 'Authorization': config.apiKey ? `Bearer ${config.apiKey}` : '', 'Content-Type': 'application/json', ...(config.stockHeaders || {}) },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) {
+        console.warn(`[VendorStock] Vendor ${vendorId} returned ${res.status}`);
+        return;
+      }
+
+      const data = await res.json();
+      // Extract stock status from response — configurable via stockPath (e.g. "data.inStock")
+      const stockPath = config.stockPath || 'inStock';
+      const inStock = stockPath.split('.').reduce((o: any, k: string) => o?.[k], data);
+      if (inStock === false || inStock === 0 || inStock === 'out_of_stock') {
+        // Mark all products from this vendor as OOS
+        await db.update(products)
+          .set({ quantity: 0 })
+          .where(and(eq(products.vendorId, vendorId), gt(products.quantity, 0)));
+      }
+    } catch (err) {
+      console.error(`[VendorStock] Error checking vendor ${vendorId}:`, err);
     }
   }
 
@@ -4438,6 +4549,7 @@ Guidelines:
         return res.status(400).json({ message: 'No updates provided' });
       }
       let updated = 0;
+      const changedProductIds: number[] = [];
       for (const id of productIds) {
         const product = await storage.getProduct(Number(id), userId);
         if (!product) continue;
@@ -4450,8 +4562,13 @@ Guidelines:
         if (updates.deliveryCost !== undefined) updateData.deliveryCost = updates.deliveryCost.toString();
         if (Object.keys(updateData).length > 0) {
           await storage.updateProduct(Number(id), userId, updateData as any);
+          if (updates.quantity !== undefined) changedProductIds.push(Number(id));
           updated++;
         }
+      }
+      // Trigger store sync for products that had quantity changes
+      for (const pid of changedProductIds) {
+        syncProductAcrossStores(pid, userId).catch(() => {});
       }
       res.json({ updated, total: productIds.length });
     } catch (err: any) {
@@ -4461,14 +4578,16 @@ Guidelines:
 
   // === BACKGROUND STOCK SYNC JOB (runs every 2 minutes) ===
   const SYNC_INTERVAL = 2 * 60 * 1000;
-  console.log(`[BackgroundSync] Starting — will sync every 8 minutes`);
+  console.log(`[BackgroundSync] Starting — will sync every 2 minutes`);
   setInterval(() => {
     backgroundSyncAllStores();
+    syncOutOfStockProducts();
   }, SYNC_INTERVAL);
 
   // Also run one sync shortly after startup (after 30s to let DB warm up)
   setTimeout(() => {
     backgroundSyncAllStores();
+    syncOutOfStockProducts();
   }, 30_000);
 
   // Tracking monitor — checks shipped orders for delivery updates every 30 min
