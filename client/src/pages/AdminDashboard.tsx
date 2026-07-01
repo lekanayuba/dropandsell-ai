@@ -2,25 +2,27 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   Users, Store, Package, ShoppingCart, CreditCard, Shield, Settings,
-  MessageSquare, LogOut, TrendingUp, TrendingDown, Activity, Clock,
-  AlertTriangle, CheckCircle, XCircle, Database, Key, Server,
-  UserPlus, Search, ChevronRight, HeartPulse, Boxes, BarChart3,
-  LayoutDashboard, Sun, Moon, PanelLeft, PanelLeftClose,
-  ChevronDown, ChevronUp, DollarSign, Award, Download, Filter,
-  SlidersHorizontal, RefreshCw, Wifi, WifiOff, Zap, Globe,
-  Link, ExternalLink, MoreHorizontal, Plus, Bell, HelpCircle,
+  MessageSquare, TrendingUp, TrendingDown, Activity, Clock,
+  AlertTriangle, CheckCircle, XCircle, Database, Key, Server, ChevronLeft, ChevronRight,
+  UserPlus, Search, HeartPulse, Boxes, BarChart3, MoreHorizontal,
+  LayoutDashboard, DollarSign, Download,
+  RefreshCw, Globe,
+  Link, ExternalLink, Plus,
   FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
   TrendingUp as TrendUp, ArrowUpRight,
   ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
@@ -190,18 +192,16 @@ function LoadingRows({ rows = 4 }: { rows?: number }) {
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
-  const qc = useQueryClient();
-  const [authed, setAuthed] = useState(!!localStorage.getItem("adminAuthed"));
-  const [creds, setCreds] = useState({ username: "", password: "" });
-  const [loginError, setLoginError] = useState("");
+  const qc = useQueryClient();  
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [orderFilter, setOrderFilter] = useState("all");
-  const [theme, setTheme] = useState<"dark" | "light">(() => (document.documentElement.classList.contains("dark") ? "dark" : "light"));
   const [globalVendorOpen, setGlobalVendorOpen] = useState(false);
-
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 10;
+  const [vendorCurrentPage, setVendorCurrentPage] = useState(1);
+  const vendorRowsPerPage = 5;
+  const { toast } = useToast();
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
@@ -209,61 +209,61 @@ export default function AdminDashboard() {
   useQuery({
     queryKey: ["/api/admin/check"],
     queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); } return r.json(); },
-    enabled: authed,
+    enabled: true,
   });
 
   const { data: stats } = useQuery({
     queryKey: ["/api/admin/detailed-stats"],
     queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    enabled: true, refetchInterval: 30000,
   });
 
   const { data: revenueHist } = useQuery({
     queryKey: ["/api/admin/revenue-history"],
     queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+    enabled: true, refetchInterval: 60000,
   });
 
   const { data: users } = useQuery({
     queryKey: ["/api/admin/users"],
     queryFn: async () => { const r = await fetch("/api/admin/users", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    enabled: true, refetchInterval: 30000,
   });
 
   const { data: recentOrders } = useQuery({
     queryKey: ["/api/admin/recent-orders"],
     queryFn: async () => { const r = await fetch("/api/admin/recent-orders", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    enabled: true, refetchInterval: 30000,
   });
 
   const { data: vendorOverview } = useQuery({
     queryKey: ["/api/admin/vendor-overview"],
     queryFn: async () => { const r = await fetch("/api/admin/vendor-overview", { credentials: "include" }); if (!r.ok) return { vendors: [], totalVendors: 0, avgHealthScore: 0 }; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+    enabled: true, refetchInterval: 60000,
   });
 
   const { data: systemStatus } = useQuery({
     queryKey: ["/api/admin/system-status"],
     queryFn: async () => { const r = await fetch("/api/admin/system-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 120000,
+    enabled: true, refetchInterval: 120000,
   });
 
   const { data: serverMetrics } = useQuery({
     queryKey: ["/api/admin/server-metrics"],
     queryFn: async () => { const r = await fetch("/api/admin/server-metrics", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 120000,
+    enabled: true, refetchInterval: 120000,
   });
 
   const { data: serviceStatus } = useQuery({
     queryKey: ["/api/admin/service-status"],
     queryFn: async () => { const r = await fetch("/api/admin/service-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+    enabled: true, refetchInterval: 60000,
   });
 
   const { data: activity } = useQuery({
     queryKey: ["/api/admin/activity"],
     queryFn: async () => { const r = await fetch("/api/admin/activity", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    enabled: true, refetchInterval: 30000,
   });
 
   const roleMutation = useMutation({
@@ -274,20 +274,27 @@ export default function AdminDashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/admin/users"] }),
   });
 
-  const handleLogin = async () => {
-    setLoginError("");
-    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds), credentials: "include" });
-    if (!r.ok) { setLoginError("Invalid credentials"); return; }
-    localStorage.setItem("adminAuthed", "true");
-    setAuthed(true);
-  };
-
   const filteredUsers = useMemo(() => {
     if (!users) return [];
     if (!userSearch) return users;
     const q = userSearch.toLowerCase();
     return users.filter((u: any) => u.email?.toLowerCase().includes(q) || u.firstName?.toLowerCase().includes(q) || u.lastName?.toLowerCase().includes(q));
   }, [users, userSearch]);
+
+  const paginatedVendors = useMemo(() => {
+    if (!vendorOverview?.vendors) return [];
+    return vendorOverview.vendors.slice(
+      (vendorCurrentPage - 1) * vendorRowsPerPage,
+      vendorCurrentPage * vendorRowsPerPage
+    );
+  }, [vendorOverview, vendorCurrentPage]);
+  const totalVendorPages = Math.ceil((vendorOverview?.vendors?.length || 0) / vendorRowsPerPage);
+
+  const paginatedUsers = useMemo(() => {
+    return filteredUsers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+  }, [filteredUsers, currentPage]);
+
+  const totalPages = Math.ceil(filteredUsers.length / rowsPerPage);
 
   const exportUsers = async () => {
     const r = await fetch("/api/admin/export/users", { credentials: "include" });
@@ -305,169 +312,25 @@ export default function AdminDashboard() {
   const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
   const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
 
-  const sidebarNav = [
-    { id: "overview" as TabId, label: "Overview", icon: LayoutDashboard },
-    { id: "getstarted" as TabId, label: "Getting Started", icon: BarChart3 },
-    { id: "users" as TabId, label: "Users", icon: Users },
-    { id: "orders" as TabId, label: "Orders", icon: ShoppingCart },
-    { id: "vendors" as TabId, label: "Vendors", icon: Boxes },
-    { id: "subscribers" as TabId, label: "Subscribers", icon: CreditCard },
-    { id: "integrations" as TabId, label: "API Integrations", icon: Link },
-    { id: "system" as TabId, label: "System", icon: Server },
-    { id: "support" as TabId, label: "Support", icon: LifeBuoy },
-    { id: "settings" as TabId, label: "Settings", icon: Settings },
-  ];
-
-  const sidebar = (
-    <div className={cn(
-      "h-full bg-card border-r border-border/40 flex flex-col transition-all duration-300",
-      sidebarCollapsed ? "w-16" : "w-60"
-    )}>
-      <div className={cn("flex items-center gap-2.5 px-4 h-14 border-b border-border/30 shrink-0", sidebarCollapsed && "justify-center px-0")}>
-        <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-          <Shield className="w-3.5 h-3.5 text-primary" />
-        </div>
-        {!sidebarCollapsed && (
-          <>
-            <span className="text-sm font-bold tracking-tight">DropandSell</span>
-            <Badge variant="outline" className="text-[9px] px-1.5 h-4 ml-auto">Admin</Badge>
-          </>
-        )}
-      </div>
-      <nav className="flex-1 py-2 px-2 space-y-0.5 overflow-y-auto">
-        {sidebarNav.map(item => (
-          <button
-            key={item.id}
-            onClick={() => { setActiveTab(item.id); setMobileSidebarOpen(false); }}
-            className={cn(
-              "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200",
-              sidebarCollapsed && "justify-center px-2",
-              activeTab === item.id
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-            )}
-            title={sidebarCollapsed ? item.label : undefined}
-          >
-            <item.icon className="w-4 h-4 shrink-0" />
-            {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
-            {!sidebarCollapsed && item.id === "support" && (
-              <Badge className="ml-auto h-4 min-w-4 text-[9px] px-1">3</Badge>
-            )}
-          </button>
-        ))}
-      </nav>
-      <div className={cn("p-2 border-t border-border/30", sidebarCollapsed && "flex flex-col items-center")}>
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className={cn(
-            "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all",
-            sidebarCollapsed && "justify-center px-2"
-          )}
-        >
-          {sidebarCollapsed ? <PanelLeftClose className="w-4 h-4" /> : <><PanelLeft className="w-4 h-4" /><span>Collapse</span></>}
-        </button>
-        <button
-          onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}
-          className={cn(
-            "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-xs font-medium text-red-500/70 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all mt-0.5",
-            sidebarCollapsed && "justify-center px-2"
-          )}
-        >
-          <LogOut className="w-4 h-4" />
-          {!sidebarCollapsed && <span>Logout</span>}
-        </button>
-      </div>
-    </div>
-  );
-
-  if (!authed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 p-4">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-blue-500/5 blur-3xl" />
-        </div>
-        <Card className="w-full max-w-sm shadow-2xl border-border/40 relative backdrop-blur-sm">
-          <CardHeader className="text-center pb-6 pt-8">
-            <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mx-auto mb-4 ring-1 ring-primary/20">
-              <Shield className="w-8 h-8 text-primary" />
-            </div>
-            <CardTitle className="text-xl font-bold">Admin Panel</CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">DropandSell AI Administration</p>
-          </CardHeader>
-          <CardContent className="space-y-4 pb-8">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Username</Label>
-              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter username" className="h-9 text-sm" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Password</Label>
-              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter password" className="h-9 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
-            </div>
-            {loginError && (
-              <div className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2 border border-destructive/10">
-                <XCircle className="w-3.5 h-3.5 shrink-0" />{loginError}
-              </div>
-            )}
-            <Button className="w-full h-9 text-sm font-medium" onClick={handleLogin}>Sign In</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Mobile sidebar overlay */}
-      {mobileSidebarOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 lg:hidden" onClick={() => setMobileSidebarOpen(false)}>
-          <div className="absolute left-0 top-0 bottom-0 w-60" onClick={e => e.stopPropagation()}>
-            {sidebar}
-          </div>
-        </div>
-      )}
-
-      {/* Desktop sidebar */}
-      <div className={cn("hidden lg:block fixed inset-y-0 left-0 z-30 transition-all duration-300", sidebarCollapsed ? "w-16" : "w-60")}>{sidebar}</div>
-
-      {/* Main area */}
-      <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", sidebarCollapsed ? "lg:ml-16" : "lg:ml-60")}>
-        {/* Top bar */}
-        <header className="sticky top-0 z-20 h-14 border-b border-border/30 bg-background/80 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 flex items-center gap-3 px-4 lg:px-6">
-          <button className="lg:hidden h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center" onClick={() => setMobileSidebarOpen(true)}>
-            <Menu className="w-4 h-4" />
-          </button>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-1.5 rounded-full bg-primary" />
-              <h1 className="text-sm font-semibold capitalize">{activeTab}</h1>
-            </div>
-            <Badge variant="secondary" className="text-[9px] px-1.5 h-4 ml-1">
-              v2.0
-            </Badge>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}
-              className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground"
-            >
-              {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </button>
-            <button className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground relative">
-              <Bell className="w-3.5 h-3.5" />
-              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-red-500" />
-            </button>
-            <button className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center text-muted-foreground">
-              <HelpCircle className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </header>
-
-        {/* Content */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center">
+        <h1 className="text-lg font-semibold md:text-2xl">Admin Dashboard</h1>
+      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="w-full">
+        <TabsList className="grid w-full grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="vendors">Vendors</TabsTrigger>
+          <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="support">Support</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview" className="mt-4">
           {/* ===== OVERVIEW ===== */}
-          {activeTab === "overview" && (
-            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                 <KpiCard label="Total Users" value={stats?.users ?? 0} icon={Users} trend={{ up: true, pct: `${stats?.weeklyGrowth || 0}%` }} color="primary" sparklineData={userGrowthData.slice(-7).map(d => d.value)} />
                 <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} subtitle={stats?.pendingOrders > 0 ? `${stats.pendingOrders} pending` : ''} color="amber" sparklineData={dailyOrdersData.slice(-7).map(d => d.value)} />
@@ -551,97 +414,9 @@ export default function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* ===== GET STARTED ===== */}
-          {activeTab === "getstarted" && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" />
-                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="amber" />
-                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
-                <KpiCard label="Pending Orders" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
-              </div>
-
-              <div className="grid lg:grid-cols-2 gap-4">
-                <ChartCard title="Daily Revenue" action={<Badge variant="outline" className="text-[9px]">30 days</Badge>}>
-                  {dailyRevData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={260}>
-                      <AreaChart data={dailyRevData}>
-                        <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/><stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/></linearGradient></defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
-                        <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
-                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                        <Area type="monotone" dataKey="value" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#revGrad)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  ) : <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">No revenue data yet</div>}
-                </ChartCard>
-
-                <ChartCard title="Monthly Revenue">
-                  {monthlyRevData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={monthlyRevData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
-                        <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `$${v}`} />
-                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                        <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="h-[260px] flex items-center justify-center text-sm text-muted-foreground">No monthly data</div>}
-                </ChartCard>
-              </div>
-
-              <div className="grid lg:grid-cols-3 gap-4">
-                <ChartCard title="User Growth">
-                  {userGrowthData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={200}>
-                      <LineChart data={userGrowthData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
-                        <XAxis dataKey="name" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#888" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                        <Line type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No user data yet</div>}
-                </ChartCard>
-
-                <ChartCard title="Daily Orders">
-                  {dailyOrdersData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={dailyOrdersData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.4} />
-                        <XAxis dataKey="name" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#888" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
-                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
-                        <Bar dataKey="value" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No orders data</div>}
-                </ChartCard>
-
-                <ChartCard title="Sales by Marketplace">
-                  {marketplaceData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={200}>
-                      <PieChart>
-                        <Pie data={marketplaceData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} innerRadius={40}>
-                          {marketplaceData.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} formatter={(v: any) => `$${Number(v).toLocaleString()}`} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">No marketplace data</div>}
-                </ChartCard>
-              </div>
-            </div>
-          )}
-
-          {/* ===== USERS ===== */}
-          {activeTab === "users" && (
+          </div>
+        </TabsContent>
+        <TabsContent value="users" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -655,100 +430,76 @@ export default function AdminDashboard() {
               </div>
               <Card className="border-border/40">
                 <CardContent className="p-0">
-                  {!users ? <LoadingRows rows={6} /> : (
-                    <DTable
-                      headers={[
-                        { key: "user", label: "User" },
-                        { key: "email", label: "Email", className: "hidden sm:table-cell" },
-                        { key: "role", label: "Role" },
-                        { key: "status", label: "Status", className: "hidden md:table-cell" },
-                        { key: "plan", label: "Plan", className: "hidden md:table-cell" },
-                        { key: "joined", label: "Joined", className: "hidden lg:table-cell" },
-                        { key: "actions", label: "", className: "text-right" },
-                      ]}
-                      rows={filteredUsers.map((u: any) => ({
-                        key: u.id,
-                        cells: [
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xs font-bold text-primary ring-1 ring-primary/20">
-                              {(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}
-                            </div>
-                            <span className="text-xs font-medium">{u.firstName || u.lastName ? `${u.firstName ?? ''} ${u.lastName ?? ''}` : u.email?.split('@')[0]}</span>
-                          </div>,
-                          <span className="text-xs text-muted-foreground hidden sm:inline">{u.email}</span>,
-                          <Badge variant="outline" className={cn("text-[10px] px-1.5", u.role === 'admin' ? "text-primary border-primary/30 bg-primary/5" : "text-muted-foreground")}>{u.role}</Badge>,
-                          <div className="flex items-center gap-1.5 hidden md:flex"><StatusDot status={u.subscriptionStatus || 'inactive'} /><span className="text-xs text-muted-foreground capitalize">{u.subscriptionStatus || 'inactive'}</span></div>,
-                          <span className="text-xs text-muted-foreground hidden md:inline">{u.subscriptionPlan || 'free'}</span>,
-                          <span className="text-xs text-muted-foreground hidden lg:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</span>,
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" className="h-7 text-[10px] px-2" onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}>
-                              {u.role === "admin" ? "Demote" : "Promote"}
-                            </Button>
-                          </div>,
-                        ]
-                      }))}
-                      empty={{ icon: Users, title: userSearch ? "No matches" : "No users", desc: userSearch ? "Try a different search" : "Register a user to get started" }}
-                    />
+                  {!users ? <LoadingRows rows={6} /> : paginatedUsers.length === 0 ? (
+                    <EmptyState icon={Users} title={userSearch ? "No matches" : "No users"} desc={userSearch ? "Try a different search" : "Register a user to get started"} />
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead className="hidden sm:table-cell">Email</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead className="hidden md:table-cell">Status</TableHead>
+                          <TableHead className="hidden md:table-cell">Plan</TableHead>
+                          <TableHead className="hidden lg:table-cell">Joined</TableHead>
+                          <TableHead><span className="sr-only">Actions</span></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedUsers.map((u: any) => (
+                          <TableRow key={u.id}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xs font-bold text-primary ring-1 ring-primary/20">
+                                  {(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}
+                                </div>
+                                <span>{u.firstName || u.lastName ? `${u.firstName ?? ''} ${u.lastName ?? ''}` : u.email?.split('@')[0]}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell">{u.email}</TableCell>
+                            <TableCell><Badge variant="outline" className={cn(u.role === 'admin' ? "text-primary border-primary/30 bg-primary/5" : "")}>{u.role}</Badge></TableCell>
+                            <TableCell className="hidden md:table-cell"><div className="flex items-center gap-2"><StatusDot status={u.subscriptionStatus || 'inactive'} /><span className="capitalize">{u.subscriptionStatus || 'inactive'}</span></div></TableCell>
+                            <TableCell className="hidden md:table-cell">{u.subscriptionPlan || 'free'}</TableCell>
+                            <TableCell className="hidden lg:table-cell">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}>{u.role === "admin" ? "Demote to User" : "Promote to Admin"}</DropdownMenuItem>
+                                  <DropdownMenuItem>View details</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive">Delete user</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   )}
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* ===== ORDERS ===== */}
-          {activeTab === "orders" && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
-                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} color="amber" />
-                <KpiCard label="Pending" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
-                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" />
-                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
-              </div>
-              <div className="flex items-center gap-2 mb-4">
-                <Select value={orderFilter} onValueChange={setOrderFilter}>
-                  <SelectTrigger className="h-9 w-36 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Orders</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="processing">Processing</SelectItem>
-                    <SelectItem value="shipped">Shipped</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Badge variant="secondary" className="text-[11px] h-7 px-2.5">{recentOrders?.length ?? 0} orders</Badge>
-              </div>
-              <Card className="border-border/40">
-                <CardContent className="p-0">
-                  {!recentOrders ? <LoadingRows rows={5} /> : (
-                    <DTable
-                      headers={[
-                        { key: "customer", label: "Customer" },
-                        { key: "amount", label: "Amount" },
-                        { key: "status", label: "Status" },
-                        { key: "tracking", label: "Tracking", className: "hidden sm:table-cell" },
-                        { key: "date", label: "Date", className: "hidden md:table-cell" },
-                      ]}
-                      rows={recentOrders.filter((o: any) => orderFilter === "all" || o.status === orderFilter).map((o: any) => ({
-                        key: o.id,
-                        cells: [
-                          <span className="text-xs font-medium">{o.customerName || '—'}</span>,
-                          <span className="text-xs font-medium tabular-nums">${Number(o.totalAmount || 0).toFixed(2)}</span>,
-                          <Badge variant="outline" className={cn("text-[10px] px-1.5", o.status === 'pending' ? "text-amber-600 border-amber-200" : o.status === 'shipped' ? "text-blue-600 border-blue-200" : o.status === 'delivered' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{o.status}</Badge>,
-                          <span className="hidden sm:inline"><Badge variant="outline" className={cn("text-[10px] px-1.5", o.trackingStatus === 'delivered' ? "text-emerald-600" : o.trackingStatus === 'in_transit' ? "text-blue-600" : "text-muted-foreground")}>{o.trackingStatus || 'pending'}</Badge></span>,
-                          <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{o.createdAt ? new Date(o.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}</span>,
-                        ]
-                      }))}
-                      empty={{ icon: ShoppingCart, title: "No orders", desc: orderFilter !== "all" ? `No orders with status "${orderFilter}"` : "Orders appear here when customers purchase" }}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* ===== VENDORS ===== */}
-          {activeTab === "vendors" && (
+              {totalPages > 1 && (
+                <CardFooter className="flex items-center justify-between border-t px-6 py-3">
+                  <div className="text-xs text-muted-foreground">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardFooter>
+              )}
+            </div>          
+        </TabsContent>
+        <TabsContent value="vendors" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
                 <KpiCard label="Total Vendors" value={stats?.vendors ?? 0} icon={Boxes} color="indigo" />
@@ -758,32 +509,66 @@ export default function AdminDashboard() {
               </div>
               <Card className="border-border/40">
                 <CardContent className="p-0">
-                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? <EmptyState icon={Boxes} title="No vendors" desc="Add vendors from the Vendors page" /> : (
-                    <div className="divide-y divide-border/10">
-                      {vendorOverview.vendors.map((v: any) => (
-                        <div key={v.id} className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors">
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0", v.healthScore >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" : v.healthScore >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-muted")}>
-                              <Store className={cn("w-5 h-5", v.healthScore >= 4 ? "text-emerald-600" : v.healthScore >= 3 ? "text-amber-600" : "text-muted-foreground")} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{v.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {v.totalOrdersFulfilled || 0} fulfilled {v.stockUpdateReliability ? `· ${v.stockUpdateReliability}` : ''}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0">
-                            {v.healthScore > 0 && <span className="text-xs tabular-nums text-amber-500">{'★'.repeat(v.healthScore)}</span>}
-                            <Badge variant="outline" className={cn("text-[10px]", v.status === 'active' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{v.status}</Badge>
-                            {v.lastHealthCheck && <span className="text-[10px] text-muted-foreground/50 hidden lg:inline">{new Date(v.lastHealthCheck).toLocaleDateString()}</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? (
+                    <EmptyState icon={Boxes} title="No vendors" desc="Add vendors from the Vendors page" />
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Health</TableHead>
+                          <TableHead>Orders Fulfilled</TableHead>
+                          <TableHead>Last Check</TableHead>
+                          <TableHead><span className="sr-only">Actions</span></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedVendors.map((v: any) => (
+                          <TableRow key={v.id}>
+                            <TableCell className="font-medium">{v.name}</TableCell>
+                            <TableCell><Badge variant={v.status === 'active' ? 'default' : 'secondary'}>{v.status}</Badge></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <span className="text-amber-500">{'★'.repeat(v.healthScore || 0)}</span>
+                                <span className="text-muted-foreground/30">{'☆'.repeat(5 - (v.healthScore || 0))}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>{v.totalOrdersFulfilled || 0}</TableCell>
+                            <TableCell>{v.lastHealthCheck ? new Date(v.lastHealthCheck).toLocaleDateString() : '—'}</TableCell>
+                            <TableCell>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem>View Details</DropdownMenuItem>
+                                  <DropdownMenuItem>Edit Vendor</DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   )}
                 </CardContent>
               </Card>
+              {totalVendorPages > 1 && (
+                <CardFooter className="flex items-center justify-between border-t px-6 py-3">
+                  <div className="text-xs text-muted-foreground">
+                    Page {vendorCurrentPage} of {totalVendorPages}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setVendorCurrentPage(p => Math.max(1, p - 1))} disabled={vendorCurrentPage === 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => setVendorCurrentPage(p => Math.min(totalVendorPages, p + 1))} disabled={vendorCurrentPage === totalVendorPages}>
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardFooter>
+              )}
 
               {/* Global Vendors Management */}
               <div className="mt-6">
@@ -801,11 +586,9 @@ export default function AdminDashboard() {
                 </div>
                 <GlobalVendorList />
               </div>
-            </div>
-          )}
-
-          {/* ===== SUBSCRIBERS ===== */}
-          {activeTab === "subscribers" && (
+            </div>          
+        </TabsContent>
+        <TabsContent value="subscribers" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
                 <KpiCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="rose" />
@@ -841,11 +624,9 @@ export default function AdminDashboard() {
                   )}
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* ===== API INTEGRATIONS ===== */}
-          {activeTab === "integrations" && (
+            </div>          
+        </TabsContent>
+        <TabsContent value="integrations" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections. These credentials are used by all client stores — end users never need to enter API keys manually.</p>
@@ -961,11 +742,9 @@ export default function AdminDashboard() {
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {/* ===== SYSTEM ===== */}
-          {activeTab === "system" && (
+            </div>          
+        </TabsContent>
+        <TabsContent value="system" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="grid sm:grid-cols-2 gap-4">
                 <SectionCard title="Server" icon={Server}>
@@ -1029,29 +808,25 @@ export default function AdminDashboard() {
                   </div>
                 </SectionCard>
               </div>
-            </div>
-          )}
-
-          {/* ===== SUPPORT ===== */}
-          {activeTab === "support" && (
+            </div>          
+        </TabsContent>
+        <TabsContent value="support" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex items-center gap-2 mb-4">
                 <Button variant="default" size="sm" className="h-9 text-xs gap-1.5"><MessageSquare className="w-3.5 h-3.5" />All Conversations</Button>
                 <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Flagged</Button>
                 <Badge variant="secondary" className="text-[11px] h-7 px-2.5 ml-auto">3 open</Badge>
               </div>
-              <Card className="border-border/40">
+              <Card>
                 <CardContent className="p-4 sm:p-5">
                   <EmptyState icon={MessageSquare} title="Support Inbox" desc="Customer support messages will appear here. Configure email integration to receive tickets." />
                 </CardContent>
               </Card>
-            </div>
-          )}
-
-          {/* ===== SETTINGS ===== */}
-          {activeTab === "settings" && (
+            </div>          
+        </TabsContent>
+        <TabsContent value="settings" className="mt-4">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
-              <Card className="border-border/40">
+              <Card>
                 <CardHeader><CardTitle className="text-sm font-semibold">Site Settings</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
@@ -1070,7 +845,7 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
 
-              <Card className="border-border/40">
+              <Card>
                 <CardHeader><CardTitle className="text-sm font-semibold">Theme</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex gap-3">
@@ -1082,10 +857,9 @@ export default function AdminDashboard() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
-        </main>
-      </div>
+            </div>          
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -1350,16 +1124,6 @@ function GlobalVendorList() {
               <div className="space-y-1.5">
                 <Label>Country</Label>
                 <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. China" />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Category</Label>
-                <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="wholesale / manufacturer" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Tags</Label>
-                <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="comma-separated" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">

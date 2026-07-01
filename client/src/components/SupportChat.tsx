@@ -196,7 +196,7 @@ export function SupportChat() {
       )}
 
       {isOpen && (
-        <Card className="fixed bottom-6 right-6 w-[380px] h-[500px] shadow-2xl z-50 flex flex-col" data-testid="chat-widget">
+        <Card className="fixed bottom-6 right-6 w-[380px] h-[calc(100vh-4rem)] max-h-[540px] shadow-2xl z-50 flex flex-col" data-testid="chat-widget">
           <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 py-3 px-4 border-b bg-primary text-primary-foreground rounded-t-lg">
             <CardTitle className="text-base flex items-center gap-2">
               <Bot className="h-5 w-5" />
@@ -208,7 +208,7 @@ export function SupportChat() {
                   variant="ghost"
                   size="icon"
                   onClick={startNewChat}
-                  className="h-8 w-8 text-primary-foreground hover:text-primary-foreground hover:bg-primary-foreground/20"
+                  className="h-8 w-8 text-primary-foreground hover:bg-primary/80"
                   title="New chat"
                 >
                   <Plus className="h-4 w-4" />
@@ -218,7 +218,7 @@ export function SupportChat() {
                 variant="ghost"
                 size="icon"
                 onClick={() => setIsOpen(false)}
-                className="h-8 w-8 text-primary-foreground hover:text-primary-foreground hover:bg-primary-foreground/20"
+                className="h-8 w-8 text-primary-foreground hover:bg-primary/80"
                 data-testid="button-close-chat"
               >
                 <X className="h-4 w-4" />
@@ -226,7 +226,7 @@ export function SupportChat() {
             </div>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
-            <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+            <ScrollArea className="flex-1" ref={scrollRef}>
               {loadingDb ? (
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -239,7 +239,7 @@ export function SupportChat() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 p-4">
                   {messages.map((message, index) => (
                     <div
                       key={index}
@@ -280,7 +280,7 @@ export function SupportChat() {
                 </div>
               )}
             </ScrollArea>
-            <div className="p-3 border-t">
+            <div className="p-4 border-t bg-background">
               <div className="flex gap-2">
                 <Input
                   value={input}

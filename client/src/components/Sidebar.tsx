@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, User as AuthUser } from "@/hooks/use-auth";
 import { 
   LayoutDashboard, 
   Store, 
@@ -26,110 +26,141 @@ import {
   List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+
+interface NavLink {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  featured?: boolean;
+}
+
+interface NavGroup {
+  title: string;
+  links: NavLink[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    title: "Store",
+    links: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/shipping", label: "Fulfillment", icon: Truck },
+      { href: "/customers", label: "Customers", icon: Users },
+    ],
+  },
+  {
+    title: "Tools",
+    links: [
+      { href: "/analytics", label: "Analytics", icon: BarChart3 },
+      { href: "/stores", label: "Stores", icon: Store },
+      { href: "/vendors", label: "Vendors", icon: Users },
+      { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
+      { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
+      { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+    ],
+  },
+  {
+    title: "Account",
+    links: [
+      { href: "/wallet", label: "Wallet", icon: Wallet },
+      { href: "/subscription", label: "Subscription", icon: CreditCard },
+      { href: "/referrals", label: "Referrals", icon: Gift },
+      { href: "/profile", label: "Profile", icon: User },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
+  {
+    title: "Support",
+    links: [
+      { href: "/manual", label: "Manual", icon: BookOpen },
+      { href: "/faq", label: "FAQ", icon: HelpCircle },
+      { href: "/policies", label: "Policies", icon: Shield },
+    ],
+  },
+];
+
+const adminLinks: NavLink[] = [
+    { href: "/subscribers-db", label: "Subscriber's DB", icon: Database },
+    { href: "/global-vaso", label: "Global VASO", icon: Globe },
+];
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
 
-  const links = [
-    { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/getstarted", label: "Getting Started", icon: Zap, featured: true },
-    { href: "/orders", label: "Orders", icon: ShoppingCart },
-    { href: "/shipping", label: "Fulfillment", icon: Truck },
-    { href: "/stores", label: "Stores", icon: Store },
-    { href: "/vendors", label: "Vendors", icon: Users },
-    { href: "/inventory", label: "Inventory", icon: Package },
-    { href: "/analytics", label: "Analytics", icon: BarChart3 },
-    { href: "/manual", label: "Manual", icon: BookOpen },
-    { href: "/wallet", label: "Wallet", icon: Wallet },
-    { href: "/referrals", label: "Referrals", icon: Gift },
-    { href: "/subscription", label: "Subscription", icon: CreditCard },
-    { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
-    { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
-    { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
-    { href: "/profile", label: "Profile", icon: User },
-    { href: "/faq", label: "FAQ", icon: HelpCircle },
-    { href: "/policies", label: "Policies", icon: Shield },
-    { href: "/settings", label: "Settings", icon: Settings },
-    { href: "/subscribers-db", label: "Subscriber's DB", icon: Database },
-    { href: "/global-vaso", label: "Global VASO", icon: Globe },
-  ];
+  const renderLink = (link: NavLink, isMobile: boolean = false) => {
+    const Icon = link.icon;
+    const isActive = location === link.href;
+    const LinkContent = (
+      <a
+        className={cn(
+          "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+          isActive
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          link.featured && "text-primary font-semibold"
+        )}
+      >
+        <Icon className="h-4 w-4" />
+        <span>{link.label}</span>
+        {link.featured && !isActive && (
+          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-primary/80">
+            Start
+          </span>
+        )}
+      </a>
+    );
 
-  const NavContent = () => (
-    <div className="flex flex-col h-full bg-card border-r border-border/50">
-      <div className="p-6 border-b border-border/50">
-        <div className="flex items-center gap-2">
+    if (isMobile) {
+      return (
+        <SheetClose asChild key={link.href}>
+          <Link href={link.href}>{LinkContent}</Link>
+        </SheetClose>
+      );
+    }
+
+    return (
+      <Link href={link.href} key={link.href}>
+        {LinkContent}
+      </Link>
+    );
+  };
+
+  const NavContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <div className="flex h-full flex-col bg-card text-card-foreground">
+      <div className="flex h-16 items-center border-b px-6">
+        <Link href="/" className="flex items-center gap-2 font-semibold">
           <PackageOpen className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-bold font-display bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+          <span className="text-lg font-display font-bold">
             DropandSell AI
-          </h1>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">Automation Platform</p>
+          </span>
+        </Link>
       </div>
-
-      <div className="flex-1 py-6 px-4 space-y-1">
-        {links.map((link) => {
-          const Icon = link.icon;
-          const isActive = location === link.href;
-          const isFeatured = (link as any).featured;
-          return (
-            <Link key={link.href} href={link.href}>
-              <div
-                className={cn(
-                  "flex items-center gap-3 px-4 py-3.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer group min-h-[44px]",
-                  isFeatured && !isActive && "bg-gradient-to-r from-primary/5 to-transparent border border-primary/10",
-                  isFeatured && isActive && "bg-gradient-to-r from-primary/15 to-primary/5 border border-primary/20",
-                  isActive && !isFeatured
-                    ? "bg-primary/10 text-primary"
-                    : !isFeatured && "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <div className={cn(
-                  "w-5 h-5 shrink-0 flex items-center justify-center rounded-md transition-all duration-200",
-                  isFeatured ? "bg-primary/10 text-primary" : "",
-                  !isFeatured && !isActive && "text-muted-foreground group-hover:text-foreground"
-                )}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <span className={cn("truncate", isFeatured && "text-foreground font-semibold")}>{link.label}</span>
-                {isFeatured && !isActive && (
-                  <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-primary/70">Start</span>
-                )}
-                {(link as any).badge > 0 && (
-                  <Badge className="ml-auto h-5 min-w-5 flex items-center justify-center text-xs" variant="default">
-                    {(link as any).badge}
-                  </Badge>
-                )}
-              </div>
-            </Link>
-          );
-        })}
+      <div className="flex-1 overflow-y-auto">
+        <nav className="grid items-start gap-4 p-4 text-sm font-medium">
+          {navGroups.map((group) => (
+            <div key={group.title} className="space-y-1">
+              <h3 className="px-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+                {group.title}
+              </h3>
+              {group.links.map(link => renderLink(link, isMobile))}
+            </div>
+          ))}
+          {user?.role === 'admin' && (
+            <div className="space-y-1">
+              <h3 className="px-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+                Admin
+              </h3>
+              {adminLinks.map(link => renderLink(link, isMobile))}
+            </div>
+          )}
+        </nav>
       </div>
-
-      <div className="p-4 border-t border-border/50">
-        <div className="flex items-center gap-3 px-4 py-3.5 mb-2 min-h-[44px]">
-          <Avatar className="h-10 w-10 md:h-9 md:w-9 border border-border shrink-0">
-            <AvatarImage src={user?.profileImageUrl ?? undefined} />
-            <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user?.firstName} {user?.lastName}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-          </div>
-        </div>
-        <Button 
-          variant="outline" 
-          className="w-full justify-start gap-2 text-muted-foreground hover:text-destructive"
-          onClick={() => logout()}
-        >
-          <LogOut className="w-4 h-4" />
-          Sign Out
-        </Button>
-      </div>
+      <UserMenu user={user} onLogout={logout} />
     </div>
   );
 
@@ -139,20 +170,42 @@ export function Sidebar() {
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon">
+            <Button variant="outline" size="icon" className="shrink-0">
               <Menu className="w-5 h-5" />
+              <span className="sr-only">Toggle navigation menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="p-0 w-72">
-            <NavContent />
+          <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
+            <NavContent isMobile={true} />
           </SheetContent>
         </Sheet>
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden lg:block w-72 fixed inset-y-0 left-0 z-30">
+      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-10 lg:block w-[280px] border-r bg-card">
         <NavContent />
       </div>
     </>
+  );
+}
+
+function UserMenu({ user, onLogout }: { user: AuthUser | null, onLogout: () => void }) {
+  return (
+    <div className="mt-auto border-t p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <Avatar className="h-9 w-9 border">
+          <AvatarImage src={user?.profileImageUrl ?? undefined} alt="User avatar" />
+          <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{user?.firstName} {user?.lastName}</p>
+          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+        </div>
+      </div>
+      <Button variant="outline" className="w-full justify-start gap-2" onClick={onLogout}>
+        <LogOut className="h-4 w-4" />
+        <span>Sign Out</span>
+      </Button>
+    </div>
   );
 }

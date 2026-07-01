@@ -39,32 +39,6 @@ import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
 
-function AdminLayout({ component: Component }: { component: React.ComponentType }) {
-  const { isAuthenticated, isLoading, user } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // A real admin route should verify the user's role here.
-  // For now, we'll just check for authentication.
-  if (!isAuthenticated) {
-    return <Login />;
-  }
-
-  // Here you could have a dedicated AdminSidebar and a different layout
-  return (
-    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-foreground">
-      {/* <AdminSidebar /> */}
-      <main className="flex-1 p-6 lg:p-10"><Component /></main>
-    </div>
-  );
-}
-
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   useReferralHandler();
@@ -79,6 +53,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (!isAuthenticated) {
     return <Login />;
+  }
+
+  // For admin routes, check the user's role.
+  if (Component === AdminDashboard && user?.role !== 'admin') {
+    return <Redirect to="/" />;
   }
 
   // Check if email is verified
@@ -97,13 +76,13 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
+    <div className="min-h-screen w-full bg-muted/40 font-body text-foreground selection:bg-primary/20">
       <Sidebar />
-      <main className="flex-1 lg:ml-72 p-6 lg:p-10 transition-all duration-300">
+      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14 lg:pl-72">
         <ErrorBoundary>
-          <Component />
+          <main className="flex-1 p-4 sm:px-6 sm:py-0 md:p-8"><Component /></main>
         </ErrorBoundary>
-      </main>
+      </div>
     </div>
   );
 }
@@ -129,9 +108,9 @@ function PublicPolicyRoute({ component: Component }: { component: React.Componen
 
   if (user?.emailVerified && user?.policiesAccepted && user?.onboardingCompleted) {
     return (
-      <div className="flex min-h-screen bg-background text-foreground font-body selection:bg-primary/20">
+      <div className="min-h-screen w-full bg-muted/40 font-body text-foreground selection:bg-primary/20">
         <Sidebar />
-      <main className="flex-1 lg:ml-72 p-4 md:p-6 lg:p-10 transition-all duration-300">
+        <main className="flex-1 p-4 sm:px-6 sm:py-0 md:p-8 lg:ml-72">
           <Component />
         </main>
       </div>
@@ -179,9 +158,9 @@ function Router() {
       <Route path="/referrals" component={() => <ProtectedRoute component={Referrals} />} />
       <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
       <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
-      <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />
-      <Route path="/admin/support" component={() => <AdminLayout component={AdminSupport} />} />
-      <Route path="/admin" component={() => <AdminLayout component={AdminDashboard} />} />
+      <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />      
+      <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
+      <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>
