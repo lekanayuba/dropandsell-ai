@@ -21,8 +21,6 @@ import {
   BookOpen,
   Lightbulb,
   User,
-  Database,
-  Globe,
   List,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -83,10 +81,6 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const adminLinks: NavLink[] = [
-    { href: "/subscribers-db", label: "Subscriber's DB", icon: Database },
-    { href: "/global-vaso", label: "Global VASO", icon: Globe },
-];
 
 export function Sidebar() {
   const [location] = useLocation();
@@ -150,14 +144,7 @@ export function Sidebar() {
               {group.links.map(link => renderLink(link, isMobile))}
             </div>
           ))}
-          {user?.role === 'admin' && (
-            <div className="space-y-1">
-              <h3 className="px-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                Admin
-              </h3>
-              {adminLinks.map(link => renderLink(link, isMobile))}
-            </div>
-          )}
+
         </nav>
       </div>
       <UserMenu user={user} onLogout={logout} />
