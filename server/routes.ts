@@ -191,6 +191,12 @@ export async function registerRoutes(
         return res.status(401).json({ message: 'Invalid email or password' });
       }
       
+      // Auto-verify admin users
+      if (user.role === 'admin' && !user.emailVerified) {
+        await db.update(users).set({ emailVerified: new Date() }).where(eq(users.id, user.id));
+        user.emailVerified = new Date();
+      }
+
       // Set session
       (req.session as any).userId = user.id;
       
