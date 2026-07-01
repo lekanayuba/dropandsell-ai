@@ -313,6 +313,38 @@ export async function registerRoutes(
     }
   });
 
+  // Public tracking endpoint - no auth required, clients can track their orders
+  app.get('/api/track/:trackingNumber', async (req, res) => {
+    try {
+      const { trackingNumber } = req.params;
+      if (!trackingNumber) return res.status(400).json({ message: 'Tracking number is required' });
+
+      const result = await pool.query(
+        `SELECT id, tracking_number, tracking_status, carrier, tracking_url, tracking_updated_at, customer_name, status, created_at, updated_at
+         FROM orders WHERE tracking_number = $1 LIMIT 1`,
+        [trackingNumber]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).json({ message: 'No order found with this tracking number' });
+      }
+
+      const o = result.rows[0];
+      res.json({
+        trackingNumber: o.tracking_number,
+        carrier: o.carrier,
+        status: o.tracking_status,
+        trackingUrl: o.tracking_url,
+        lastUpdated: o.tracking_updated_at,
+        customerName: o.customer_name,
+        orderDate: o.created_at,
+      });
+    } catch (err: any) {
+      console.error('[Track] Error:', err);
+      res.status(500).json({ message: err.message || 'Failed to look up tracking' });
+    }
+  });
+
   // Protected router for API routes
   const protectedApi: Router = express.Router();
   protectedApi.use(isAuthenticated);

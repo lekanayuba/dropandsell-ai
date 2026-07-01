@@ -44,6 +44,7 @@ import Suggestions from "@/pages/Suggestions";
 import ProfilePage from "@/pages/Profile";
 import SubscribersDB from "@/pages/SubscribersDB";
 import GlobalVASO from "@/pages/GlobalVASO";
+import TrackOrder from "@/pages/TrackOrder";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -144,6 +145,7 @@ function Router() {
       <Route path="/payment-setup" component={() => <PaymentSetup />} />
       <Route path="/payment-success" component={() => <PaymentSuccess />} />
       <Route path="/install-app" component={() => <InstallApp />} />
+      <Route path="/track" component={() => <TrackOrder />} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/analytics" component={() => <Redirect to="/getstarted" />} />
       <Route path="/getstarted" component={() => <ProtectedRoute component={Getstarted} />} />
