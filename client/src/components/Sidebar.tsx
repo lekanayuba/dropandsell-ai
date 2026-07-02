@@ -23,7 +23,6 @@ import {
   User,
   List,
   Rocket,
-  DatabaseZap,
   Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,7 +60,6 @@ const baseLinks: NavLink[] = [
 ];
 
 const adminLinks: NavLink[] = [
-  { href: "/subscribers-db", label: "Subscribers DB", icon: DatabaseZap },
   { href: "/global-vaso", label: "Global VeRO", icon: Shield },
 ];
 
