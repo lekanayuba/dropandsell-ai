@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Send, Loader2, Headset, User, Mail, Phone, CheckCircle2 } from "lucide-react";
+import { MessageSquare, Send, Loader2, Headset, User, Mail, Phone, CheckCircle2, Bell, BellOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { SupportConversation, SupportMessage } from "@shared/schema";
 
@@ -29,10 +29,84 @@ export default function AdminSupport() {
   const [reply, setReply] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("dropandsell_support_sound") !== "off";
+  });
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const prevUnreadSigRef = useRef<Set<string> | null>(null);
+
+  // Play a short two-tone chime using the Web Audio API (no audio file needed).
+  const playChime = () => {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!Ctx) return;
+        audioCtxRef.current = new Ctx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+      const now = ctx.currentTime;
+      const notes = [880, 1174.66];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = now + i * 0.16;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.25, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.3);
+      });
+    } catch {
+      // Audio can be blocked before the admin interacts with the page — ignore.
+    }
+  };
+
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem("dropandsell_support_sound", next ? "on" : "off");
+      // Play a confirmation chime when turning it on so the admin hears the alert.
+      if (next) playChime();
+      return next;
+    });
+  };
+
+  // Release the audio context when leaving the page.
+  useEffect(() => {
+    return () => {
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+    };
+  }, []);
+
   const { data: conversations, isLoading } = useQuery<ConversationListItem[]>({
     queryKey: ["/api/support/admin/conversations"],
     refetchInterval: 8000,
   });
+
+  // Detect brand-new customer messages and play an alert sound.
+  useEffect(() => {
+    if (!conversations) return;
+    const currentSig = new Set(
+      conversations
+        .filter((c) => c.unreadForAdmin)
+        .map((c) => `${c.id}:${c.lastMessageAt ?? ""}`)
+    );
+    const prev = prevUnreadSigRef.current;
+    if (prev !== null) {
+      let hasNew = false;
+      currentSig.forEach((sig) => {
+        if (!prev.has(sig)) hasNew = true;
+      });
+      if (hasNew && soundEnabled) playChime();
+    }
+    prevUnreadSigRef.current = currentSig;
+  }, [conversations, soundEnabled]);
 
   const { data: thread } = useQuery<{ conversation: SupportConversation; messages: SupportMessage[] }>({
     queryKey: ["/api/support/admin/conversations", selectedId],
@@ -84,10 +158,21 @@ export default function AdminSupport() {
         <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center">
           <MessageSquare className="w-6 h-6 text-primary" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight" data-testid="text-support-title">Live Support</h1>
           <p className="text-muted-foreground text-sm">Reply to customer chat messages in real time.</p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleSound}
+          className="flex-shrink-0"
+          title={soundEnabled ? "Sound alerts on — click to mute" : "Sound alerts off — click to enable"}
+          data-testid="button-toggle-sound"
+        >
+          {soundEnabled ? <Bell className="h-4 w-4 mr-1.5" /> : <BellOff className="h-4 w-4 mr-1.5" />}
+          {soundEnabled ? "Sound on" : "Sound off"}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-220px)] min-h-[500px]">
