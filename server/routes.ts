@@ -3778,6 +3778,30 @@ export async function registerRoutes(
       }
       const updated = await storage.updateOrder(orderId, userId, statusUpdate);
 
+      // Register the parcel with the live tracking provider (17track) so status is monitored.
+      try {
+        const { registerTracking } = await import('./tracking17track');
+        const num = finalTrackingNumber.trim();
+        const reg = await registerTracking([num]);
+        const rejMsg = reg.rejected[num];
+        // "already exists" means the parcel is already being watched — still counts as registered.
+        const alreadyWatched = !!rejMsg && /exist|already/i.test(rejMsg);
+        const registered = reg.accepted.includes(num) || alreadyWatched;
+        await storage.updateOrder(orderId, userId, {
+          trackingInfo: {
+            provider: '17track',
+            status: 'Pending',
+            statusLabel: 'Pending',
+            tone: 'gray',
+            registered,
+            registerError: registered ? null : (rejMsg || 'Could not register with tracking provider'),
+            checkedAt: new Date().toISOString(),
+          },
+        } as any);
+      } catch (regErr: any) {
+        console.error('[Tracking] 17track register failed:', regErr.message);
+      }
+
       let syncSkippedReason: string | null = null;
 
       if (!order.externalOrderId) {
@@ -3877,6 +3901,88 @@ export async function registerRoutes(
 
       res.json({ ...updated, ebaySynced, ebayError, ebayCarrierCode, autoDetected, syncSkippedReason });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Fetch the latest live delivery status for one order from the tracking provider (17track).
+  protectedApi.post('/orders/:id/refresh-tracking', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.id);
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+      if (!order.trackingNumber) {
+        return res.status(400).json({ message: 'This order has no tracking number yet' });
+      }
+
+      const { getTrackInfo, registerTracking, isDeliveredStatus } = await import('./tracking17track');
+      const num = order.trackingNumber.trim();
+      let info = (await getTrackInfo([num])).get(num);
+
+      // If the number was never registered with the provider, register it now and retry.
+      if (info && info.notFound) {
+        await registerTracking([num]);
+        info = (await getTrackInfo([num])).get(num);
+      }
+
+      if (!info) {
+        return res.status(502).json({ message: 'Tracking provider returned no data' });
+      }
+
+      const updatePayload: any = { trackingInfo: info };
+      // Auto-advance the order status when the courier confirms delivery.
+      if (isDeliveredStatus(info.status) && order.status !== 'delivered' && order.status !== 'cancelled') {
+        updatePayload.status = 'delivered';
+      }
+      const updated = await storage.updateOrder(orderId, userId, updatePayload);
+      res.json({ ...updated, trackingInfo: info });
+    } catch (err: any) {
+      console.error('[Tracking] refresh-tracking failed:', err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Refresh live delivery status for all of the user's active (shipped, not-yet-delivered) orders.
+  protectedApi.post('/orders/refresh-all-tracking', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const all = await storage.getOrders(userId);
+      const active = all.filter((o) =>
+        o.trackingNumber && o.status !== 'delivered' && o.status !== 'cancelled'
+      );
+      if (active.length === 0) {
+        return res.json({ checked: 0, delivered: 0, updated: 0 });
+      }
+
+      const { getTrackInfo, registerTracking, isDeliveredStatus } = await import('./tracking17track');
+      const numbers = active.map((o) => (o.trackingNumber || '').trim()).filter(Boolean);
+
+      // Fetch first; only register (quota-consuming) the parcels the provider isn't watching yet.
+      const results = await getTrackInfo(numbers);
+      const unregistered = numbers.filter((n) => results.get(n)?.notFound);
+      if (unregistered.length > 0) {
+        await registerTracking(unregistered);
+        const retry = await getTrackInfo(unregistered);
+        retry.forEach((v, k) => results.set(k, v));
+      }
+
+      let deliveredCount = 0;
+      let updatedCount = 0;
+      for (const o of active) {
+        const info = results.get((o.trackingNumber || '').trim());
+        if (!info) continue;
+        const payload: any = { trackingInfo: info };
+        if (isDeliveredStatus(info.status) && o.status !== 'delivered') {
+          payload.status = 'delivered';
+          deliveredCount++;
+        }
+        await storage.updateOrder(o.id, userId, payload);
+        updatedCount++;
+      }
+      res.json({ checked: active.length, delivered: deliveredCount, updated: updatedCount });
+    } catch (err: any) {
+      console.error('[Tracking] refresh-all-tracking failed:', err.message);
       res.status(500).json({ message: err.message });
     }
   });
@@ -13947,6 +14053,9 @@ Return only the description text, no additional formatting.`;
 
   const { startReferralCommissionScheduler } = await import('./referralCommissionScheduler');
   startReferralCommissionScheduler();
+
+  const { startTrackingStatusScheduler } = await import('./trackingScheduler');
+  startTrackingStatusScheduler();
 
   // ---- Vendor price-increase monitor (every 15 minutes) ----
   // Scans every product (across every user) that has a vendor sourceUrl, scrapes the

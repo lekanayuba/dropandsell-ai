@@ -85,6 +85,26 @@ function TrackingPreview({ trackingNumber, carrier }: { trackingNumber: string; 
   );
 }
 
+const TRACKING_TONE_CLASSES: Record<string, string> = {
+  green: 'bg-emerald-500/10 text-emerald-700 border-emerald-300',
+  blue: 'bg-blue-500/10 text-blue-600 border-blue-200',
+  indigo: 'bg-indigo-500/10 text-indigo-600 border-indigo-200',
+  purple: 'bg-purple-500/10 text-purple-600 border-purple-200',
+  yellow: 'bg-yellow-500/10 text-yellow-600 border-yellow-200',
+  red: 'bg-red-500/10 text-red-600 border-red-200',
+  gray: 'bg-gray-100 text-gray-600 border-gray-200',
+};
+
+function LiveTrackingBadge({ info }: { info: any }) {
+  if (!info || !info.statusLabel) return null;
+  const tone = TRACKING_TONE_CLASSES[info.tone] || TRACKING_TONE_CLASSES.gray;
+  return (
+    <Badge variant="outline" className={`${tone} text-[10px]`} data-testid="badge-live-tracking">
+      {info.statusLabel}
+    </Badge>
+  );
+}
+
 export default function Orders() {
   const { toast } = useToast();
   const { format: fc } = useCurrency();
@@ -337,6 +357,37 @@ export default function Orders() {
     },
   });
 
+  const refreshTracking = useMutation({
+    mutationFn: async (orderId: number) => {
+      const res = await apiRequest('POST', `/api/orders/${orderId}/refresh-tracking`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/fulfilled-orders'] });
+      const label = data?.trackingInfo?.statusLabel || 'Updated';
+      toast({ title: "Status Updated", description: `Latest status: ${label}` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const refreshAllTracking = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/orders/refresh-all-tracking');
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/fulfilled-orders'] });
+      toast({ title: "Tracking Refreshed", description: `Checked ${data.checked} parcel(s); ${data.delivered} newly delivered.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
   const markAllDelivered = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('POST', '/api/admin/mark-all-delivered');
@@ -541,6 +592,20 @@ export default function Orders() {
               <RefreshCw className="w-4 h-4 mr-2 text-blue-500" />
             )}
             {syncEbayOrders.isPending ? "Syncing..." : "Sync eBay"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshAllTracking.mutate()}
+            disabled={refreshAllTracking.isPending}
+            data-testid="button-refresh-all-tracking"
+          >
+            {refreshAllTracking.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Truck className="w-4 h-4 mr-2 text-emerald-500" />
+            )}
+            {refreshAllTracking.isPending ? "Checking..." : "Refresh Tracking"}
           </Button>
           <Button
             variant="outline"
@@ -957,6 +1022,11 @@ export default function Orders() {
                           }>
                             {order.status === 'delivered' ? 'Delivered' : order.status}
                           </Badge>
+                          {(order as any).trackingInfo && (order as any).trackingInfo.statusLabel && order.status !== 'delivered' && (
+                            <div className="mt-1">
+                              <LiveTrackingBadge info={(order as any).trackingInfo} />
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={
@@ -1105,10 +1175,42 @@ export default function Orders() {
                                 </h4>
                                 <div className="text-sm space-y-2">
                                   {order.trackingNumber ? (
-                                    <>
+                                    <div onClick={(e) => e.stopPropagation()} className="space-y-2">
                                       <p>Tracking: <span className="font-mono">{order.trackingNumber}</span></p>
                                       <p>Carrier: {order.carrier}</p>
-                                    </>
+                                      {(order as any).trackingInfo?.statusLabel && (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-muted-foreground text-xs">Live status:</span>
+                                          <LiveTrackingBadge info={(order as any).trackingInfo} />
+                                        </div>
+                                      )}
+                                      {(order as any).trackingInfo?.lastEvent && (
+                                        <p className="text-xs text-muted-foreground">
+                                          {(order as any).trackingInfo.lastEvent}
+                                          {(order as any).trackingInfo.lastLocation ? ` — ${(order as any).trackingInfo.lastLocation}` : ''}
+                                        </p>
+                                      )}
+                                      {(order as any).trackingInfo?.checkedAt && (
+                                        <p className="text-[10px] text-muted-foreground">
+                                          Checked {new Date((order as any).trackingInfo.checkedAt).toLocaleString()}
+                                        </p>
+                                      )}
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs w-full"
+                                        disabled={refreshTracking.isPending}
+                                        onClick={() => refreshTracking.mutate(order.id)}
+                                        data-testid={`button-refresh-tracking-${order.id}`}
+                                      >
+                                        {refreshTracking.isPending ? (
+                                          <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                        ) : (
+                                          <RefreshCw className="w-3 h-3 mr-1" />
+                                        )}
+                                        Refresh Status
+                                      </Button>
+                                    </div>
                                   ) : (
                                     <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                                       <p className="text-muted-foreground text-xs mb-2">No tracking information yet</p>

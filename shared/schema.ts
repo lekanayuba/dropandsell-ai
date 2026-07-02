@@ -93,6 +93,7 @@ export const orders = pgTable("orders", {
   fulfillmentStatus: text("fulfillment_status").default("unfulfilled"),
   trackingNumber: text("tracking_number"),
   carrier: text("carrier"),
+  trackingInfo: jsonb("tracking_info"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
