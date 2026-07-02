@@ -1910,15 +1910,20 @@ export async function sendStockAutoPausedEmail(
   productTitle: string,
   affectedListingCount: number,
   failedScrapeCount: number,
+  reason: 'failed-stock' | 'out-of-stock' = 'failed-stock',
 ): Promise<boolean> {
   try {
     const { client, fromEmail } = await getUncachableResendClient();
     const safeName = (userName || '').trim() || 'there';
     const safeTitle = String(productTitle || 'a product').slice(0, 200);
+    const isOutOfStock = reason === 'out-of-stock';
+    const reasonSentence = isOutOfStock
+      ? 'the vendor has gone out of stock'
+      : `we haven't been able to verify its stock at the vendor for the last ${failedScrapeCount} checks in a row`;
     const result = await client.emails.send({
       from: fromEmail || 'DropandSell Automation App <noreply@dropandsell.online>',
       to: toEmail,
-      subject: `Auto-paused: "${safeTitle.slice(0, 60)}${safeTitle.length > 60 ? '…' : ''}" — vendor stock unverifiable`,
+      subject: `Auto-paused: "${safeTitle.slice(0, 60)}${safeTitle.length > 60 ? '…' : ''}" — ${isOutOfStock ? 'out of stock at vendor' : 'vendor stock unverifiable'}`,
       html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f4f4f5;margin:0;padding:32px 16px;">
 <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
   <div style="background:#285261;color:#fff;padding:22px 28px;">
@@ -1926,7 +1931,7 @@ export async function sendStockAutoPausedEmail(
   </div>
   <div style="padding:24px 28px;color:#3f3f46;font-size:15px;line-height:1.55;">
     <p>Hi ${safeName},</p>
-    <p>We've automatically paused <strong>${affectedListingCount} live eBay listing${affectedListingCount === 1 ? '' : 's'}</strong> for the product below because we haven't been able to verify its stock at the vendor for the last ${failedScrapeCount} checks in a row.</p>
+    <p>We've automatically paused <strong>${affectedListingCount} live eBay listing${affectedListingCount === 1 ? '' : 's'}</strong> for the product below because ${reasonSentence}.</p>
     <div style="margin:18px 0;padding:14px 16px;border-radius:8px;background:#fef3c7;border:1px solid #fcd34d;">
       <p style="margin:0;font-size:14px;color:#78350f;"><strong>Product:</strong> ${safeTitle}</p>
     </div>

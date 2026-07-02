@@ -2,3 +2,4 @@
 - [Supplier stock monitoring](supplier-stock-monitoring.md) — SSRF-safe outbound fetch + no-buy-CTA rule for auto OOS/restock detection; keep guards intact.
 - [AI chat gateway](ai-chat-gateway.md) — support chat uses AI_INTEGRATIONS_OPENAI_* gateway vars that don't appear in the visible secrets list; verify via process.env, don't assume unset.
 - [Dev index.html preload shadows Vite](dev-index-html-preload.md) — server/index.ts must gate the built-index.html preload to production or it blanks the dev preview.
+- [Vendor OOS → eBay pause](vendor-oos-ebay-pause.md) — confirmed vendor out-of-stock ends eBay listings via the auto-pause lock; extension bypass only for the failed-stock trigger; variations skipped.

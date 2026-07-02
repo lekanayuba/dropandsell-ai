@@ -3045,11 +3045,21 @@ export async function registerRoutes(
   //
   // Mutates `attrs.vendorStock` so the caller's subsequent storage.updateProduct
   // persists the autoPaused flag in the same write.
+  // Guards against two overlapping scans (e.g. the background cycle and a
+  // manual "check stock" request) both trying to pause the same product at
+  // once, which would fire duplicate eBay pushes and duplicate emails.
+  const pausingProductIds = new Set<number>();
+
   async function autoPauseListingsForFailedStock(
     product: any,
     userId: string,
     attrs: Record<string, any>,
+    trigger: 'failed-stock' | 'out-of-stock' = 'failed-stock',
   ): Promise<{ paused: boolean; affectedListings: number; reason?: string }> {
+    if (pausingProductIds.has(product.id)) {
+      return { paused: false, affectedListings: 0, reason: 'in-flight' };
+    }
+    pausingProductIds.add(product.id);
     try {
       const vs = attrs.vendorStock || {};
       if (vs.autoPaused === true) return { paused: false, affectedListings: 0, reason: 'already-paused' };
@@ -3062,7 +3072,11 @@ export async function registerRoutes(
       // browser session (which can't be bot-blocked), don't auto-pause based
       // on a server-scrape failure streak — that would defeat the whole
       // point of having the extension as a trusted signal source.
-      if (vs.source === 'extension' && vs.lastSuccessfulCheck && vs.inStock === true) {
+      // NOTE: this bypass only applies to the 'failed-stock' trigger (weak
+      // evidence from a scrape failure). A 'out-of-stock' trigger means a
+      // scrape SUCCEEDED and positively confirmed the vendor is out of stock,
+      // which must always pause the listing regardless of a stale extension hint.
+      if (trigger === 'failed-stock' && vs.source === 'extension' && vs.lastSuccessfulCheck && vs.inStock === true) {
         const ageHours = (Date.now() - new Date(vs.lastSuccessfulCheck).getTime()) / 3600000;
         if (ageHours < 24) {
           console.log(`[auto-pause] product ${product.id} skipped: extension confirmed in-stock ${ageHours.toFixed(1)}h ago (trusted source)`);
@@ -3220,11 +3234,13 @@ export async function registerRoutes(
             product.title || product.sku || 'Untitled product',
             totalAffected,
             failedCount,
+            trigger,
           ).catch((e: any) => console.error('[auto-pause] email send failed:', e?.message || e));
         } catch (e: any) {
           console.error('[auto-pause] email module load failed:', e?.message || e);
         }
-        console.log(`[auto-pause] product ${product.id} (user ${userId}): paused ${totalAffected} eBay listing(s) after ${failedCount} failed checks`);
+        const pauseReason = trigger === 'out-of-stock' ? 'vendor confirmed out of stock' : `${failedCount} failed checks`;
+        console.log(`[auto-pause] product ${product.id} (user ${userId}): paused ${totalAffected} eBay listing(s) — ${pauseReason}`);
       } else if (totalAffected === 0) {
         console.log(`[auto-pause] product ${product.id} (user ${userId}): marked as paused (no live listings to update on eBay)`);
       }
@@ -3233,6 +3249,8 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error(`[auto-pause] unexpected failure for product ${product?.id} user ${userId}:`, err?.message || err);
       return { paused: false, affectedListings: 0, reason: 'exception' };
+    } finally {
+      pausingProductIds.delete(product.id);
     }
   }
 
@@ -3413,7 +3431,17 @@ export async function registerRoutes(
         }
       }
 
-      await storage.updateProduct(id, userId, { attributes: attrs });
+      // If the vendor scrape confirmed the item is out of stock, end the eBay
+      // listing(s) immediately (qty 0) instead of leaving them sellable.
+      let autoPaused = false;
+      const confirmedOutOfStock = !stockResult.fetchFailed && stockResult.inStock === false;
+      if (confirmedOutOfStock && attrs.vendorStock?.autoPaused !== true) {
+        const r = await autoPauseListingsForFailedStock(product, userId, attrs, 'out-of-stock');
+        autoPaused = r.paused;
+      }
+      if (!autoPaused) {
+        await storage.updateProduct(id, userId, { attributes: attrs });
+      }
       res.json({ success: true, vendorStock: attrs.vendorStock, productId: id, priceUpdate });
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to check vendor stock' });
@@ -3449,7 +3477,16 @@ export async function registerRoutes(
             }
           }
 
-          await storage.updateProduct(product.id, userId, { attributes: attrs });
+          // Confirmed out of stock at the vendor → end the eBay listing(s).
+          let autoPaused = false;
+          const confirmedOutOfStock = !stockResult.fetchFailed && stockResult.inStock === false;
+          if (confirmedOutOfStock && attrs.vendorStock?.autoPaused !== true) {
+            const r = await autoPauseListingsForFailedStock(product, userId, attrs, 'out-of-stock');
+            autoPaused = r.paused;
+          }
+          if (!autoPaused) {
+            await storage.updateProduct(product.id, userId, { attributes: attrs });
+          }
           results.push({ productId: product.id, title: product.title, vendorStock: attrs.vendorStock, priceUpdate });
         } catch (err: any) {
           results.push({ productId: product.id, title: product.title, vendorStock: attrs.vendorStock || null, error: err.message });
@@ -3515,7 +3552,16 @@ export async function registerRoutes(
             }
           }
 
-          await storage.updateProduct(product.id, userId, { attributes: attrs });
+          // Confirmed out of stock at the vendor → end the eBay listing(s).
+          let autoPaused = false;
+          const confirmedOutOfStock = !stockResult.fetchFailed && stockResult.inStock === false;
+          if (confirmedOutOfStock && attrs.vendorStock?.autoPaused !== true) {
+            const r = await autoPauseListingsForFailedStock(product, userId, attrs, 'out-of-stock');
+            autoPaused = r.paused;
+          }
+          if (!autoPaused) {
+            await storage.updateProduct(product.id, userId, { attributes: attrs });
+          }
         } catch (err: any) {
           console.error(`[AUTO-SYNC] Failed for product ${product.id}:`, err.message);
         }
@@ -13962,11 +14008,23 @@ Return only the description text, no additional formatting.`;
             // the autoPaused flag AND persists the product itself, so we skip
             // the normal storage.updateProduct below to avoid a double write.
             let pausedThisCycle = false;
+            // End the eBay listing (set qty 0) when the vendor is out of stock —
+            // either CONFIRMED out of stock by a successful scrape, or the scrape
+            // has failed enough times that we can no longer trust the stock
+            // signal ('low' confidence). Skipped once already paused; the lock is
+            // lifted (and the listing auto-restocked) once the vendor is back in
+            // stock again.
+            const confirmedOutOfStock = !stockResult.fetchFailed && stockResult.inStock === false;
             if (
-              attrs.vendorStock?.confidence === 'low' &&
+              (confirmedOutOfStock || attrs.vendorStock?.confidence === 'low') &&
               attrs.vendorStock?.autoPaused !== true
             ) {
-              const result = await autoPauseListingsForFailedStock(product, u.id, attrs);
+              const result = await autoPauseListingsForFailedStock(
+                product,
+                u.id,
+                attrs,
+                confirmedOutOfStock ? 'out-of-stock' : 'failed-stock',
+              );
               pausedThisCycle = result.paused;
             }
 
