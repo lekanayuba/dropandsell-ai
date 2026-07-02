@@ -323,6 +323,24 @@ async function convertImagesForEbay(creds: EbayCredentials, urls: string[]): Pro
       const i = nextIdx++;
       if (i >= valid.length) return;
       const u = valid[i];
+      // Skip images that are ALREADY hosted on eBay (e.g. from an earlier
+      // publish/revise of the same product). Re-uploading them spends a Trading
+      // API call against the app-wide DAILY quota (error 518) — which is shared
+      // by every seller on this platform — for zero benefit. Pass them through.
+      // Parse the URL and match the hostname exactly (or a proper subdomain) so
+      // lookalikes like "fakeebayimg.com" or "ebayimg.com.evil.com" are NOT skipped.
+      if (u.startsWith('http')) {
+        try {
+          const host = new URL(u).hostname.toLowerCase();
+          const isEbayHosted = ['ebayimg.com', 'ebaystatic.com'].some(
+            d => host === d || host.endsWith('.' + d)
+          );
+          if (isEbayHosted) {
+            results[i] = u.replace(/^http:\/\//i, 'https://');
+            continue;
+          }
+        } catch { /* malformed URL — fall through to the normal upload path */ }
+      }
       let hosted = await uploadPictureToEbayEps(creds, u);
       if (!hosted) {
         // brief back-off then one retry
@@ -2105,7 +2123,7 @@ export const ebayProvider: MarketplaceProvider = {
           console.error(`[eBay] Rate-limit (518) on publish — exhausted ${RATE_LIMIT_BACKOFFS_MS.length} auto-retries; surfacing soft error to user`);
           return {
             success: false,
-            error: "eBay is temporarily busy and couldn't accept the listing right now. This usually clears within a few minutes — please try publishing again shortly.",
+            error: "eBay has paused new listings from the app for now (eBay error 518 — a shared usage allowance eBay sets for the whole platform). This is on eBay's side, not a problem with your account or anything you did wrong. A short busy spell usually frees up within a few minutes; if the day's full allowance has been used, it resets within 24 hours. Please try publishing again a little later.",
             isPolicyError: false,
             errorCodes,
           };
