@@ -2111,6 +2111,30 @@ export const ebayProvider: MarketplaceProvider = {
           };
         }
 
+        // eBay ACCOUNT selling/listing limit — distinct from the app-level
+        // rate-limit (518) handled above. New or low-history sellers have a cap
+        // on how many items (and what total value) they can list. When the cap
+        // is hit, eBay rejects every further listing until the seller requests a
+        // higher limit or the monthly allowance resets. The raw eBay wording is
+        // confusing ("listing limit"), so students think the app is broken.
+        // Detect it and return a clear, actionable message instead.
+        const isAccountListingLimit = realErrors.some(e => {
+          const t = e.toLowerCase();
+          return t.includes('listing limit') || t.includes('selling limit') ||
+            t.includes('monthly limit') || t.includes('reached the maximum') ||
+            t.includes('maximum number of items') ||
+            t.includes('increase your selling limit') ||
+            t.includes('request a higher limit') || t.includes('request higher limit');
+        });
+        if (isAccountListingLimit) {
+          return {
+            success: false,
+            error: "Your eBay account has reached its listing limit. This is a cap eBay sets on your own account (not a fault with this app) and is very common for newer sellers. To lift it: open eBay Seller Hub → Overview → \"Monthly selling limits\", then click \"Request higher limit\" (or phone eBay to raise it). Limits also reset at the start of each calendar month. As soon as your limit is raised, publishing here will work again.",
+            isPolicyError: false,
+            errorCodes,
+          };
+        }
+
         if (realErrors.length > 0) {
           return { success: false, error: realErrors.join(' | '), isPolicyError: isPolicyError || isConditionError || isProfileError, isShippingLocationError, errorCodes };
         }
