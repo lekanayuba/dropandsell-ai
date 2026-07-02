@@ -22,10 +22,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, CreditCard, UserCheck, UserX, Search, Download, Loader2, DollarSign, TrendingUp, Globe, BarChart3, PieChart as PieChartIcon, Calendar, RefreshCw, Mail, Send, CheckCircle2, Shield, ToggleLeft, ChevronDown, ChevronRight, Link2, Copy, Trash2, Wallet, Check, X, Clock, Banknote, Briefcase } from "lucide-react";
+import { Users, CreditCard, UserCheck, UserX, Search, Download, Loader2, DollarSign, TrendingUp, Globe, BarChart3, PieChart as PieChartIcon, Calendar, RefreshCw, Mail, Send, CheckCircle2, Shield, ToggleLeft, ChevronDown, ChevronLeft, ChevronRight, Link2, Copy, Trash2, Wallet, Check, X, Clock, Banknote, Briefcase } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadExcel } from "@/lib/export-excel";
 import {
@@ -101,6 +101,8 @@ export default function AdminSubscribers() {
   const [detailSubscriber, setDetailSubscriber] = useState<Subscriber | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [planFilter, setPlanFilter] = useState("all");
+  const USERS_PER_PAGE = 10;
+  const [page, setPage] = useState(1);
   const [timeRange, setTimeRange] = useState<"daily" | "weekly" | "monthly">("daily");
 
   const isAdmin = user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com";
@@ -402,6 +404,23 @@ export default function AdminSubscribers() {
       const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return bt - at;
     });
+
+  // Pagination: show USERS_PER_PAGE users at a time. Reset to page 1 whenever the
+  // search/filters change so the user isn't stranded on an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, planFilter]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / USERS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage - 1) * USERS_PER_PAGE, currentPage * USERS_PER_PAGE);
+  const pageNumbers: number[] = [];
+  {
+    const maxButtons = 5;
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalPages, start + maxButtons - 1);
+    start = Math.max(1, end - maxButtons + 1);
+    for (let i = start; i <= end; i++) pageNumbers.push(i);
+  }
 
   const totalSubscribers = subscribers.length;
   const activeCount = subscribers.filter(
@@ -1041,6 +1060,7 @@ export default function AdminSubscribers() {
               ) : filtered.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">No subscribers found</div>
               ) : (
+                <>
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -1059,7 +1079,7 @@ export default function AdminSubscribers() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filtered.map((subscriber) => {
+                      {paged.map((subscriber) => {
                         const isExpanded = expandedRows.has(subscriber.id);
                         const refUsers = subscriber.referredUsers || [];
                         const activeRefCount = refUsers.filter((r) => r.status === 'active').length;
@@ -1315,6 +1335,55 @@ export default function AdminSubscribers() {
                     </TableBody>
                   </Table>
                 </div>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4" data-testid="pagination-users">
+                  <p className="text-sm text-muted-foreground" data-testid="text-pagination-info">
+                    Showing {(currentPage - 1) * USERS_PER_PAGE + 1}&ndash;{Math.min(currentPage * USERS_PER_PAGE, filtered.length)} of {filtered.length} users
+                  </p>
+                  <div className="flex items-center gap-1 flex-wrap justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(currentPage - 1)}
+                      disabled={currentPage <= 1}
+                      data-testid="button-prev-page"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" /> Previous
+                    </Button>
+                    {pageNumbers[0] > 1 && (
+                      <>
+                        <Button variant={currentPage === 1 ? "default" : "outline"} size="sm" onClick={() => setPage(1)} data-testid="button-page-1">1</Button>
+                        {pageNumbers[0] > 2 && <span className="px-1 text-muted-foreground">&hellip;</span>}
+                      </>
+                    )}
+                    {pageNumbers.map((p) => (
+                      <Button
+                        key={p}
+                        variant={currentPage === p ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setPage(p)}
+                        data-testid={`button-page-${p}`}
+                      >
+                        {p}
+                      </Button>
+                    ))}
+                    {pageNumbers[pageNumbers.length - 1] < totalPages && (
+                      <>
+                        {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && <span className="px-1 text-muted-foreground">&hellip;</span>}
+                        <Button variant={currentPage === totalPages ? "default" : "outline"} size="sm" onClick={() => setPage(totalPages)} data-testid={`button-page-${totalPages}`}>{totalPages}</Button>
+                      </>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(currentPage + 1)}
+                      disabled={currentPage >= totalPages}
+                      data-testid="button-next-page"
+                    >
+                      Next <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+                </>
               )}
             </CardContent>
           </Card>
