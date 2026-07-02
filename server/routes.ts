@@ -361,11 +361,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Email and password are required' });
       }
       
-      let user = await storage.getUserByEmail(email);
-      // Allow logging in with a username (case-insensitive) as well as an email.
-      if (!user && typeof email === 'string') {
-        user = await storage.getUserByEmail(email.trim().toLowerCase());
-      }
+      const user = await storage.getUserByEmail(email);
       if (!user || !user.password) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
@@ -411,6 +407,60 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error('Login error:', err);
       res.status(500).json({ message: err.message || 'Login failed' });
+    }
+  });
+
+  // Dedicated admin login — separate from the client login. Accepts a username
+  // (or email), verifies the password, and only allows accounts with admin access.
+  app.post('/api/auth/admin-login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).json({ message: 'Username and password are required' });
+      }
+
+      let user = await storage.getUserByEmail(username);
+      if (!user && typeof username === 'string') {
+        user = await storage.getUserByEmail(username.trim().toLowerCase());
+      }
+      if (!user || !user.password) {
+        return res.status(401).json({ message: 'Invalid username or password' });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Invalid username or password' });
+      }
+
+      const isAdmin = user.isAdmin === 'true' || user.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) {
+        return res.status(403).json({ message: 'This account does not have admin access.' });
+      }
+
+      (req.session as any).userId = user.id;
+
+      await new Promise<void>((resolve, reject) => {
+        req.session.save((err: any) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+      res.json({
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          emailVerified: user.emailVerified,
+          isAdmin: user.isAdmin,
+        }
+      });
+    } catch (err: any) {
+      console.error('Admin login error:', err);
+      res.status(500).json({ message: err.message || 'Admin login failed' });
     }
   });
   

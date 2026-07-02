@@ -42,6 +42,7 @@ import TikTokCallback from "@/pages/TikTokCallback";
 import ShopifyCallback from "@/pages/ShopifyCallback";
 import ResetPassword from "@/pages/ResetPassword";
 import AdminHub from "@/pages/AdminHub";
+import AdminLogin from "@/pages/AdminLogin";
 import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminGlobalVero from "@/pages/AdminGlobalVero";
 import AdminPaypalPayouts from "@/pages/AdminPaypalPayouts";
@@ -118,11 +119,7 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
   }
 
   if (!isAuthenticated) {
-    return <Login />;
-  }
-
-  if (!user?.emailVerified) {
-    return <VerifyEmail />;
+    return <AdminLogin />;
   }
 
   const isAdmin = user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com";
@@ -281,6 +278,7 @@ function Router() {
       <Route path="/drop-and-sell" component={() => <FeatureGatedRoute component={DropAndSell} featureKey="drop_and_sell" />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />
       <Route path="/getting-started" component={() => <ProtectedRoute component={GettingStarted} />} />
+      <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin" component={() => <AdminRoute component={AdminHub} />} />
       <Route path="/admin/subscribers" component={() => <AdminRoute component={AdminSubscribers} />} />
       <Route path="/admin/global-vero" component={() => <AdminRoute component={AdminGlobalVero} />} />
