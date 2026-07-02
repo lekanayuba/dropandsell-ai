@@ -5,13 +5,42 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth, USER_QUERY_KEY } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Copy, RefreshCw, Download, Chrome, Puzzle, Eye, EyeOff, Package, ShoppingCart, Tag } from "lucide-react";
+import { Copy, RefreshCw, Download, Chrome, Puzzle, Eye, EyeOff, Package, ShoppingCart, Tag, Boxes } from "lucide-react";
 
 export default function Settings() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [showApiKey, setShowApiKey] = useState(false);
+
+  const autoRestockMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const response = await apiRequest("PUT", "/api/user/auto-restock", { enabled });
+      return response.json();
+    },
+    onSuccess: (data: { autoRestock: boolean }) => {
+      queryClient.setQueryData(USER_QUERY_KEY, (prev: any) =>
+        prev ? { ...prev, autoRestock: data.autoRestock } : prev,
+      );
+      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
+      toast({
+        title: data.autoRestock ? "Auto Restock On" : "Auto Restock Off",
+        description: data.autoRestock
+          ? "We'll automatically keep your product stock in sync with your suppliers."
+          : "Automatic supplier stock syncing has been turned off.",
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Error",
+        description: err?.message || "Failed to update Auto Restock",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: apiKeyData, isLoading } = useQuery<{ apiKey: string }>({
     queryKey: ["/api/user/api-key"],
@@ -58,6 +87,41 @@ export default function Settings() {
         <h1 className="text-2xl font-bold" data-testid="text-page-title">Settings</h1>
         <p className="text-muted-foreground" data-testid="text-page-description">Manage your account settings and browser extension</p>
       </div>
+
+      <Card data-testid="card-auto-restock">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Boxes className="h-5 w-5 text-primary" />
+            <CardTitle data-testid="text-auto-restock-title">Auto Restock</CardTitle>
+          </div>
+          <CardDescription data-testid="text-auto-restock-description">
+            Automatically keep your products in sync with your suppliers. When a supplier runs out of a
+            product, we mark it Out of Stock for you. When they restock it, we switch it back to In Stock —
+            no manual work needed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="switch-auto-restock" className="text-base">
+                Automatic supplier stock sync
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {user?.autoRestock
+                  ? "On — your product stock updates automatically."
+                  : "Off — stock is not updated automatically."}
+              </p>
+            </div>
+            <Switch
+              id="switch-auto-restock"
+              checked={!!user?.autoRestock}
+              disabled={autoRestockMutation.isPending}
+              onCheckedChange={(checked) => autoRestockMutation.mutate(checked)}
+              data-testid="switch-auto-restock"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card data-testid="card-extension">
         <CardHeader>

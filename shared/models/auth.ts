@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -34,6 +34,7 @@ export const users = pgTable("users", {
   referredBy: varchar("referred_by"),
   apiKey: varchar("api_key").unique(),
   role: varchar("role").notNull().default("user"),
+  autoRestock: boolean("auto_restock").notNull().default(false),
   phone: varchar("phone"),
   profileChangeCode: varchar("profile_change_code"),
   profileChangeCodeExpiry: timestamp("profile_change_code_expiry"),

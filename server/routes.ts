@@ -125,6 +125,15 @@ export async function registerRoutes(
 
   try {
     await db.execute(sql`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_restock boolean NOT NULL DEFAULT false
+    `);
+    console.log("[Migration] users.auto_restock column ready");
+  } catch (e: any) {
+    console.error("[Migration] users.auto_restock column failed:", e.message);
+  }
+
+  try {
+    await db.execute(sql`
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id varchar
     `);
     await db.execute(sql`
@@ -290,6 +299,7 @@ export async function registerRoutes(
         onboardingCompleted: user.onboardingCompleted,
         subscriptionPlan: user.subscriptionPlan,
         referralCode: user.referralCode,
+        autoRestock: user.autoRestock,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -694,11 +704,16 @@ export async function registerRoutes(
           vendorWebsite: vendors.website,
         })
         .from(products)
+        .innerJoin(users, eq(products.userId, users.id))
         .leftJoin(vendors, eq(products.vendorId, vendors.id))
         .where(
-          or(
-            isNotNull(products.attributes),
-            isNotNull(products.externalProductId),
+          and(
+            // Only monitor products owned by subscribers who opted in.
+            eq(users.autoRestock, true),
+            or(
+              isNotNull(products.attributes),
+              isNotNull(products.externalProductId),
+            ),
           ),
         )
         .orderBy(sql`${products.lastMarketplaceSync} asc nulls first`)
@@ -1040,6 +1055,31 @@ export async function registerRoutes(
       res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ message: err.message || 'Failed to fetch listings' });
+    }
+  });
+
+  // Toggle account-wide Auto Restock (supplier monitoring) — subscriber-only.
+  // When enabled, the background monitor watches every supplier listing linked
+  // to this subscriber's products and flips them Out of Stock / In Stock
+  // automatically. See monitorSupplierInventory.
+  protectedApi.put('/user/auto-restock', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+
+      const sub = await isSubscriber(userId);
+      if (!sub) {
+        return res.status(403).json({ message: 'Auto Restock is a subscriber-only feature. Please upgrade your plan.' });
+      }
+
+      const { enabled } = req.body;
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: 'enabled must be true or false' });
+      }
+
+      const updated = await storage.updateUser(userId, { autoRestock: enabled });
+      res.json({ autoRestock: updated.autoRestock });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update Auto Restock setting' });
     }
   });
 
