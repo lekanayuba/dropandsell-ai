@@ -2,13 +2,15 @@ import {
   stores, vendors, products, productVariations, orders, wallet, transactions, subscriptions, referrals, notifications,
   addonCatalog, catalogRefreshLog, shippingProfiles,
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
-  skuMappings, fulfillmentJobs, returnRequests, auditLogs,
+  skuMappings, fulfillmentJobs, returnRequests, auditLogs, restockLogs, supplierReplacementLog,
+  globalVeroList, suggestions,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertProductVariation, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
   type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile,
   type SkuMapping, type InsertSkuMapping, type FulfillmentJob, type InsertFulfillmentJob,
   type ReturnRequest, type InsertReturnRequest, type AuditLog, type InsertAuditLog,
+  type InsertGlobalVeroItem, type GlobalVeroItem, type InsertSuggestion, type Suggestion,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db, pool, STORE_COLUMNS, STORE_INSERT_COLUMNS } from "./db";
@@ -153,6 +155,23 @@ export interface IStorage {
   withdrawReferralBalance(userId: string, amount: number): Promise<typeof transactions.$inferSelect>;
   addPoints(userId: string, spentAmount: number): Promise<void>;
   convertPointsToFunds(userId: string, points: number): Promise<typeof transactions.$inferSelect>;
+
+  // Suggestions
+  createSuggestion(suggestion: InsertSuggestion & { userId: string; userEmail: string; userName?: string; imageUrls?: string[] }): Promise<Suggestion>;
+  getSuggestionsByUser(userId: string): Promise<Suggestion[]>;
+  getAllSuggestions(): Promise<Suggestion[]>;
+
+  // Global VeRO
+  getGlobalVeroList(): Promise<GlobalVeroItem[]>;
+  getGlobalVeroStats(): Promise<{ total: number; active: number; brands: number; keywords: number }>;
+  createGlobalVeroItem(item: InsertGlobalVeroItem): Promise<GlobalVeroItem>;
+  updateGlobalVeroItem(id: number, updates: Partial<InsertGlobalVeroItem>): Promise<GlobalVeroItem | undefined>;
+  deleteGlobalVeroItem(id: number): Promise<void>;
+
+  // Subscribers (Admin)
+  getSubscribers(): Promise<User[]>;
+  updateSubscriberPlan(userId: string, plan: string, status?: string): Promise<User>;
+  deleteSubscriber(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1179,6 +1198,107 @@ export class DatabaseStorage implements IStorage {
     }).returning();
 
     return transaction;
+  }
+
+  // Suggestions
+  async createSuggestion(data: InsertSuggestion & { userId: string; userEmail: string; userName?: string; imageUrls?: string[] }): Promise<Suggestion> {
+    const [suggestion] = await db.insert(suggestions).values(data as any).returning();
+    return suggestion;
+  }
+
+  async getSuggestionsByUser(userId: string): Promise<Suggestion[]> {
+    return await db.select().from(suggestions).where(eq(suggestions.userId, userId)).orderBy(desc(suggestions.createdAt));
+  }
+
+  async getAllSuggestions(): Promise<Suggestion[]> {
+    return await db.select().from(suggestions).orderBy(desc(suggestions.createdAt));
+  }
+
+  // Global VeRO
+  async getGlobalVeroList(): Promise<GlobalVeroItem[]> {
+    return await db.select().from(globalVeroList).orderBy(desc(globalVeroList.createdAt));
+  }
+
+  async getGlobalVeroStats(): Promise<{ total: number; active: number; brands: number; keywords: number }> {
+    const [totalResult] = await db.select({ count: sql<number>`count(*)` }).from(globalVeroList);
+    const [activeResult] = await db.select({ count: sql<number>`count(*)` }).from(globalVeroList).where(eq(globalVeroList.isActive, true));
+    const [brandResult] = await db.select({ count: sql<number>`count(*)` }).from(globalVeroList).where(and(eq(globalVeroList.type, 'brand'), eq(globalVeroList.isActive, true)));
+    const [keywordResult] = await db.select({ count: sql<number>`count(*)` }).from(globalVeroList).where(and(eq(globalVeroList.type, 'keyword'), eq(globalVeroList.isActive, true)));
+    return {
+      total: Number(totalResult?.count ?? 0),
+      active: Number(activeResult?.count ?? 0),
+      brands: Number(brandResult?.count ?? 0),
+      keywords: Number(keywordResult?.count ?? 0),
+    };
+  }
+
+  async createGlobalVeroItem(item: InsertGlobalVeroItem): Promise<GlobalVeroItem> {
+    const [created] = await db.insert(globalVeroList).values(item).returning();
+    return created;
+  }
+
+  async updateGlobalVeroItem(id: number, updates: Partial<InsertGlobalVeroItem>): Promise<GlobalVeroItem | undefined> {
+    const [updated] = await db.update(globalVeroList).set(updates).where(eq(globalVeroList.id, id)).returning();
+    return updated;
+  }
+
+  async deleteGlobalVeroItem(id: number): Promise<void> {
+    await db.delete(globalVeroList).where(eq(globalVeroList.id, id));
+  }
+
+  // Subscribers (Admin)
+  async getSubscribers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async updateSubscriberPlan(userId: string, plan: string, status?: string): Promise<User> {
+    const [updated] = await db.update(users)
+      .set({ subscriptionPlan: plan, subscriptionStatus: status || 'active', updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated;
+  }
+
+  async deleteSubscriber(userId: string): Promise<void> {
+    // Delete dependent records first (children before parents) to satisfy FK constraints.
+    const userStores = await db.select({ id: stores.id }).from(stores).where(eq(stores.userId, userId));
+    for (const s of userStores) {
+      await db.delete(restockLogs).where(eq(restockLogs.storeId, s.id));
+      await db.delete(marketplaceListings).where(eq(marketplaceListings.storeId, s.id));
+    }
+
+    const userProducts = await db.select({ id: products.id }).from(products).where(eq(products.userId, userId));
+    for (const p of userProducts) {
+      await db.delete(productVariations).where(eq(productVariations.productId, p.id));
+      await db.delete(supplierReplacementLog).where(eq(supplierReplacementLog.productId, p.id));
+    }
+
+    await db.delete(returnRequests).where(eq(returnRequests.userId, userId));
+    await db.delete(fulfillmentJobs).where(eq(fulfillmentJobs.userId, userId));
+    await db.delete(auditLogs).where(eq(auditLogs.userId, userId));
+    await db.delete(notifications).where(eq(notifications.userId, userId));
+    await db.delete(publishQueue).where(eq(publishQueue.userId, userId));
+    await db.delete(orders).where(eq(orders.userId, userId));
+    await db.delete(importJobs).where(eq(importJobs.userId, userId));
+    await db.delete(skuMappings).where(eq(skuMappings.userId, userId));
+    await db.delete(pricingRules).where(eq(pricingRules.userId, userId));
+    await db.delete(suggestions).where(eq(suggestions.userId, userId));
+    await db.delete(subscriptions).where(eq(subscriptions.userId, userId));
+    await db.delete(veroList).where(eq(veroList.userId, userId));
+    await db.delete(contentFilters).where(eq(contentFilters.userId, userId));
+    await db.delete(restrictedProducts).where(eq(restrictedProducts.userId, userId));
+    await db.delete(shippingProfiles).where(eq(shippingProfiles.userId, userId));
+    await db.delete(referrals).where(or(eq(referrals.referrerId, userId), eq(referrals.referredUserId, userId)));
+    await db.delete(products).where(eq(products.userId, userId));
+    await db.delete(stores).where(eq(stores.userId, userId));
+    await db.delete(vendors).where(eq(vendors.userId, userId));
+
+    const userWallets = await db.select({ id: wallet.id }).from(wallet).where(eq(wallet.userId, userId));
+    for (const w of userWallets) {
+      await db.delete(transactions).where(eq(transactions.walletId, w.id));
+    }
+    await db.delete(wallet).where(eq(wallet.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
   }
 }
 

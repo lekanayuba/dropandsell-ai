@@ -236,3 +236,63 @@ export async function sendVerificationEmail(toEmail: string, verifyUrl: string):
     return false;
   }
 }
+
+export async function sendProfileChangeOTP(toEmail: string, code: string, changeDescription: string): Promise<boolean> {
+  try {
+    console.log(`[Email] Sending profile change OTP to ${toEmail}`);
+    const { client, fromEmail } = await getUncachableResendClient();
+
+    const result = await client.emails.send({
+      from: fromEmail || 'DropandSell Automation App <noreply@dropandsell.online>',
+      to: toEmail,
+      subject: 'DropandSell Automation App - Confirm your profile change',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 20px;">
+          <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="text-align: center; margin-bottom: 32px;">
+              <div style="display: inline-block; width: 48px; height: 48px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 12px; margin-bottom: 16px;"></div>
+              <h1 style="margin: 0; color: #18181b; font-size: 24px; font-weight: 700;">DropandSell Automation App</h1>
+            </div>
+            <h2 style="color: #18181b; font-size: 20px; margin-bottom: 16px;">Confirm your profile change</h2>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 8px;">
+              You've requested to update your profile: <strong>${changeDescription}</strong>
+            </p>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+              Use the verification code below to confirm this change:
+            </p>
+            <div style="text-align: center; margin-bottom: 24px;">
+              <div style="display: inline-block; background: #f4f4f5; border: 2px solid #e4e4e7; border-radius: 12px; padding: 16px 32px;">
+                <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #18181b; font-family: monospace;">${code}</span>
+              </div>
+            </div>
+            <p style="color: #a1a1aa; font-size: 14px; line-height: 1.5;">
+              This code expires in 10 minutes. If you didn't request this change, please ignore this email and your account will remain unchanged.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 32px 0;">
+            <p style="color: #a1a1aa; font-size: 12px; text-align: center; margin: 0;">
+              &copy; 2024 DropandSell Automation App. All rights reserved.
+            </p>
+          </div>
+        </body>
+        </html>
+      `
+    });
+
+    if (result.error) {
+      console.error(`[Email] Resend returned error for OTP:`, result.error);
+      return false;
+    }
+
+    console.log(`[Email] Profile change OTP sent to ${toEmail}`);
+    return true;
+  } catch (error: any) {
+    console.error('[Email] Failed to send profile change OTP:', error?.message || error);
+    return false;
+  }
+}

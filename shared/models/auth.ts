@@ -34,6 +34,10 @@ export const users = pgTable("users", {
   referredBy: varchar("referred_by"),
   apiKey: varchar("api_key").unique(),
   role: varchar("role").notNull().default("user"),
+  phone: varchar("phone"),
+  profileChangeCode: varchar("profile_change_code"),
+  profileChangeCodeExpiry: timestamp("profile_change_code_expiry"),
+  profileChangePending: jsonb("profile_change_pending"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

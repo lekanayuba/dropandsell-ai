@@ -24,6 +24,7 @@ import {
   List,
   Rocket,
   Globe,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
@@ -61,6 +62,7 @@ const baseLinks: NavLink[] = [
 
 const adminLinks: NavLink[] = [
   { href: "/global-vaso", label: "Global VeRO", icon: Shield },
+  { href: "/subscribers-db", label: "Subscribers DB", icon: Database },
 ];
 
 export function Sidebar() {

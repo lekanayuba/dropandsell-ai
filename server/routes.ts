@@ -12,7 +12,8 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integra
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db, pool, STORE_COLUMNS } from "./db";
 import { sql, eq, and, inArray, desc, lte, gt, or, isNotNull } from "drizzle-orm";
-import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings } from "@shared/schema";
+import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings, globalVeroList, suggestions, insertGlobalVeroItemSchema, insertSuggestionSchema } from "@shared/schema";
+import { sendProfileChangeOTP } from "./email";
 import { conversations, messages } from "@shared/models/chat";
 import { users } from "@shared/models/auth";
 import OpenAI from "openai";
@@ -6580,6 +6581,446 @@ Guidelines:
     } catch (err: any) {
       console.error('[TikTok] Sync orders error:', err);
       res.status(500).json({ message: err.message || 'Failed to sync TikTok orders' });
+    }
+  });
+
+  // === PROFILE / ACCOUNT ===
+  app.get('/api/auth/user', async (req: any, res) => {
+    try {
+      const userId = (req.session as any)?.userId || req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: 'Not authenticated' });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        policiesAccepted: user.policiesAccepted,
+        onboardingCompleted: user.onboardingCompleted,
+        subscriptionPlan: user.subscriptionPlan,
+        referralCode: user.referralCode,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post('/api/auth/change-password', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub || (req.session as any)?.userId;
+      const { currentPassword, newPassword } = req.body;
+
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'Current password and new password are required' });
+      }
+      if (newPassword.length < 8) {
+        return res.status(400).json({ message: 'New password must be at least 8 characters' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.password) {
+        return res.status(400).json({ message: 'Unable to change password for this account' });
+      }
+
+      const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Current password is incorrect' });
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await storage.updateUser(userId, { password: hashedPassword });
+
+      res.json({ success: true, message: 'Password changed successfully' });
+    } catch (err: any) {
+      console.error('Change password error:', err);
+      res.status(500).json({ message: 'Something went wrong. Please try again.' });
+    }
+  });
+
+  protectedApi.patch('/user/profile', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { firstName, lastName, email, phone, password } = req.body;
+
+      if (!password) {
+        return res.status(400).json({ message: 'Password is required to confirm changes' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.password) {
+        return res.status(400).json({ message: 'User not found' });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Incorrect password. Please try again.' });
+      }
+
+      const emailChanged = email && email !== user.email;
+      const phoneChanged = phone !== undefined && phone !== (user.phone || '');
+
+      if (emailChanged || phoneChanged) {
+        if (emailChanged) {
+          const existingUser = await storage.getUserByEmail(email);
+          if (existingUser && existingUser.id !== userId) {
+            return res.status(409).json({
+              message: 'Another account is already registered with this email address. Please delete the other account first or use a different email.',
+              conflictingAccountId: existingUser.id,
+              canDelete: true,
+            });
+          }
+        }
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiry = new Date(Date.now() + 10 * 60 * 1000);
+
+        const pendingChanges: any = {};
+        if (firstName !== undefined) pendingChanges.firstName = firstName;
+        if (lastName !== undefined) pendingChanges.lastName = lastName;
+        if (emailChanged) pendingChanges.email = email;
+        if (phoneChanged) pendingChanges.phone = phone;
+
+        await storage.updateUser(userId, {
+          profileChangeCode: code,
+          profileChangeCodeExpiry: expiry,
+          profileChangePending: pendingChanges,
+        } as any);
+
+        const changes: string[] = [];
+        if (emailChanged) changes.push(`email to ${email}`);
+        if (phoneChanged) changes.push(`phone number`);
+        const changeDescription = changes.join(' and ');
+
+        let emailSent = false;
+        try {
+          emailSent = await sendProfileChangeOTP(user.email!, code, changeDescription);
+        } catch (emailErr: any) {
+          console.error('Failed to send profile change OTP:', emailErr.message);
+        }
+
+        if (!emailSent) {
+          await storage.updateUser(userId, {
+            profileChangeCode: null,
+            profileChangeCodeExpiry: null,
+            profileChangePending: null,
+          } as any);
+          return res.status(500).json({
+            message: 'Failed to send verification email. Please try again later.',
+          });
+        }
+
+        return res.json({
+          requiresVerification: true,
+          message: `A verification code has been sent to your email (${user.email}). Enter it to confirm your changes.`,
+        });
+      }
+
+      const updates: any = {};
+      if (firstName !== undefined) updates.firstName = firstName;
+      if (lastName !== undefined) updates.lastName = lastName;
+
+      const updatedUser = await storage.updateUser(userId, updates);
+      res.json({
+        id: updatedUser.id,
+        email: updatedUser.email,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        phone: updatedUser.phone,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update profile' });
+    }
+  });
+
+  protectedApi.post('/user/profile/verify-code', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { code } = req.body;
+
+      if (!code) {
+        return res.status(400).json({ message: 'Verification code is required' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(400).json({ message: 'User not found' });
+      }
+
+      if (!user.profileChangeCode || !user.profileChangeCodeExpiry) {
+        return res.status(400).json({ message: 'No pending profile change. Please try again.' });
+      }
+
+      if (new Date() > new Date(user.profileChangeCodeExpiry)) {
+        await storage.updateUser(userId, {
+          profileChangeCode: null,
+          profileChangeCodeExpiry: null,
+          profileChangePending: null,
+        } as any);
+        return res.status(400).json({ message: 'Verification code has expired. Please try again.' });
+      }
+
+      if (user.profileChangeCode !== code) {
+        return res.status(401).json({ message: 'Invalid verification code' });
+      }
+
+      const pendingChanges = user.profileChangePending as any;
+      if (!pendingChanges || Object.keys(pendingChanges).length === 0) {
+        return res.status(400).json({ message: 'No pending changes found' });
+      }
+
+      if (pendingChanges.email) {
+        const existingUser = await storage.getUserByEmail(pendingChanges.email);
+        if (existingUser && existingUser.id !== userId) {
+          return res.status(409).json({ message: 'This email address is already in use' });
+        }
+      }
+
+      const updatedUser = await storage.updateUser(userId, {
+        ...pendingChanges,
+        profileChangeCode: null,
+        profileChangeCodeExpiry: null,
+        profileChangePending: null,
+      } as any);
+
+      res.json({
+        id: updatedUser.id,
+        email: updatedUser.email,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        phone: updatedUser.phone,
+        message: 'Profile updated successfully',
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to verify code' });
+    }
+  });
+
+  protectedApi.post('/user/profile/delete-conflicting', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || !user.password) {
+        return res.status(400).json({ message: 'User not found' });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Incorrect password. Please try again.' });
+      }
+
+      // Derive the conflicting account server-side from the email the caller is trying to claim.
+      // This prevents deleting an arbitrary account by ID (broken access control).
+      const conflictingUser = await storage.getUserByEmail(email);
+      if (!conflictingUser) {
+        return res.json({ message: 'No conflicting account found. You can now change your email.' });
+      }
+
+      if (conflictingUser.id === userId) {
+        return res.status(400).json({ message: 'Cannot delete your own account' });
+      }
+
+      await storage.deleteSubscriber(conflictingUser.id);
+      console.log(`Deleted conflicting account ${conflictingUser.id} at request of user ${userId} (email reuse: ${email})`);
+
+      res.json({ message: 'Conflicting account has been deleted. You can now change your email.' });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to delete conflicting account' });
+    }
+  });
+
+  // === SUGGESTIONS ===
+  protectedApi.post('/suggestions', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+
+      const parsed = insertSuggestionSchema.parse(req.body);
+
+      const rawImages = req.body?.imageUrls;
+      let imageUrls: string[] = [];
+      if (Array.isArray(rawImages)) {
+        imageUrls = rawImages
+          .filter((u: any) => typeof u === 'string' && u.startsWith('data:image/'))
+          .slice(0, 4);
+      }
+
+      const suggestion = await storage.createSuggestion({
+        ...parsed,
+        userId,
+        userEmail: user?.email || 'unknown',
+        userName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || undefined,
+        imageUrls,
+      });
+      res.json(suggestion);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid suggestion data', errors: err.errors });
+      }
+      console.error('[suggestions] submit error:', err);
+      res.status(500).json({ message: err.message || 'Failed to submit suggestion' });
+    }
+  });
+
+  protectedApi.get('/suggestions', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userSuggestions = await storage.getSuggestionsByUser(userId);
+      res.json(userSuggestions);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch suggestions' });
+    }
+  });
+
+  // === GLOBAL VeRO ===
+  protectedApi.get('/global-vero-list', async (req: any, res) => {
+    try {
+      const items = await storage.getGlobalVeroList();
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.get('/global-vero-list/stats', async (req: any, res) => {
+    try {
+      const stats = await storage.getGlobalVeroStats();
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/admin/global-vero-list', async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub) as any;
+      const isAdmin = user?.role === 'admin' || user?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
+
+      const parsed = insertGlobalVeroItemSchema.parse(req.body);
+      const item = await storage.createGlobalVeroItem(parsed);
+      res.json(item);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid VeRO item data', errors: err.errors });
+      }
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.put('/admin/global-vero-list/:id', async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub) as any;
+      const isAdmin = user?.role === 'admin' || user?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
+
+      const id = Number(req.params.id);
+      const { type, value, platform, reason, category, severity, isActive } = req.body;
+      const updateData: Record<string, any> = {};
+      if (type !== undefined) updateData.type = type;
+      if (value !== undefined) updateData.value = value;
+      if (platform !== undefined) updateData.platform = platform || null;
+      if (reason !== undefined) updateData.reason = reason;
+      if (category !== undefined) updateData.category = category;
+      if (severity !== undefined) updateData.severity = severity;
+      if (isActive !== undefined) updateData.isActive = isActive;
+
+      const updated = await storage.updateGlobalVeroItem(id, updateData);
+      if (!updated) return res.status(404).json({ message: 'Not found' });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.delete('/admin/global-vero-list/:id', async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub) as any;
+      const isAdmin = user?.role === 'admin' || user?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
+
+      const id = Number(req.params.id);
+      await storage.deleteGlobalVeroItem(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === SUBSCRIBERS DB (Admin) ===
+  protectedApi.get('/admin/subscribers', async (req: any, res) => {
+    try {
+      const adminUser = await storage.getUser(req.user.claims.sub) as any;
+      const isAdmin = adminUser?.role === 'admin' || adminUser?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Access denied' });
+
+      const allUsers = await storage.getSubscribers();
+      const subscribers = allUsers.map((u) => ({
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        phone: u.phone,
+        subscriptionPlan: u.subscriptionPlan,
+        subscriptionStatus: u.subscriptionStatus,
+        referralCode: u.referralCode,
+        createdAt: u.createdAt,
+      }));
+      res.json(subscribers);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch subscribers' });
+    }
+  });
+
+  protectedApi.patch('/admin/subscribers/:userId/plan', async (req: any, res) => {
+    try {
+      const adminUser = await storage.getUser(req.user.claims.sub) as any;
+      const isAdmin = adminUser?.role === 'admin' || adminUser?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Access denied' });
+
+      const targetUserId = req.params.userId;
+      const { plan, status } = req.body;
+      if (!plan) return res.status(400).json({ message: 'Plan name is required' });
+
+      await storage.updateSubscriberPlan(targetUserId, plan, status);
+      console.log(`[ADMIN] Plan updated for user ${targetUserId}: ${plan} (${status || 'active'}) by ${adminUser.email}`);
+      res.json({ success: true, message: `Plan updated to ${plan}` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to update plan' });
+    }
+  });
+
+  protectedApi.delete('/admin/subscribers/:userId', async (req: any, res) => {
+    try {
+      const adminId = req.user.claims.sub;
+      const adminUser = await storage.getUser(adminId) as any;
+      const isAdmin = adminUser?.role === 'admin' || adminUser?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Access denied' });
+
+      const targetUserId = req.params.userId;
+      if (targetUserId === adminId) {
+        return res.status(400).json({ message: 'Cannot delete your own account' });
+      }
+
+      await storage.deleteSubscriber(targetUserId);
+      console.log(`[ADMIN] User ${targetUserId} deleted by admin ${adminUser.email}`);
+      res.json({ success: true, message: `User ${targetUserId} deleted` });
+    } catch (err: any) {
+      console.error('[ADMIN] Delete user error:', err);
+      res.status(500).json({ message: err.message || 'Failed to delete user' });
     }
   });
 

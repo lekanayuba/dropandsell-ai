@@ -628,3 +628,38 @@ export type DashboardStatsResponse = {
   walletBalance: number;
   outOfStockProducts: number;
 };
+
+// === GLOBAL VeRO (restricted brands/keywords) ===
+export const globalVeroList = pgTable("global_vero_list", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull().default("brand"),
+  value: text("value").notNull(),
+  platform: text("platform"),
+  reason: text("reason"),
+  category: text("category"),
+  severity: text("severity").notNull().default("block"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGlobalVeroItemSchema = createInsertSchema(globalVeroList).omit({ id: true, createdAt: true });
+export type InsertGlobalVeroItem = z.infer<typeof insertGlobalVeroItemSchema>;
+export type GlobalVeroItem = typeof globalVeroList.$inferSelect;
+
+// === SUGGESTIONS (user feedback / feature requests) ===
+export const suggestions = pgTable("suggestions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  userEmail: text("user_email").notNull(),
+  userName: text("user_name"),
+  category: text("category").notNull().default("feature_request"),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("new"),
+  imageUrls: text("image_urls").array().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSuggestionSchema = createInsertSchema(suggestions).omit({ id: true, userId: true, userEmail: true, userName: true, status: true, createdAt: true, imageUrls: true });
+export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
+export type Suggestion = typeof suggestions.$inferSelect;
