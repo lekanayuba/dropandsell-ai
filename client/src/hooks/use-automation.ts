@@ -111,6 +111,8 @@ export function usePublishItems() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/publish-queue"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/marketplace-listings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
     },
   });
 }

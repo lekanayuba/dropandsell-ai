@@ -8,7 +8,6 @@
     "module": "ESNext",
     "strict": true,
     "lib": ["esnext", "dom", "dom.iterable"],
-    "downlevelIteration": true,
     "jsx": "preserve",
     "esModuleInterop": true,
     "skipLibCheck": true,

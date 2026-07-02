@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal, varchar, date, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, decimal, varchar, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -20,11 +20,6 @@ export const stores = pgTable("stores", {
   platform: text("platform").notNull(), // 'shopify', 'amazon', 'ebay', etc.
   credentials: jsonb("credentials").notNull(), // Encrypted API keys, tokens
   status: text("status").notNull().default("active"), // 'active', 'inactive', 'error'
-  autoRestock: boolean("auto_restock").notNull().default(false), // Auto-restock out-of-stock items when quantity becomes available
-  autoPauseListings: boolean("auto_pause_listings").notNull().default(false), // Auto-pause marketplace listings when out of stock
-  autoMarkOutOfStock: boolean("auto_mark_out_of_stock").notNull().default(false), // Auto-mark listings as out of stock on marketplace
-  autoSwitchSupplier: boolean("auto_switch_supplier").notNull().default(false), // Auto-switch to alternative supplier when out of stock
-  restockThreshold: integer("restock_threshold").notNull().default(1), // Min quantity to trigger auto-restock
   lastSync: timestamp("last_sync"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -38,32 +33,6 @@ export const vendors = pgTable("vendors", {
   integrationType: text("integration_type").notNull().default("custom"), // 'api', 'csv', 'feed', 'custom'
   config: jsonb("config"), // API endpoints, CSV mapping rules
   status: text("status").notNull().default("active"),
-  // Contact Info
-  contactPerson: text("contact_person"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  // Classification
-  category: text("category"), // 'wholesale', 'manufacturer', 'dropshipper', 'distributor', 'other'
-  tags: text("tags"), // comma-separated tags
-  country: text("country"),
-  // Business Terms
-  leadTime: text("lead_time"), // e.g. "3-5 days"
-  paymentTerms: text("payment_terms"), // e.g. "Net 30", "PayPal"
-  minOrderAmount: decimal("min_order_amount", { precision: 10, scale: 2 }),
-  notes: text("notes"),
-  // Supplier Health Score
-  healthScore: integer("health_score"), // 1–5 star rating
-  averageShippingDays: text("average_shipping_days"), // e.g. "5–8 days"
-  cancellationRate: decimal("cancellation_rate", { precision: 5, scale: 2 }), // percentage
-  stockUpdateReliability: text("stock_update_reliability"), // 'high', 'medium', 'low'
-  returnRate: decimal("return_rate", { precision: 5, scale: 2 }), // percentage
-  lateDeliveryRate: decimal("late_delivery_rate", { precision: 5, scale: 2 }), // percentage
-  totalOrdersFulfilled: integer("total_orders_fulfilled").default(0),
-  lastHealthCheck: timestamp("last_health_check"),
-  isGlobal: boolean("is_global").notNull().default(false),
-  verificationStatus: text("verification_status").notNull().default("pending"), // 'pending', 'verified', 'blocked'
-  verifiedAt: timestamp("verified_at"),
-  verifiedBy: varchar("verified_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -74,52 +43,38 @@ export const products = pgTable("products", {
   vendorId: integer("vendor_id").references(() => vendors.id),
   title: text("title").notNull(),
   description: text("description"),
+  brand: text("brand").default(""),
   sku: text("sku").notNull(),
   costPrice: decimal("cost_price", { precision: 10, scale: 2 }).notNull(),
   sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }).notNull(),
   quantity: integer("quantity").notNull().default(0),
   images: text("images").array(),
-  attributes: jsonb("attributes"), // Color, size, etc.
-  veroStatus: text("vero_status").default("clean"), // 'clean', 'flagged', 'blocked'
-  deliveryType: text("delivery_type").default("buyer_pays"), // 'free', 'seller_pays', 'buyer_pays'
+  attributes: jsonb("attributes"),
+  veroStatus: text("vero_status").default("clean"),
+  veroOverride: boolean("vero_override").default(false),
+  veroOverrideBy: text("vero_override_by"),
+  veroOverrideReason: text("vero_override_reason"),
+  deliveryType: text("delivery_type").default("buyer_pays"),
   deliveryCost: decimal("delivery_cost", { precision: 10, scale: 2 }).default("0"),
-  // Temu / external marketplace tracking
-  externalProductId: text("external_product_id"), // ID on Temu (from URL)
-  marketplacePrice: decimal("marketplace_price", { precision: 10, scale: 2 }), // Temu's current price
-  marketplaceStockStatus: text("marketplace_stock_status").default("unknown"), // 'in_stock', 'out_of_stock', 'unknown'
-  shippingInfo: jsonb("shipping_info"), // { estimatedDays: string, cost: string, origin: string }
-  lastMarketplaceSync: timestamp("last_marketplace_sync"), // last time we checked Temu
+  // When a Drop-and-Sell lister publishes a product into the customer's
+  // inventory on the customer's behalf, we stamp their freelancer profile id
+  // here so they can track their work in the "My Listings" tab.
+  // Intentionally NOT a foreign key (avoids a forward reference to
+  // freelancerProfiles which is declared further down in this file).
+  listedByFreelancerId: integer("listed_by_freelancer_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => ({
-  uniqueExternalProduct: unique("uq_external_product").on(table.userId, table.externalProductId),
-}));
-
-// Product Variations (size, color, etc. from Temu)
-export const productVariations = pgTable("product_variations", {
-  id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull().references(() => products.id),
-  name: text("name").notNull(), // e.g. "Black / XL"
-  sku: text("sku").notNull(),
-  price: decimal("price", { precision: 10, scale: 2 }).notNull(), // Temu's price for this variant
-  stock: integer("stock").notNull().default(0),
-  image: text("image"), // variant-specific image URL
-  attributes: jsonb("attributes"), // { color: "Black", size: "XL" }
-  externalId: text("external_id"), // Temu variant ID
-  sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Marketplace Listings (Link internal products to store listings)
 export const marketplaceListings = pgTable("marketplace_listings", {
   id: serial("id").primaryKey(),
   storeId: integer("store_id").notNull().references(() => stores.id),
-  productId: integer("product_id").notNull().references(() => products.id),
-  externalId: text("external_id").notNull(), // ID on the marketplace
-  status: text("status").notNull().default("active"), // 'active', 'ended', 'error'
+  productId: integer("product_id").references(() => products.id),
+  externalId: text("external_id").notNull(),
+  listingUrl: text("listing_url"),
+  status: text("status").notNull().default("active"),
   syncStatus: text("sync_status").default("synced"),
-  stockStatus: text("stock_status").default("in_stock"), // 'in_stock', 'out_of_stock', 'unknown'
-  outOfStockAt: timestamp("out_of_stock_at"),
   lastSync: timestamp("last_sync"),
 });
 
@@ -134,13 +89,10 @@ export const orders = pgTable("orders", {
   shippingAddress: jsonb("shipping_address"),
   lineItems: jsonb("line_items"),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
-  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'shipped', 'cancelled'
+  status: text("status").notNull().default("pending"),
   fulfillmentStatus: text("fulfillment_status").default("unfulfilled"),
   trackingNumber: text("tracking_number"),
   carrier: text("carrier"),
-  trackingStatus: text("tracking_status").default("pending"), // 'pending', 'in_transit', 'delivered', 'failed'
-  trackingUrl: text("tracking_url"),
-  trackingUpdatedAt: timestamp("tracking_updated_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -150,9 +102,13 @@ export const wallet = pgTable("wallet", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().unique().references(() => users.id),
   balance: decimal("balance", { precision: 12, scale: 2 }).notNull().default("0.00"),
-  referralBalance: decimal("referral_balance", { precision: 12, scale: 2 }).notNull().default("0.00"), // Separate referral earnings
-  points: decimal("points", { precision: 12, scale: 4 }).notNull().default("0.0000"), // Usage points (0.001 per £1)
+  referralBalance: decimal("referral_balance", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  points: decimal("points", { precision: 12, scale: 4 }).notNull().default("0.0000"),
   currency: text("currency").default("GBP"),
+  bankAccountName: varchar("bank_account_name"),
+  bankAccountNumber: varchar("bank_account_number"),
+  bankSortCode: varchar("bank_sort_code"),
+  bankName: varchar("bank_name"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -164,6 +120,9 @@ export const transactions = pgTable("transactions", {
   description: text("description"),
   referenceId: text("reference_id"), // Order ID or external transaction ID
   status: text("status").notNull().default("completed"),
+  withdrawMethod: text("withdraw_method"),
+  adminNote: text("admin_note"),
+  processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -185,84 +144,9 @@ export const referrals = pgTable("referrals", {
   referredUserId: varchar("referred_user_id").notNull().references(() => users.id),
   status: text("status").default("pending"),
   totalEarnings: decimal("total_earnings", { precision: 10, scale: 2 }).default("0.00"),
+  cyclesCredited: integer("cycles_credited").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
-
-// Notifications
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  type: text("type").notNull().default("info"), // 'info', 'order_shipped', 'order_delivered', 'stock_alert', 'price_alert', 'supplier_alert', 'new_products', 'restock'
-  title: text("title").notNull(),
-  message: text("message"),
-  orderId: integer("order_id").references(() => orders.id),
-  read: boolean("read").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const notificationsRelations = relations(notifications, ({ one }) => ({
-  user: one(users, { fields: [notifications.userId], references: [users.id] }),
-  order: one(orders, { fields: [notifications.orderId], references: [orders.id] }),
-}));
-
-// Add-on Catalog
-export const addonCatalog = pgTable("addon_catalog", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  image: text("image"),
-  category: text("category").notNull().default("general"), // 'general', 'tools', 'services', 'content'
-  price: decimal("price", { precision: 10, scale: 2 }).notNull().default("0"),
-  isNew: boolean("is_new").notNull().default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const catalogRefreshLog = pgTable("catalog_refresh_log", {
-  id: serial("id").primaryKey(),
-  itemsAdded: integer("items_added").notNull().default(0),
-  itemsUpdated: integer("items_updated").notNull().default(0),
-  lastRefreshedAt: timestamp("last_refreshed_at").defaultNow(),
-});
-
-// Restock Logs
-export const restockLogs = pgTable("restock_logs", {
-  id: serial("id").primaryKey(),
-  storeId: integer("store_id").notNull().references(() => stores.id),
-  productId: integer("product_id").notNull().references(() => products.id),
-  previousQuantity: integer("previous_quantity").notNull(),
-  newQuantity: integer("new_quantity").notNull(),
-  marketplaceListingId: integer("marketplace_listing_id").references(() => marketplaceListings.id),
-  triggeredBy: text("triggered_by").notNull().default("auto"), // 'auto' | 'manual'
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const restockLogsRelations = relations(restockLogs, ({ one }) => ({
-  store: one(stores, { fields: [restockLogs.storeId], references: [stores.id] }),
-  product: one(products, { fields: [restockLogs.productId], references: [products.id] }),
-  marketplaceListing: one(marketplaceListings, { fields: [restockLogs.marketplaceListingId], references: [marketplaceListings.id] }),
-}));
-
-// Supplier replacement log — tracks when auto-switch finds a new vendor
-export const supplierReplacementLog = pgTable("supplier_replacement_log", {
-  id: serial("id").primaryKey(),
-  productId: integer("product_id").notNull().references(() => products.id),
-  oldVendorId: integer("old_vendor_id").references(() => vendors.id),
-  newVendorId: integer("new_vendor_id").notNull().references(() => vendors.id),
-  oldVendorName: text("old_vendor_name"),
-  newVendorName: text("new_vendor_name").notNull(),
-  productTitle: text("product_title").notNull(),
-  productSku: text("product_sku"),
-  reason: text("reason").notNull().default("out_of_stock"), // 'out_of_stock' | 'supplier_disappeared' | 'manual'
-  triggeredBy: text("triggered_by").notNull().default("auto"), // 'auto' | 'manual'
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const supplierReplacementLogRelations = relations(supplierReplacementLog, ({ one }) => ({
-  product: one(products, { fields: [supplierReplacementLog.productId], references: [products.id] }),
-  oldVendor: one(vendors, { fields: [supplierReplacementLog.oldVendorId], references: [vendors.id] }),
-  newVendor: one(vendors, { fields: [supplierReplacementLog.newVendorId], references: [vendors.id] }),
-}));
 
 // === AUTOMATION TABLES ===
 
@@ -331,6 +215,51 @@ export const veroList = pgTable("vero_list", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Global VERO List - System-wide restricted brands (applies to ALL users)
+export const globalVeroList = pgTable("global_vero_list", {
+  id: serial("id").primaryKey(),
+  type: text("type").notNull().default("brand"),
+  value: text("value").notNull(),
+  platform: text("platform"),
+  reason: text("reason"),
+  category: text("category"),
+  severity: text("severity").notNull().default("block"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGlobalVeroItemSchema = createInsertSchema(globalVeroList).omit({ id: true, createdAt: true });
+export type InsertGlobalVeroItem = z.infer<typeof insertGlobalVeroItemSchema>;
+export type GlobalVeroItem = typeof globalVeroList.$inferSelect;
+
+export const veroBrandAliases = pgTable("vero_brand_aliases", {
+  id: serial("id").primaryKey(),
+  canonicalBrand: text("canonical_brand").notNull(),
+  alias: text("alias").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVeroBrandAliasSchema = createInsertSchema(veroBrandAliases).omit({ id: true, createdAt: true });
+export type InsertVeroBrandAlias = z.infer<typeof insertVeroBrandAliasSchema>;
+export type VeroBrandAlias = typeof veroBrandAliases.$inferSelect;
+
+export const veroAuditLog = pgTable("vero_audit_log", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  productId: integer("product_id"),
+  submittedBrand: text("submitted_brand").notNull(),
+  matchedVeroBrand: text("matched_vero_brand"),
+  matchMethod: text("match_method"),
+  outcome: text("outcome").notNull(),
+  overrideBy: text("override_by"),
+  overrideReason: text("override_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVeroAuditLogSchema = createInsertSchema(veroAuditLog).omit({ id: true, createdAt: true });
+export type InsertVeroAuditLog = z.infer<typeof insertVeroAuditLogSchema>;
+export type VeroAuditLog = typeof veroAuditLog.$inferSelect;
+
 // Content Filters - Prevent personal information in listings
 export const contentFilters = pgTable("content_filters", {
   id: serial("id").primaryKey(),
@@ -353,6 +282,176 @@ export const restrictedProducts = pgTable("restricted_products", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// === RELATIONS ===
+export const usersRelations = relations(users, ({ one, many }) => ({
+  stores: many(stores),
+  vendors: many(vendors),
+  wallet: one(wallet),
+  subscription: one(subscriptions),
+  referrals: many(referrals, { relationName: "referrer" }),
+}));
+
+export const storesRelations = relations(stores, ({ one, many }) => ({
+  user: one(users, { fields: [stores.userId], references: [users.id] }),
+  listings: many(marketplaceListings),
+  orders: many(orders),
+}));
+
+export const productsRelations = relations(products, ({ one, many }) => ({
+  user: one(users, { fields: [products.userId], references: [users.id] }),
+  vendor: one(vendors, { fields: [products.vendorId], references: [vendors.id] }),
+  listings: many(marketplaceListings),
+}));
+
+export const ordersRelations = relations(orders, ({ one }) => ({
+  store: one(stores, { fields: [orders.storeId], references: [stores.id] }),
+  user: one(users, { fields: [orders.userId], references: [users.id] }),
+}));
+
+// === ZOD SCHEMAS ===
+
+// Stores
+export const insertStoreSchema = createInsertSchema(stores).omit({ id: true, userId: true, lastSync: true, createdAt: true });
+export type InsertStore = z.infer<typeof insertStoreSchema>;
+export type Store = typeof stores.$inferSelect;
+
+// Vendors
+export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true });
+export type InsertVendor = z.infer<typeof insertVendorSchema>;
+export type Vendor = typeof vendors.$inferSelect;
+
+// Products
+export const insertProductSchema = createInsertSchema(products).omit({ id: true, userId: true, createdAt: true, updatedAt: true, veroOverride: true, veroOverrideBy: true, veroOverrideReason: true });
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type Product = typeof products.$inferSelect;
+
+// Orders
+export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
+export type InsertOrder = z.infer<typeof insertOrderSchema>;
+export type Order = typeof orders.$inferSelect;
+
+// Wallet
+export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, walletId: true, createdAt: true });
+export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+export type Transaction = typeof transactions.$inferSelect;
+export type Wallet = typeof wallet.$inferSelect;
+
+// Subscriptions
+export type Subscription = typeof subscriptions.$inferSelect;
+
+// PayPal payout accruals — one row per (active subscriber, calendar month).
+// Recurring £0.10p tithe to PayPal.Me/OLADIRANOJO that admin batch-settles manually.
+// Keyed off users.subscriptionStatus (the source of truth on this platform) so that
+// every active/trialing user accrues £0.10 each calendar month they are active.
+export const paypalPayoutAccruals = pgTable("paypal_payout_accruals", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  recipientHandle: text("recipient_handle").notNull(),
+  monthYear: text("month_year").notNull(),
+  amountPence: integer("amount_pence").notNull().default(10),
+  status: text("status").notNull().default("pending"),
+  settledAt: timestamp("settled_at"),
+  settledByUserId: varchar("settled_by_user_id").references(() => users.id),
+  settledNote: text("settled_note"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  uniqUserMonth: uniqueIndex("paypal_payout_accruals_user_month_uniq").on(t.userId, t.monthYear, t.recipientHandle),
+}));
+export type PaypalPayoutAccrual = typeof paypalPayoutAccruals.$inferSelect;
+
+// Pricing Rules
+export const insertPricingRuleSchema = createInsertSchema(pricingRules).omit({ id: true, userId: true, createdAt: true });
+export type InsertPricingRule = z.infer<typeof insertPricingRuleSchema>;
+export type PricingRule = typeof pricingRules.$inferSelect;
+
+// Import Jobs
+export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, userId: true, createdAt: true, completedAt: true });
+export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
+export type ImportJob = typeof importJobs.$inferSelect;
+
+// Publish Queue
+export const insertPublishQueueSchema = createInsertSchema(publishQueue).omit({ id: true, userId: true, createdAt: true, publishedAt: true });
+export type InsertPublishQueue = z.infer<typeof insertPublishQueueSchema>;
+export type PublishQueueItem = typeof publishQueue.$inferSelect;
+
+// Marketplace Listings
+export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true });
+export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
+export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
+
+// VERO List
+export const insertVeroListSchema = createInsertSchema(veroList).omit({ id: true, userId: true, createdAt: true });
+export type InsertVeroItem = z.infer<typeof insertVeroListSchema>;
+export type VeroItem = typeof veroList.$inferSelect;
+
+// Content Filters
+export const insertContentFilterSchema = createInsertSchema(contentFilters).omit({ id: true, userId: true, createdAt: true });
+export type InsertContentFilter = z.infer<typeof insertContentFilterSchema>;
+export type ContentFilter = typeof contentFilters.$inferSelect;
+
+// Restricted Products
+export const insertRestrictedProductSchema = createInsertSchema(restrictedProducts).omit({ id: true, userId: true, createdAt: true });
+export type InsertRestrictedProduct = z.infer<typeof insertRestrictedProductSchema>;
+export type RestrictedProduct = typeof restrictedProducts.$inferSelect;
+
+// Add-on Purchases
+export const addonPurchases = pgTable("addon_purchases", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  addonId: varchar("addon_id").notNull(),
+  status: text("status").notNull().default("active"),
+  stripePaymentId: varchar("stripe_payment_id"),
+  purchasedAt: timestamp("purchased_at").defaultNow(),
+});
+
+export const insertAddonPurchaseSchema = createInsertSchema(addonPurchases).omit({ id: true, purchasedAt: true });
+export type InsertAddonPurchase = z.infer<typeof insertAddonPurchaseSchema>;
+export type AddonPurchase = typeof addonPurchases.$inferSelect;
+
+// Trending Products (best-sellers across platforms)
+export const trendingProducts = pgTable("trending_products", {
+  id: serial("id").primaryKey(),
+  platform: text("platform").notNull(),
+  title: text("title").notNull(),
+  category: text("category"),
+  price: decimal("price", { precision: 10, scale: 2 }),
+  currency: varchar("currency", { length: 3 }).default("GBP"),
+  salesVolume: integer("sales_volume"),
+  rank: integer("rank"),
+  imageUrl: text("image_url"),
+  productUrl: text("product_url"),
+  vendorName: text("vendor_name"),
+  vendorRating: decimal("vendor_rating", { precision: 3, scale: 1 }),
+  vendorReviews: integer("vendor_reviews"),
+  vendorReliability: text("vendor_reliability"),
+  linkVerifiedAt: timestamp("link_verified_at"),
+  monthYear: varchar("month_year", { length: 10 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type TrendingProduct = typeof trendingProducts.$inferSelect;
+
+// User Suggestions & Complaints
+export const suggestions = pgTable("suggestions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  userEmail: text("user_email").notNull(),
+  userName: text("user_name"),
+  category: text("category").notNull().default("feature_request"),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  status: text("status").notNull().default("new"),
+  // Optional screenshots / pictures attached by the user when submitting.
+  // Each entry is a data URL (e.g. "data:image/jpeg;base64,...") produced by
+  // the upload handler after server-side compression. Capped at 4 images.
+  imageUrls: text("image_urls").array().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSuggestionSchema = createInsertSchema(suggestions).omit({ id: true, userId: true, userEmail: true, userName: true, status: true, createdAt: true, imageUrls: true });
+export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
+export type Suggestion = typeof suggestions.$inferSelect;
 
 // === FULFILLMENT SYSTEM TABLES ===
 
@@ -394,6 +493,20 @@ export const fulfillmentJobs = pgTable("fulfillment_jobs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const paymentCards = pgTable("payment_cards", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  lastFour: varchar("last_four", { length: 4 }).notNull(),
+  brand: text("brand").notNull(),
+  expiryMonth: integer("expiry_month").notNull(),
+  expiryYear: integer("expiry_year").notNull(),
+  tokenizedId: text("tokenized_id").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  priority: integer("priority").notNull().default(0),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const returnRequests = pgTable("return_requests", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
@@ -421,188 +534,131 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// === RELATIONS ===
-export const usersRelations = relations(users, ({ one, many }) => ({
-  stores: many(stores),
-  vendors: many(vendors),
-  wallet: one(wallet),
-  subscription: one(subscriptions),
-  referrals: many(referrals, { relationName: "referrer" }),
+export const featureFlags = pgTable("feature_flags", {
+  id: serial("id").primaryKey(),
+  featureKey: text("feature_key").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isEnabled: boolean("is_enabled").notNull().default(false),
+  adminOnly: boolean("admin_only").notNull().default(true),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// === DROP-AND-SELL LISTING SERVICE ===
+
+export const freelancerProfiles = pgTable("freelancer_profiles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id"),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  specialties: text("specialties").array(),
+  rating: decimal("rating", { precision: 3, scale: 2 }).default("5.00"),
+  completedJobs: integer("completed_jobs").notNull().default(0),
+  isAvailable: boolean("is_available").notNull().default(true),
+  walletBalance: decimal("wallet_balance", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  totalEarnings: decimal("total_earnings", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  stripeConnectId: text("stripe_connect_id"),
+  activeJobCount: integer("active_job_count").notNull().default(0),
+  yearsExperience: text("years_experience"),
+  hasCommunity: boolean("has_community").default(false),
+  communityName: text("community_name"),
+  referralsMade: integer("referrals_made").default(0),
+  applicationStatus: text("application_status").default("approved"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const dropAndSellOrders = pgTable("drop_and_sell_orders", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  storeId: integer("store_id"),
+  listingCount: integer("listing_count").notNull(),
+  totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+  listerEarnings: decimal("lister_earnings", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  platformFee: decimal("platform_fee", { precision: 10, scale: 2 }).notNull().default("0.00"),
+  status: text("status").notNull().default("pending"),
+  freelancerId: integer("freelancer_id").references(() => freelancerProfiles.id),
+  assignedAt: timestamp("assigned_at"),
+  deadline: timestamp("deadline"),
+  completedAt: timestamp("completed_at"),
+  progressCount: integer("progress_count").notNull().default(0),
+  paymentStatus: text("payment_status").notNull().default("unpaid"),
+  payoutStatus: text("payout_status").notNull().default("pending"),
+  stripeSessionId: text("stripe_session_id"),
+  notes: text("notes"),
+  deliverySummary: jsonb("delivery_summary"),
+  userFeedback: text("user_feedback"),
+  userRating: integer("user_rating"),
+  // Customer auto-listing preferences (collected via popup on the request form).
+  // Empty array / null means "no preference (N/A)" — the lister can pick any
+  // category, default quantity falls back to 1, and any price range is fine.
+  categories: text("categories").array().default([]),
+  defaultQuantity: integer("default_quantity").default(1),
+  pricePreference: text("price_preference"), // 'low' | 'high' | null (no preference)
+  // Customer's preferred profit-margin markup, expressed as a whole
+  // percentage applied on top of the source/vendor cost (e.g. 30 = +30%).
+  // null = "no preference (N/A)" — the lister uses their own judgement.
+  profitMarginPercent: integer("profit_margin_percent"),
+  // Customer-selected supplier sites the lister should source from. Stores
+  // each vendor's name (e.g. "Amazon UK", "AliExpress"). Empty array means
+  // "no preference (N/A)" — the lister can pick any vendor in the directory.
+  preferredVendors: text("preferred_vendors").array().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const dropAndSellOrdersRelations = relations(dropAndSellOrders, ({ one }) => ({
+  user: one(users, { fields: [dropAndSellOrders.userId], references: [users.id] }),
+  freelancer: one(freelancerProfiles, { fields: [dropAndSellOrders.freelancerId], references: [freelancerProfiles.id] }),
 }));
 
-export const storesRelations = relations(stores, ({ one, many }) => ({
-  user: one(users, { fields: [stores.userId], references: [users.id] }),
-  listings: many(marketplaceListings),
-  orders: many(orders),
-}));
+// === FULFILLMENT ZOD SCHEMAS ===
 
-export const productsRelations = relations(products, ({ one, many }) => ({
-  user: one(users, { fields: [products.userId], references: [users.id] }),
-  vendor: one(vendors, { fields: [products.vendorId], references: [vendors.id] }),
-  listings: many(marketplaceListings),
-}));
-
-export const ordersRelations = relations(orders, ({ one }) => ({
-  store: one(stores, { fields: [orders.storeId], references: [stores.id] }),
-  user: one(users, { fields: [orders.userId], references: [users.id] }),
-}));
-
-// === ZOD SCHEMAS ===
-
-// Stores
-export const insertStoreSchema = createInsertSchema(stores).omit({ id: true, userId: true, lastSync: true, createdAt: true });
-export type InsertStore = z.infer<typeof insertStoreSchema>;
-export type Store = typeof stores.$inferSelect;
-
-// Vendors
-export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, userId: true, createdAt: true, isGlobal: true, verificationStatus: true, verifiedAt: true, verifiedBy: true });
-export type InsertVendor = z.infer<typeof insertVendorSchema>;
-export type Vendor = typeof vendors.$inferSelect;
-
-// Products
-export const insertProductSchema = createInsertSchema(products).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
-export type InsertProduct = z.infer<typeof insertProductSchema>;
-export type Product = typeof products.$inferSelect;
-
-// Product Variations
-export const insertProductVariationSchema = createInsertSchema(productVariations).omit({ id: true, createdAt: true });
-export type InsertProductVariation = z.infer<typeof insertProductVariationSchema>;
-export type ProductVariation = typeof productVariations.$inferSelect;
-
-// Orders
-export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
-export type InsertOrder = z.infer<typeof insertOrderSchema>;
-export type Order = typeof orders.$inferSelect;
-
-// Wallet
-export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, walletId: true, createdAt: true });
-export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
-export type Transaction = typeof transactions.$inferSelect;
-export type Wallet = typeof wallet.$inferSelect;
-
-// Subscriptions
-export type Subscription = typeof subscriptions.$inferSelect;
-
-// Pricing Rules
-export const insertPricingRuleSchema = createInsertSchema(pricingRules).omit({ id: true, userId: true, createdAt: true });
-export type InsertPricingRule = z.infer<typeof insertPricingRuleSchema>;
-export type PricingRule = typeof pricingRules.$inferSelect;
-
-// Import Jobs
-export const insertImportJobSchema = createInsertSchema(importJobs).omit({ id: true, userId: true, createdAt: true, completedAt: true });
-export type InsertImportJob = z.infer<typeof insertImportJobSchema>;
-export type ImportJob = typeof importJobs.$inferSelect;
-
-// Publish Queue
-export const insertPublishQueueSchema = createInsertSchema(publishQueue).omit({ id: true, userId: true, createdAt: true, publishedAt: true });
-export type InsertPublishQueue = z.infer<typeof insertPublishQueueSchema>;
-export type PublishQueueItem = typeof publishQueue.$inferSelect;
-
-// Marketplace Listings
-export const insertMarketplaceListingSchema = createInsertSchema(marketplaceListings).omit({ id: true, lastSync: true, outOfStockAt: true });
-export type InsertMarketplaceListing = z.infer<typeof insertMarketplaceListingSchema>;
-export type MarketplaceListing = typeof marketplaceListings.$inferSelect;
-
-// VERO List
-export const insertVeroListSchema = createInsertSchema(veroList).omit({ id: true, userId: true, createdAt: true });
-export type InsertVeroItem = z.infer<typeof insertVeroListSchema>;
-export type VeroItem = typeof veroList.$inferSelect;
-
-// Content Filters
-export const insertContentFilterSchema = createInsertSchema(contentFilters).omit({ id: true, userId: true, createdAt: true });
-export type InsertContentFilter = z.infer<typeof insertContentFilterSchema>;
-export type ContentFilter = typeof contentFilters.$inferSelect;
-
-// Restricted Products
-export const insertRestrictedProductSchema = createInsertSchema(restrictedProducts).omit({ id: true, userId: true, createdAt: true });
-export type InsertRestrictedProduct = z.infer<typeof insertRestrictedProductSchema>;
-export type RestrictedProduct = typeof restrictedProducts.$inferSelect;
-
-// Restock Logs
-export const insertRestockLogSchema = createInsertSchema(restockLogs).omit({ id: true, createdAt: true });
-export type InsertRestockLog = z.infer<typeof insertRestockLogSchema>;
-export type RestockLog = typeof restockLogs.$inferSelect;
-
-// Supplier replacement log
-export const insertSupplierReplacementLogSchema = createInsertSchema(supplierReplacementLog).omit({ id: true, createdAt: true });
-export type InsertSupplierReplacementLog = z.infer<typeof insertSupplierReplacementLogSchema>;
-export type SupplierReplacementLog = typeof supplierReplacementLog.$inferSelect;
-
-// Notifications
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
-export type InsertNotification = z.infer<typeof insertNotificationSchema>;
-export type Notification = typeof notifications.$inferSelect;
-
-// SKU Mappings
 export const insertSkuMappingSchema = createInsertSchema(skuMappings).omit({ id: true, userId: true, createdAt: true });
 export type InsertSkuMapping = z.infer<typeof insertSkuMappingSchema>;
 export type SkuMapping = typeof skuMappings.$inferSelect;
 
-// Fulfillment Jobs
 export const insertFulfillmentJobSchema = createInsertSchema(fulfillmentJobs).omit({ id: true, userId: true, createdAt: true, fulfilledAt: true, updatedAt: true });
 export type InsertFulfillmentJob = z.infer<typeof insertFulfillmentJobSchema>;
 export type FulfillmentJob = typeof fulfillmentJobs.$inferSelect;
 
-// Return Requests
+export const insertPaymentCardSchema = createInsertSchema(paymentCards).omit({ id: true, userId: true, createdAt: true });
+export type InsertPaymentCard = z.infer<typeof insertPaymentCardSchema>;
+export type PaymentCard = typeof paymentCards.$inferSelect;
+
 export const insertReturnRequestSchema = createInsertSchema(returnRequests).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
 export type InsertReturnRequest = z.infer<typeof insertReturnRequestSchema>;
 export type ReturnRequest = typeof returnRequests.$inferSelect;
 
-// Audit Logs
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, userId: true, createdAt: true });
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 
-// Add-on Catalog
-export const insertAddonCatalogSchema = createInsertSchema(addonCatalog).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertAddonCatalog = z.infer<typeof insertAddonCatalogSchema>;
-export type AddonCatalogItem = typeof addonCatalog.$inferSelect;
+export const insertFeatureFlagSchema = createInsertSchema(featureFlags).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertFeatureFlag = z.infer<typeof insertFeatureFlagSchema>;
+export type FeatureFlag = typeof featureFlags.$inferSelect;
 
-export type CatalogRefreshLog = typeof catalogRefreshLog.$inferSelect;
+export const insertFreelancerProfileSchema = createInsertSchema(freelancerProfiles).omit({ id: true, createdAt: true });
+export type InsertFreelancerProfile = z.infer<typeof insertFreelancerProfileSchema>;
+export type FreelancerProfile = typeof freelancerProfiles.$inferSelect;
 
-// Shipping Profiles
-export const shippingProfiles = pgTable("shipping_profiles", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  name: text("name").notNull(),
-  carrier: text("carrier").notNull().default("other"), // 'royal_mail', 'fedex', 'dhl', 'ups', 'usps', 'other'
-  serviceLevel: text("service_level").notNull().default("standard"), // 'standard', 'express', 'overnight', 'economy'
-  baseRate: decimal("base_rate", { precision: 10, scale: 2 }).notNull().default("0"),
-  ratePerKg: decimal("rate_per_kg", { precision: 10, scale: 2 }).default("0"),
-  freeShippingThreshold: decimal("free_shipping_threshold", { precision: 10, scale: 2 }),
-  estimatedDaysMin: integer("estimated_days_min").default(3),
-  estimatedDaysMax: integer("estimated_days_max").default(7),
-  regions: text("regions"), // Comma-separated: 'US,UK,EU'
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+export const insertDropAndSellOrderSchema = createInsertSchema(dropAndSellOrders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
+export type InsertDropAndSellOrder = z.infer<typeof insertDropAndSellOrderSchema>;
+export type DropAndSellOrder = typeof dropAndSellOrders.$inferSelect;
 
-export const insertShippingProfileSchema = createInsertSchema(shippingProfiles).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
-export type InsertShippingProfile = z.infer<typeof insertShippingProfileSchema>;
-export type ShippingProfile = typeof shippingProfiles.$inferSelect;
+// === FULFILLMENT RELATIONS ===
+export const fulfillmentJobsRelations = relations(fulfillmentJobs, ({ one }) => ({
+  order: one(orders, { fields: [fulfillmentJobs.orderId], references: [orders.id] }),
+  user: one(users, { fields: [fulfillmentJobs.userId], references: [users.id] }),
+  skuMapping: one(skuMappings, { fields: [fulfillmentJobs.skuMappingId], references: [skuMappings.id] }),
+}));
 
-// Admin settings
-export const adminSettings = pgTable("admin_settings", {
-  id: serial("id").primaryKey(),
-  siteName: text("site_name").default("DropandSell AI"),
-  maintenanceMode: boolean("maintenance_mode").default(false),
-  allowNewRegistrations: boolean("allow_new_registrations").default(true),
-  defaultSubscriptionPlan: text("default_subscription_plan").default("free"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// App settings (key-value store for platform credentials, etc.)
-export const appSettings = pgTable("app_settings", {
-  id: serial("id").primaryKey(),
-  key: text("key").notNull().unique(),
-  value: text("value").notNull(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-export const insertAppSettingSchema = createInsertSchema(appSettings).omit({ id: true, updatedAt: true });
-export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
+export const returnRequestsRelations = relations(returnRequests, ({ one }) => ({
+  order: one(orders, { fields: [returnRequests.orderId], references: [orders.id] }),
+  user: one(users, { fields: [returnRequests.userId], references: [users.id] }),
+  fulfillmentJob: one(fulfillmentJobs, { fields: [returnRequests.fulfillmentJobId], references: [fulfillmentJobs.id] }),
+}));
 
 // API Request/Response Types
 export type CreateStoreRequest = InsertStore;
@@ -626,40 +682,4 @@ export type DashboardStatsResponse = {
   totalOrders: number;
   activeListings: number;
   walletBalance: number;
-  outOfStockProducts: number;
 };
-
-// === GLOBAL VeRO (restricted brands/keywords) ===
-export const globalVeroList = pgTable("global_vero_list", {
-  id: serial("id").primaryKey(),
-  type: text("type").notNull().default("brand"),
-  value: text("value").notNull(),
-  platform: text("platform"),
-  reason: text("reason"),
-  category: text("category"),
-  severity: text("severity").notNull().default("block"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const insertGlobalVeroItemSchema = createInsertSchema(globalVeroList).omit({ id: true, createdAt: true });
-export type InsertGlobalVeroItem = z.infer<typeof insertGlobalVeroItemSchema>;
-export type GlobalVeroItem = typeof globalVeroList.$inferSelect;
-
-// === SUGGESTIONS (user feedback / feature requests) ===
-export const suggestions = pgTable("suggestions", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  userEmail: text("user_email").notNull(),
-  userName: text("user_name"),
-  category: text("category").notNull().default("feature_request"),
-  subject: text("subject").notNull(),
-  message: text("message").notNull(),
-  status: text("status").notNull().default("new"),
-  imageUrls: text("image_urls").array().default([]),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const insertSuggestionSchema = createInsertSchema(suggestions).omit({ id: true, userId: true, userEmail: true, userName: true, status: true, createdAt: true, imageUrls: true });
-export type InsertSuggestion = z.infer<typeof insertSuggestionSchema>;
-export type Suggestion = typeof suggestions.$inferSelect;

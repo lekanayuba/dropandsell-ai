@@ -1,11 +1,11 @@
 {
-  "name": "DropandSell AI - Dropshipping Automation",
-  "short_name": "DropandSell AI",
+  "name": "DropandSell Automation App - Dropshipping Automation",
+  "short_name": "DropandSell",
   "description": "Automate your dropshipping business across multiple marketplaces",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#6366f1",
+  "background_color": "#1a3540",
+  "theme_color": "#285261",
   "orientation": "any",
   "icons": [
     {

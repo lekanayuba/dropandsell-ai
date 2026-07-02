@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useLocation, useSearch } from "wouter";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth, USER_QUERY_KEY } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Mail, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
@@ -26,7 +26,7 @@ export default function VerifyEmail() {
       return apiRequest("POST", "/api/auth/verify-email", { token: verificationToken });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     }
   });
 
@@ -136,7 +136,7 @@ export default function VerifyEmail() {
               <p className="font-medium">Next steps:</p>
               <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
                 <li>Open your email inbox</li>
-                <li>Find the email from DropandSell AI</li>
+                <li>Find the email from DropandSell Automation App</li>
                 <li>Click the verification link</li>
                 <li>Return here to access your dashboard</li>
               </ol>

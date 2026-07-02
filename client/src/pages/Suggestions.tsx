@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Lightbulb, Send, Loader2, Clock, CheckCircle2, MessageSquare, AlertCircle, ImagePlus, X } from "lucide-react";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
+import { useAuth } from "@/hooks/use-auth";
 import type { Suggestion } from "@shared/schema";
 
 const CATEGORIES = [
@@ -39,6 +41,9 @@ function getStatusBadge(status: string) {
   }
 }
 
+// Small helper used by both the user and admin views to render the
+// attached pictures inline. Clicking a thumbnail opens it full size in a
+// new tab.
 function ImageGrid({ urls, idPrefix }: { urls: string[] | null | undefined; idPrefix: string }) {
   if (!Array.isArray(urls) || urls.length === 0) return null;
   return (
@@ -49,7 +54,7 @@ function ImageGrid({ urls, idPrefix }: { urls: string[] | null | undefined; idPr
           href={u}
           target="_blank"
           rel="noreferrer"
-          className="block rounded-md overflow-hidden border hover-elevate"
+          className="block rounded-md overflow-hidden border hover:opacity-90 transition"
           data-testid={`${idPrefix}-image-${i}`}
         >
           <img src={u} alt={`attachment ${i + 1}`} className="w-full h-24 object-cover" />
@@ -59,22 +64,19 @@ function ImageGrid({ urls, idPrefix }: { urls: string[] | null | undefined; idPr
   );
 }
 
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export default function Suggestions() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [category, setCategory] = useState("feature_request");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  // Pending image attachments. We keep both the File (for upload) and a
+  // local object URL (for the preview thumbnail) so the previews work
+  // without re-reading the file.
   const [pendingImages, setPendingImages] = useState<{ file: File; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Hold the latest preview URLs in a ref so the unmount-cleanup effect
+  // can revoke whatever was pending without re-running on every change.
   const pendingPreviewsRef = useRef<string[]>([]);
   pendingPreviewsRef.current = pendingImages.map(p => p.preview);
   useEffect(() => {
@@ -83,15 +85,31 @@ export default function Suggestions() {
     };
   }, []);
 
-  const { data, isLoading } = useQuery<Suggestion[] | { suggestions: Suggestion[] }>({
+  const isAdmin = user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com";
+
+  const { data: userSuggestionsData, isLoading } = useQuery<{ suggestions: Suggestion[] }>({
     queryKey: ["/api/suggestions"],
   });
 
-  const userSuggestions: Suggestion[] = Array.isArray(data) ? data : (data?.suggestions ?? []);
+  const { data: adminSuggestionsData, isLoading: adminLoading } = useQuery<{ suggestions: Suggestion[] }>({
+    queryKey: ["/api/admin/suggestions"],
+    enabled: isAdmin,
+  });
 
   const submitMutation = useMutation({
-    mutationFn: async (payload: { category: string; subject: string; message: string; imageUrls: string[] }) => {
-      const res = await apiRequest("POST", "/api/suggestions", payload);
+    mutationFn: async (data: { category: string; subject: string; message: string; files: File[] }) => {
+      // Use FormData so we can send files alongside text fields. We can't
+      // use apiRequest here because that helper JSON-serialises the body.
+      const fd = new FormData();
+      fd.append('category', data.category);
+      fd.append('subject', data.subject);
+      fd.append('message', data.message);
+      for (const f of data.files) fd.append('images', f, f.name);
+      const res = await fetch('/api/suggestions', { method: 'POST', body: fd, credentials: 'include' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `Submit failed (${res.status})`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -99,15 +117,38 @@ export default function Suggestions() {
       setCategory("feature_request");
       setSubject("");
       setMessage("");
+      // Release any preview blob URLs and clear the queue.
       pendingImages.forEach(p => URL.revokeObjectURL(p.preview));
       setPendingImages([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (fileInputRef.current) fileInputRef.current.value = '';
       queryClient.invalidateQueries({ queryKey: ["/api/suggestions"] });
+      if (isAdmin) queryClient.invalidateQueries({ queryKey: ["/api/admin/suggestions"] });
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed to submit suggestion", variant: "destructive" });
     },
   });
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const res = await fetch(`/api/admin/suggestions/${id}/status`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error('Failed to update status');
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Status Updated" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/suggestions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suggestions"] });
+    },
+  });
+
+  const userSuggestions = userSuggestionsData?.suggestions || [];
+  const adminSuggestions = adminSuggestionsData?.suggestions || [];
 
   const handleFilesPicked = (filesList: FileList | null) => {
     if (!filesList || filesList.length === 0) return;
@@ -115,21 +156,21 @@ export default function Suggestions() {
     const accepted: { file: File; preview: string }[] = [];
     const slotsLeft = MAX_IMAGES - pendingImages.length;
     for (const f of picked.slice(0, slotsLeft)) {
-      if (!f.type.startsWith("image/")) {
-        toast({ title: "Not an image", description: `${f.name} was skipped — only image files are allowed.`, variant: "destructive" });
+      if (!f.type.startsWith('image/')) {
+        toast({ title: 'Not an image', description: `${f.name} was skipped — only image files are allowed.`, variant: 'destructive' });
         continue;
       }
       if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-        toast({ title: "File too large", description: `${f.name} is over ${MAX_FILE_SIZE_MB}MB and was skipped.`, variant: "destructive" });
+        toast({ title: 'File too large', description: `${f.name} is over ${MAX_FILE_SIZE_MB}MB and was skipped.`, variant: 'destructive' });
         continue;
       }
       accepted.push({ file: f, preview: URL.createObjectURL(f) });
     }
     if (picked.length > slotsLeft) {
-      toast({ title: "Limit reached", description: `You can attach up to ${MAX_IMAGES} pictures per suggestion.` });
+      toast({ title: 'Limit reached', description: `You can attach up to ${MAX_IMAGES} pictures per suggestion.` });
     }
     setPendingImages(prev => [...prev, ...accepted]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removePending = (idx: number) => {
@@ -141,31 +182,31 @@ export default function Suggestions() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!subject.trim() || !message.trim()) {
       toast({ title: "Missing Fields", description: "Please fill in both subject and message.", variant: "destructive" });
       return;
     }
-    const imageUrls = await Promise.all(pendingImages.map(p => readFileAsDataUrl(p.file)));
     submitMutation.mutate({
       category,
       subject: subject.trim(),
       message: message.trim(),
-      imageUrls,
+      files: pendingImages.map(p => p.file),
     });
   };
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto" data-testid="page-suggestions">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="space-y-8 max-w-5xl mx-auto">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold font-display" data-testid="text-page-title">Suggestions</h1>
           <p className="text-muted-foreground mt-1">Suggest features you'd like to see on the platform</p>
         </div>
+        <PageRefreshButton queryKeys={["/api/suggestions"]} />
       </div>
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-4 flex items-start gap-3">
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3">
         <Lightbulb className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
         <div className="text-sm text-muted-foreground">
           <p className="font-medium text-foreground">This page is for feature suggestions only</p>
@@ -221,10 +262,12 @@ export default function Suggestions() {
               <p className="text-xs text-muted-foreground text-right">{message.length}/2000</p>
             </div>
 
+            {/* Attach pictures — optional. Up to 4 images, 10MB each.
+                Screenshots are the most common use case. */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Attach pictures (optional)</label>
               <p className="text-xs text-muted-foreground">
-                Add up to {MAX_IMAGES} screenshots or photos ({MAX_FILE_SIZE_MB}MB each).
+                Add up to {MAX_IMAGES} screenshots or photos ({MAX_FILE_SIZE_MB}MB each). We'll automatically resize them so they upload quickly.
               </p>
               <input
                 ref={fileInputRef}
@@ -245,7 +288,7 @@ export default function Suggestions() {
                 data-testid="button-add-image"
               >
                 <ImagePlus className="w-4 h-4" />
-                {pendingImages.length === 0 ? "Add pictures" : `Add more (${pendingImages.length}/${MAX_IMAGES})`}
+                {pendingImages.length === 0 ? 'Add pictures' : `Add more (${pendingImages.length}/${MAX_IMAGES})`}
               </Button>
               {pendingImages.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
@@ -255,7 +298,7 @@ export default function Suggestions() {
                       <button
                         type="button"
                         onClick={() => removePending(idx)}
-                        className="absolute top-1 right-1 bg-black/70 text-white rounded-full p-1"
+                        className="absolute top-1 right-1 bg-black/70 hover:bg-black text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
                         aria-label="Remove picture"
                         data-testid={`button-remove-image-${idx}`}
                       >
@@ -296,7 +339,7 @@ export default function Suggestions() {
           ) : (
             <div className="space-y-3">
               {userSuggestions.map((s) => (
-                <div key={s.id} className="border rounded-md p-4 space-y-2" data-testid={`suggestion-card-${s.id}`}>
+                <div key={s.id} className="border rounded-lg p-4 space-y-2" data-testid={`suggestion-card-${s.id}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -304,12 +347,12 @@ export default function Suggestions() {
                         <Badge variant="outline" className="text-xs">{CATEGORIES.find(c => c.value === s.category)?.label || s.category}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground mt-1" data-testid={`text-suggestion-message-${s.id}`}>{s.message}</p>
-                      <ImageGrid urls={s.imageUrls} idPrefix={`suggestion-${s.id}`} />
+                      <ImageGrid urls={(s as any).imageUrls} idPrefix={`suggestion-${s.id}`} />
                     </div>
                     {getStatusBadge(s.status)}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {s.createdAt ? new Date(s.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                    {s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
                   </p>
                 </div>
               ))}
@@ -317,6 +360,64 @@ export default function Suggestions() {
           )}
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-primary" />
+              All User Suggestions (Admin)
+            </CardTitle>
+            <CardDescription>Review and manage suggestions from all users</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {adminLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : adminSuggestions.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground">No suggestions yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {adminSuggestions.map((s) => (
+                  <div key={s.id} className="border rounded-lg p-4 space-y-2" data-testid={`admin-suggestion-card-${s.id}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-medium">{s.subject}</h4>
+                          <Badge variant="outline" className="text-xs">{CATEGORIES.find(c => c.value === s.category)?.label || s.category}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">{s.message}</p>
+                        <ImageGrid urls={(s as any).imageUrls} idPrefix={`admin-suggestion-${s.id}`} />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          From: <span className="font-medium">{s.userName || 'Unknown'}</span> ({s.userEmail}) — {s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Select
+                          value={s.status}
+                          onValueChange={(val) => statusMutation.mutate({ id: s.id, status: val })}
+                        >
+                          <SelectTrigger className="w-[140px]" data-testid={`select-admin-status-${s.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="new">New</SelectItem>
+                            <SelectItem value="reviewed">Reviewed</SelectItem>
+                            <SelectItem value="planned">Planned</SelectItem>
+                            <SelectItem value="implemented">Implemented</SelectItem>
+                            <SelectItem value="declined">Declined</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

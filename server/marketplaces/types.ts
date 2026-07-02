@@ -24,12 +24,9 @@ export interface MarketplaceProduct {
 
 export interface PublishResult {
   success: boolean;
-  externalId?: string;
+  externalId: string;
   listingUrl?: string;
   error?: string;
-  isPolicyError?: boolean;
-  isShippingLocationError?: boolean;
-  errorCodes?: string[];
 }
 
 export interface TestConnectionResult {

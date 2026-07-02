@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile, access, mkdir } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -59,6 +59,18 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  console.log("copying extension zip to dist...");
+  const extSrc = "public/dropandsell-extension.zip";
+  const extDest = "dist/public/dropandsell-extension.zip";
+  try {
+    await access(extSrc);
+    await mkdir("dist/public", { recursive: true });
+    await copyFile(extSrc, extDest);
+    console.log("extension zip copied successfully");
+  } catch {
+    console.warn("extension zip not found at", extSrc, "- skipping");
+  }
 }
 
 buildAll().catch((err) => {

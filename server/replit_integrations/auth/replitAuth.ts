@@ -23,7 +23,7 @@ export function getSession() {
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
     conString: process.env.DATABASE_URL,
-    createTableIfMissing: false,
+    createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
   });
@@ -35,7 +35,6 @@ export function getSession() {
     cookie: {
       httpOnly: true,
       secure: true,
-      sameSite: "lax",
       maxAge: sessionTtl,
     },
   });
@@ -52,6 +51,9 @@ function updateUserSession(
 }
 
 async function upsertUser(claims: any) {
+  // Detect first-time signups (vs returning logins) so we can send the
+  // extension-update / welcome email exactly once per Replit-Auth user.
+  const isNewUser = !(await authStorage.getUser(claims["sub"]));
   await authStorage.upsertUser({
     id: claims["sub"],
     email: claims["email"],
@@ -59,6 +61,16 @@ async function upsertUser(claims: any) {
     lastName: claims["last_name"],
     profileImageUrl: claims["profile_image_url"],
   });
+  if (isNewUser && claims["email"]) {
+    try {
+      const { sendExtensionUpdateEmailToUser } = await import('../../subscriberUpdateEmailScheduler.js');
+      sendExtensionUpdateEmailToUser(claims["email"], claims["first_name"], false).catch((e) =>
+        console.error(`[signup-welcome] (replit-auth) send failed for ${claims["email"]}:`, e)
+      );
+    } catch (e) {
+      console.error('[signup-welcome] (replit-auth) import failed:', e);
+    }
+  }
 }
 
 export async function setupAuth(app: Express) {

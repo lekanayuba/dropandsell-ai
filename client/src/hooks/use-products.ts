@@ -22,10 +22,27 @@ export function useProducts(filters?: ProductFilters) {
     queryKey: [api.products.list.path, filters],
     queryFn: async () => {
       const url = `${api.products.list.path}?${params.toString()}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch products");
-      return api.products.list.responses[200].parse(await res.json());
+      let res: Response;
+      try {
+        res = await fetch(url, { credentials: "include" });
+      } catch (networkErr: any) {
+        throw new Error(`Network error: ${networkErr?.message || 'no connection'}`);
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          const body = await res.json();
+          detail = body?.message ? ` — ${body.message}` : '';
+        } catch {}
+        throw new Error(`Server error ${res.status}${detail}`);
+      }
+      try {
+        return api.products.list.responses[200].parse(await res.json());
+      } catch (parseErr: any) {
+        throw new Error(`Bad response from server (${parseErr?.message || 'parse failed'})`);
+      }
     },
+    retry: 1,
   });
 }
 
@@ -50,6 +67,47 @@ export function useCreateProduct() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to create product", variant: "destructive" });
+    },
+  });
+}
+
+export function useUpdateProduct() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<InsertProduct> }) => {
+      const url = buildUrl(api.products.update.path, { id });
+      const res = await fetch(url, {
+        method: api.products.update.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update product");
+      }
+      return res.json();
+    },
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: [api.products.list.path] });
+      const previous = queryClient.getQueriesData({ queryKey: [api.products.list.path] });
+      queryClient.setQueriesData({ queryKey: [api.products.list.path] }, (old: any) => {
+        if (!old?.items) return old;
+        return { ...old, items: old.items.map((p: any) => p.id === id ? { ...p, ...data } : p) };
+      });
+      return { previous };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.products.list.path] });
+      toast({ title: "Success", description: "Product updated successfully" });
+    },
+    onError: (err: any, _vars, context) => {
+      if (context?.previous) {
+        context.previous.forEach(([key, value]: [any, any]) => queryClient.setQueryData(key, value));
+      }
+      toast({ title: "Error", description: err.message || "Failed to update product", variant: "destructive" });
     },
   });
 }

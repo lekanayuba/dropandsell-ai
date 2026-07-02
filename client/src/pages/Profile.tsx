@@ -8,19 +8,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth, USER_QUERY_KEY } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
 import { User, Pencil, Shield, Loader2, Mail, Phone, Check, KeyRound, AlertTriangle, Lock, Eye, EyeOff } from "lucide-react";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
 
 export default function Profile() {
   const { toast } = useToast();
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
   const [editMode, setEditMode] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [showOTPDialog, setShowOTPDialog] = useState(false);
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [conflictEmail, setConflictEmail] = useState("");
-  const [conflictingAccountId, setConflictingAccountId] = useState<string>("");
-  const [conflictPassword, setConflictPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpMessage, setOtpMessage] = useState("");
@@ -50,11 +49,6 @@ export default function Profile() {
     }
   }, [user]);
 
-  const refreshUser = () => {
-    queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
-    refetch();
-  };
-
   const profileMutation = useMutation({
     mutationFn: async (data: { firstName: string; lastName: string; email: string; phone: string; password: string }) => {
       const res = await fetch("/api/user/profile", {
@@ -67,7 +61,6 @@ export default function Profile() {
       if (!res.ok) {
         const err: any = new Error(json.message || "Failed to update profile");
         err.canDelete = json.canDelete;
-        err.conflictingAccountId = json.conflictingAccountId;
         err.status = res.status;
         throw err;
       }
@@ -77,11 +70,12 @@ export default function Profile() {
       if (data.requiresVerification) {
         setShowPasswordDialog(false);
         setConfirmPassword("");
-        setOtpMessage(data.message || "A 6-digit verification code has been sent to your email.");
+        setOtpMessage(data.message);
         setOtpCode("");
         setShowOTPDialog(true);
       } else {
-        refreshUser();
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
         setEditMode(false);
         setShowPasswordDialog(false);
         setConfirmPassword("");
@@ -94,8 +88,6 @@ export default function Profile() {
     onError: (error: any) => {
       if (error?.canDelete && error?.status === 409) {
         setConflictEmail(profileForm.email);
-        setConflictPassword(confirmPassword);
-        setShowPasswordDialog(false);
         setShowConflictDialog(true);
       } else {
         toast({
@@ -108,8 +100,8 @@ export default function Profile() {
   });
 
   const deleteConflictMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/user/profile/delete-conflicting", { email: conflictEmail, password: conflictPassword });
+    mutationFn: async (data: { email: string; password: string }) => {
+      const response = await apiRequest("POST", "/api/user/profile/delete-conflicting", data);
       return response.json();
     },
     onSuccess: () => {
@@ -134,7 +126,8 @@ export default function Profile() {
       return response.json();
     },
     onSuccess: () => {
-      refreshUser();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setEditMode(false);
       setShowOTPDialog(false);
       setOtpCode("");
@@ -207,16 +200,17 @@ export default function Profile() {
 
   return (
     <div className="container mx-auto p-6 max-w-3xl space-y-6" data-testid="page-profile">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Profile</h1>
           <p className="text-muted-foreground" data-testid="text-page-description">Manage your personal information</p>
         </div>
+        <PageRefreshButton />
       </div>
 
       <Card data-testid="card-profile">
         <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                 <User className="h-6 w-6 text-primary" />
@@ -272,7 +266,7 @@ export default function Profile() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email" className="flex items-center gap-2 flex-wrap">
+            <Label htmlFor="email" className="flex items-center gap-2">
               <Mail className="h-4 w-4" />
               Email Address
               {editMode && emailChanged && (
@@ -285,15 +279,14 @@ export default function Profile() {
               id="email"
               type="email"
               value={profileForm.email}
-              onChange={(e) => setProfileForm(prev => ({ ...prev, email: e.target.value }))}
-              readOnly={!editMode}
-              className={!editMode ? "bg-muted" : ""}
+              readOnly
+              className="bg-muted"
               data-testid="input-email"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="phone" className="flex items-center gap-2 flex-wrap">
+            <Label htmlFor="phone" className="flex items-center gap-2">
               <Phone className="h-4 w-4" />
               Phone Number
               {editMode && phoneChanged && (
@@ -315,7 +308,7 @@ export default function Profile() {
           </div>
 
           {editMode && (emailChanged || phoneChanged) && (
-            <div className="flex items-start gap-3 p-4 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
               <Shield className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
@@ -329,7 +322,7 @@ export default function Profile() {
           )}
 
           {editMode && !emailChanged && !phoneChanged && hasChanges && (
-            <div className="flex items-center gap-2 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
               <KeyRound className="h-4 w-4 text-amber-600 shrink-0" />
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 You'll need to enter your current password to confirm changes.
@@ -345,21 +338,21 @@ export default function Profile() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 text-sm">
-            <div className="flex justify-between items-center gap-2 py-2 border-b">
+            <div className="flex justify-between items-center py-2 border-b">
               <span className="text-muted-foreground">Account ID</span>
               <span className="font-mono text-xs" data-testid="text-account-id">{user?.id?.slice(0, 8)}...</span>
             </div>
-            <div className="flex justify-between items-center gap-2 py-2 border-b">
+            <div className="flex justify-between items-center py-2 border-b">
               <span className="text-muted-foreground">Email Status</span>
               <span className="flex items-center gap-1 text-green-600" data-testid="text-email-status">
-                <Check className="h-3 w-3" /> {user?.emailVerified ? "Verified" : "Unverified"}
+                <Check className="h-3 w-3" /> Verified
               </span>
             </div>
-            <div className="flex justify-between items-center gap-2 py-2 border-b">
+            <div className="flex justify-between items-center py-2 border-b">
               <span className="text-muted-foreground">Subscription</span>
               <span data-testid="text-subscription">{(user as any)?.subscriptionPlan || "Free"}</span>
             </div>
-            <div className="flex justify-between items-center gap-2 py-2">
+            <div className="flex justify-between items-center py-2">
               <span className="text-muted-foreground">Referral Code</span>
               <span className="font-mono text-xs" data-testid="text-referral-code">{(user as any)?.referralCode || "—"}</span>
             </div>
@@ -369,7 +362,7 @@ export default function Profile() {
 
       <Card data-testid="card-change-password">
         <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                 <Lock className="h-6 w-6 text-primary" />
@@ -465,7 +458,7 @@ export default function Profile() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2 flex-wrap">
+            <div className="flex items-center gap-2 pt-2">
               <Button
                 variant="ghost"
                 size="sm"
@@ -660,7 +653,7 @@ export default function Profile() {
               Another account is registered with <strong>{conflictEmail}</strong>. Would you like to delete that account so you can use this email for your current account?
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-start gap-3 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
             <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
             <p className="text-sm text-destructive">
               This will permanently delete the other account and all its data. This action cannot be undone.
@@ -672,8 +665,8 @@ export default function Profile() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => deleteConflictMutation.mutate()}
-              disabled={deleteConflictMutation.isPending || !conflictEmail}
+              onClick={() => deleteConflictMutation.mutate({ email: conflictEmail, password: confirmPassword })}
+              disabled={deleteConflictMutation.isPending}
               data-testid="button-delete-conflict"
             >
               {deleteConflictMutation.isPending ? (

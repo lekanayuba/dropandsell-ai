@@ -5,11 +5,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, Users, Wallet, Share2, Check, Loader2, Gift } from "lucide-react";
+import { Copy, Users, Wallet, Share2, Check, Loader2, Gift, Download, Mail } from "lucide-react";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
+import { downloadExcel } from "@/lib/export-excel";
+import { useCurrency } from "@/hooks/use-currency";
 
 export default function Referrals() {
   const { toast } = useToast();
+  const { symbol: currSym, format: fc } = useCurrency();
   const [copied, setCopied] = useState(false);
 
   const { data: referralData, isLoading: loadingCode } = useQuery<{
@@ -25,6 +30,20 @@ export default function Referrals() {
     totalReferrals: number;
   }>({
     queryKey: ['/api/referrals'],
+    refetchInterval: 30000,
+  });
+
+  const sendReportMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/referrals/send-report');
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Report Sent", description: data.message || "Monthly report emailed successfully" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to send report", variant: "destructive" });
+    },
   });
 
   const copyToClipboard = async (text: string) => {
@@ -38,13 +57,54 @@ export default function Referrals() {
     }
   };
 
+  const activeCount = (referralsData?.referrals || []).filter((r: any) => r.status === 'active').length;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Referral Program</h1>
-        <p className="text-muted-foreground">
-          Earn 10% commission for every user you refer who subscribes
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">Referral Program</h1>
+          <p className="text-muted-foreground">
+            Earn 10% commission for every user you refer who subscribes
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => sendReportMutation.mutate()}
+            disabled={!referralsData?.referrals?.length || sendReportMutation.isPending}
+            data-testid="button-email-report"
+          >
+            {sendReportMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Mail className="w-4 h-4 mr-2" />
+            )}
+            Email Report
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const referrals = referralsData?.referrals || [];
+              if (referrals.length === 0) return;
+              downloadExcel(referrals.map((r: any) => ({
+                Name: r.referredName || '—',
+                Email: r.referredEmail || '—',
+                Status: r.status === 'active' ? 'Active' : 'Inactive',
+                Plan: r.referredPlan || '—',
+                Earnings: fc(r.totalEarnings || 0),
+              })), 'referrals');
+            }}
+            disabled={!referralsData?.referrals?.length}
+            data-testid="button-download-referrals"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+          <PageRefreshButton />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -57,6 +117,7 @@ export default function Referrals() {
             <div className="text-2xl font-bold" data-testid="text-total-referrals">
               {loadingReferrals ? "..." : referralsData?.totalReferrals || 0}
             </div>
+            <p className="text-xs text-muted-foreground">{activeCount} active</p>
           </CardContent>
         </Card>
 
@@ -67,7 +128,7 @@ export default function Referrals() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-earnings">
-              £{loadingReferrals ? "..." : (referralsData?.totalEarnings || 0).toFixed(2)}
+              {loadingReferrals ? "..." : fc(referralsData?.totalEarnings || 0)}
             </div>
           </CardContent>
         </Card>
@@ -155,9 +216,9 @@ export default function Referrals() {
               <div className="mx-auto mb-3 h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                 <Wallet className="h-5 w-5 text-primary" />
               </div>
-              <h4 className="font-semibold mb-1">3. Get Paid Instantly</h4>
+              <h4 className="font-semibold mb-1">3. Earn Every Month</h4>
               <p className="text-sm text-muted-foreground">
-                10% commission is added to your wallet immediately
+                You earn 10% of their subscription every month they stay active
               </p>
             </div>
           </div>
@@ -175,26 +236,45 @@ export default function Referrals() {
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           ) : referralsData?.referrals?.length ? (
-            <div className="space-y-2">
-              {referralsData.referrals.map((referral: any) => (
-                <div 
-                  key={referral.id} 
-                  className="flex items-center justify-between p-3 bg-muted/30 rounded-lg"
-                  data-testid={`referral-item-${referral.id}`}
-                >
-                  <div>
-                    <Badge variant={referral.status === 'active' ? 'default' : 'secondary'}>
-                      {referral.status}
-                    </Badge>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-primary">
-                      £{Number(referral.totalEarnings || 0).toFixed(2)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">earned</p>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead className="text-right">Earnings</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {referralsData.referrals.map((referral: any) => (
+                    <TableRow key={referral.id} data-testid={`referral-item-${referral.id}`}>
+                      <TableCell className="font-medium" data-testid={`text-referral-name-${referral.id}`}>
+                        {referral.referredName || '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm" data-testid={`text-referral-email-${referral.id}`}>
+                        {referral.referredEmail || '—'}
+                      </TableCell>
+                      <TableCell data-testid={`badge-referral-status-${referral.id}`}>
+                        <Badge variant={referral.status === 'active' ? 'default' : 'secondary'}>
+                          {referral.status === 'active' ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell data-testid={`text-referral-plan-${referral.id}`}>
+                        {referral.referredPlan ? (
+                          <Badge variant="outline">{referral.referredPlan}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-primary" data-testid={`text-referral-earnings-${referral.id}`}>
+                        {fc(referral.totalEarnings || 0)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">

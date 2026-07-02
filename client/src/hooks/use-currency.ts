@@ -4,7 +4,7 @@ import { getCurrencySymbol, getCurrencyInfo } from "@/lib/currency";
 
 export function useCurrency() {
   const { user } = useAuth();
-  const code = (user as any)?.currency || "GBP";
+  const code = user?.currency || "GBP";
 
   const { data: ratesData } = useQuery<{ base: string; rates: Record<string, number> }>({
     queryKey: ["/api/exchange-rates"],

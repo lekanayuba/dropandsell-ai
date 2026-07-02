@@ -138,7 +138,50 @@
       background: white;
       border-radius: 8px;
       border: 1px solid #e2e8f0;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
+    }
+    
+    .image-thumbnails {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+    }
+    
+    .image-thumbnails::-webkit-scrollbar {
+      height: 4px;
+    }
+    
+    .image-thumbnails::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 2px;
+    }
+    
+    .image-thumb {
+      width: 48px;
+      height: 48px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 2px solid #e2e8f0;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.2s;
+    }
+    
+    .image-thumb:hover {
+      border-color: #93c5fd;
+    }
+    
+    .image-thumb.active {
+      border-color: #3b82f6;
+    }
+    
+    .image-count {
+      font-size: 11px;
+      color: #64748b;
+      text-align: center;
+      margin-bottom: 8px;
     }
     
     .no-image {
@@ -261,6 +304,30 @@
       to { transform: rotate(360deg); }
     }
     
+    .btn-ai {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #a78bfa;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+      color: white;
+      margin-top: 6px;
+    }
+    
+    .btn-ai:hover {
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+    }
+    
+    .btn-ai:disabled {
+      background: #94a3b8;
+      border-color: #94a3b8;
+      cursor: not-allowed;
+    }
+    
     .settings-link {
       text-align: center;
       margin-top: 12px;
@@ -274,6 +341,250 @@
     
     .settings-link a:hover {
       text-decoration: underline;
+    }
+
+    .settings-link .link-row {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .bg-sync-block {
+      margin-top: 14px;
+      padding: 10px 12px;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 12px;
+      color: #475569;
+      text-align: left;
+    }
+
+    .bg-sync-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .bg-sync-row label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      margin: 0;
+    }
+
+    .bg-sync-row input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+      margin: 0;
+    }
+
+    .bg-sync-status {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #64748b;
+    }
+    
+    .update-banner {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: white;
+      padding: 10px 14px;
+      font-size: 13px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    
+    .update-banner.visible {
+      display: flex;
+    }
+    
+    .update-banner .update-text {
+      flex: 1;
+    }
+    
+    .update-banner .update-text strong {
+      display: block;
+      font-size: 13px;
+    }
+    
+    .update-banner .update-text span {
+      font-size: 11px;
+      opacity: 0.9;
+    }
+    
+    .update-btn {
+      background: white;
+      color: #d97706;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    
+    .update-btn:hover {
+      background: #fef3c7;
+    }
+    
+    .variations-section {
+      margin-bottom: 12px;
+    }
+    
+    .variations-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    
+    .variations-header label {
+      margin-bottom: 0;
+    }
+    
+    .variations-count {
+      font-size: 11px;
+      color: #3b82f6;
+      font-weight: 500;
+    }
+    
+    .variations-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .variation-row {
+      display: grid;
+      grid-template-columns: 70px 1fr 60px 50px 24px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .variation-row select.var-type,
+    .variation-row input.var-value,
+    .variation-row input.var-price,
+    .variation-row input.var-qty {
+      padding: 4px 6px;
+      font-size: 11px;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      background: white;
+      color: #1e293b;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .variation-row .var-remove {
+      background: transparent;
+      border: none;
+      color: #dc2626;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .variation-row.unavailable {
+      opacity: 0.55;
+    }
+
+    .variations-header-row {
+      display: grid;
+      grid-template-columns: 70px 1fr 60px 50px 24px;
+      gap: 6px;
+      font-size: 9px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 0 2px;
+    }
+
+    .variation-add-btn {
+      margin-top: 4px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #3b82f6;
+      background: white;
+      border: 1px dashed #93c5fd;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .variation-add-btn:hover {
+      background: #eff6ff;
+    }
+
+    .variation-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    
+    .variation-tag.size {
+      background: #ede9fe;
+      color: #6d28d9;
+      border-color: #c4b5fd;
+    }
+    
+    .variation-tag.colour {
+      background: #fce7f3;
+      color: #be185d;
+      border-color: #f9a8d4;
+    }
+    
+    .variation-tag.material {
+      background: #d1fae5;
+      color: #065f46;
+      border-color: #6ee7b7;
+    }
+    
+    .variation-tag.option {
+      background: #e0f2fe;
+      color: #0369a1;
+      border-color: #7dd3fc;
+    }
+    
+    .variation-tag.unavailable {
+      opacity: 0.5;
+      text-decoration: line-through;
+    }
+    
+    .variation-type {
+      font-size: 10px;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+    
+    .no-variations {
+      padding: 10px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 12px;
+      text-align: center;
     }
     
     .divider {
@@ -295,33 +606,80 @@
 <body>
   <div class="header">
     <div class="logo">DS</div>
-    <h1>DropandSell AI</h1>
+    <h1>DropandSell Automation App</h1>
+  </div>
+  
+  <div class="update-banner" id="updateBanner">
+    <div class="update-text">
+      <strong>Update Available</strong>
+      <span id="updateChangelog"></span>
+    </div>
+    <button class="update-btn" id="updateBtn">Update</button>
   </div>
   
   <div class="content">
     <div class="login-section" id="loginSection">
-      <p style="margin-bottom: 16px; color: #64748b; font-size: 14px;">
-        Connect to your DropandSell AI account to import products.
+      <p style="margin-bottom: 20px; color: #475569; font-size: 14px; line-height: 1.5; text-align: center;">
+        Sign in once and the extension will be linked to your account.
       </p>
-      <div class="form-group">
-        <label>DropandSell AI URL</label>
-        <input type="url" id="apiUrl" placeholder="https://your-app.replit.app" data-testid="input-api-url" />
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <input type="password" id="apiKey" placeholder="Enter your API key" data-testid="input-api-key" />
-      </div>
-      <button class="btn btn-primary" id="connectBtn" data-testid="button-connect">Connect</button>
-      <p style="margin-top: 12px; font-size: 12px; color: #94a3b8; text-align: center;">
-        Get your API key from Settings in your DropandSell AI dashboard
+      <button class="btn btn-primary" id="signInBtn" data-testid="button-sign-in" style="font-size: 15px; padding: 12px;">
+        Sign in with DropandSell
+      </button>
+      <p style="margin-top: 14px; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+        A new tab will open. After you sign in, the extension will connect automatically.
       </p>
+      <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0; text-align: center;">
+        <a href="#" id="manualSetupLink" data-testid="link-manual-setup" style="font-size: 12px; color: #64748b; text-decoration: none;">
+          Use manual setup instead
+        </a>
+      </div>
+
+      <div id="manualSetupForm" style="display: none; margin-top: 16px;">
+        <div class="form-group">
+          <label>DropandSell App URL</label>
+          <input type="url" id="apiUrl" placeholder="https://dropandsell.online" data-testid="input-api-url" />
+        </div>
+        <div class="form-group">
+          <label>Your Unique URL Code</label>
+          <input type="text" id="uniqueUrl" placeholder="Enter your unique URL code" data-testid="input-unique-url" />
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" id="apiKey" placeholder="Enter your API key" data-testid="input-api-key" />
+        </div>
+        <button class="btn btn-primary" id="connectBtn" data-testid="button-connect">Connect</button>
+        <p style="margin-top: 10px; font-size: 12px; color: #94a3b8; text-align: center;">
+          Find these in Settings on your DropandSell dashboard.
+        </p>
+      </div>
     </div>
     
     <div class="product-section" id="productSection">
       <div class="vendor-info" id="vendorInfo">
         <span class="name" id="vendorName" data-testid="text-vendor-name">Unknown Vendor</span>
       </div>
-      
+
+      <div class="form-group" id="targetModeSection" style="margin-bottom: 14px; padding: 12px; background: #f1f5f9; border-radius: 8px; border-left: 4px solid #285261;">
+        <label style="font-size: 13px; font-weight: 600; color: #285261; margin-bottom: 6px;">List Into</label>
+        <select id="targetMode" data-testid="select-target-mode">
+          <option value="self">My Inventory</option>
+          <option value="dropandsell">Drop-and-Sell (Customer's eBay)</option>
+        </select>
+        <div id="dropandsellTargetWrapper" style="display: none; margin-top: 10px;">
+          <label style="font-size: 12px; color: #64748b;">Customer Assignment</label>
+          <select id="dropandsellOrderSelect" data-testid="select-dropandsell-order">
+            <option value="">Loading your assignments…</option>
+          </select>
+          <p id="dropandsellHint" style="font-size: 11px; color: #94a3b8; margin-top: 4px; line-height: 1.4;"></p>
+          <!-- Shown only when the picked customer has more than one connected eBay store. Server enforces this too, but surfacing the choice in the popup prevents silent mis-routing. -->
+          <div id="dropandsellStoreWrapper" style="display: none; margin-top: 8px;">
+            <label style="font-size: 12px; color: #64748b;">eBay Store on Customer's Account</label>
+            <select id="dropandsellStoreSelect" data-testid="select-dropandsell-store"></select>
+            <p id="dropandsellStoreHint" style="font-size: 11px; color: #94a3b8; margin-top: 4px; line-height: 1.4;"></p>
+          </div>
+        </div>
+      </div>
+
       <div id="productImageContainer" data-testid="container-product-image">
         <div class="no-image">No image detected</div>
       </div>
@@ -334,6 +692,9 @@
       <div class="form-group">
         <label>Description</label>
         <textarea id="productDescription" placeholder="Product description" data-testid="input-product-description"></textarea>
+        <button class="btn-ai" id="generateDescBtn" data-testid="button-generate-description">
+          <span class="btn-ai-text">AI Generate Description</span>
+        </button>
       </div>
       
       <div class="row">
@@ -342,9 +703,13 @@
           <input type="number" id="costPrice" step="0.01" min="0" placeholder="0.00" data-testid="input-cost-price" />
         </div>
         <div class="form-group">
-          <label>Selling Price</label>
-          <input type="number" id="sellingPrice" step="0.01" min="0" placeholder="0.00" data-testid="input-selling-price" />
+          <label>Markup %</label>
+          <input type="number" id="markupPercent" step="1" min="0" value="30" placeholder="30" data-testid="input-markup-percent" />
         </div>
+      </div>
+      <div class="form-group">
+        <label>Selling Price (auto-calculated from markup)</label>
+        <input type="number" id="sellingPrice" step="0.01" min="0" placeholder="0.00" data-testid="input-selling-price" />
       </div>
       
       <div class="row">
@@ -358,11 +723,12 @@
         </div>
       </div>
       
-      <div class="form-group">
-        <label>Vendor</label>
-        <select id="vendorSelect" data-testid="select-vendor">
-          <option value="">Select a vendor...</option>
-        </select>
+      <div class="variations-section" id="variationsSection" style="display: none;">
+        <div class="variations-header">
+          <label>Variations</label>
+          <span class="variations-count" id="variationsCount" data-testid="text-variations-count"></span>
+        </div>
+        <div id="variationsContainer" data-testid="container-variations"></div>
       </div>
       
       <div class="form-group">
@@ -388,6 +754,17 @@
         </button>
       </div>
       
+      <div class="bg-sync-block" id="bgSyncBlock">
+        <div class="bg-sync-row">
+          <label title="Refreshes vendor stock for every product in your inventory once an hour, in invisible background tabs">
+            <input type="checkbox" id="backgroundSyncToggle" data-testid="toggle-background-sync" checked />
+            <span>Auto-refresh stock every hour</span>
+          </label>
+          <a href="#" id="syncNowLink" data-testid="link-sync-now" style="font-size: 12px;">Sync now</a>
+        </div>
+        <div class="bg-sync-status" id="backgroundSyncStatus" data-testid="text-background-sync-status">Auto-sync starts within an hour.</div>
+      </div>
+
       <div class="settings-link">
         <a href="#" id="disconnectLink" data-testid="link-disconnect">Disconnect account</a>
       </div>
@@ -397,7 +774,7 @@
       <div class="success-icon" data-testid="icon-success">OK</div>
       <h2 data-testid="text-success-title">Product Imported!</h2>
       <p data-testid="text-success-message">The product has been added to your inventory.</p>
-      <button class="btn btn-primary" id="viewInventoryBtn" data-testid="button-view-inventory">View in DropandSell AI</button>
+      <button class="btn btn-primary" id="viewInventoryBtn" data-testid="button-view-inventory">View in DropandSell Automation App</button>
       <button class="btn btn-secondary" id="importAnotherBtn" style="margin-top: 8px;" data-testid="button-import-another">Import Another</button>
     </div>
     

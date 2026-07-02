@@ -1995,7 +1995,7 @@ export const ebayProvider: MarketplaceProvider = {
 </AddFixedPriceItemRequest>`;
     };
 
-    const callEbayPublish = async (itemXml: string, attempt: string, _rateLimitRetry: number = 0): Promise<{ success: boolean; externalId?: string; listingUrl?: string; error?: string; isPolicyError?: boolean; isShippingLocationError?: boolean; errorCodes?: string[] }> => {
+    const callEbayPublish = async (itemXml: string, attempt: string, _rateLimitRetry: number = 0): Promise<{ success: boolean; externalId?: string; listingUrl?: string; error?: string; isPolicyError?: boolean; errorCodes?: string[] }> => {
       try {
         const response = await fetch('https://api.ebay.com/ws/api.dll', {
           method: 'POST',

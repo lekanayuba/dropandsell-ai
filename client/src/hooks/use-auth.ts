@@ -1,10 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
 
-export const USER_QUERY_KEY = ["currentUser"];
-
 async function fetchUser(): Promise<User | null> {
-  const response = await fetch("/api/auth/me", {
+  // Try new standalone auth first
+  const meResponse = await fetch("/api/auth/me", {
+    credentials: "include",
+  });
+
+  if (meResponse.ok) {
+    return meResponse.json();
+  }
+
+  // Fallback to Replit auth endpoint
+  const response = await fetch("/api/auth/user", {
     credentials: "include",
   });
 
@@ -13,8 +21,7 @@ async function fetchUser(): Promise<User | null> {
   }
 
   if (!response.ok) {
-    // Throw an error to let React Query handle retries/error state
-    throw new Error("Failed to fetch user");
+    return null;
   }
 
   return response.json();
@@ -31,7 +38,7 @@ async function logout(): Promise<void> {
 export function useAuth() {
   const queryClient = useQueryClient();
   const { data: user, isLoading, refetch } = useQuery<User | null>({
-    queryKey: USER_QUERY_KEY,
+    queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
     staleTime: 1000 * 60 * 5,
@@ -40,7 +47,7 @@ export function useAuth() {
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: () => {
-      queryClient.setQueryData(USER_QUERY_KEY, null);
+      queryClient.setQueryData(["/api/auth/user"], null);
     },
   });
 

@@ -23,7 +23,7 @@ export function useFeatureAccess(featureKey: string): { hasAccess: boolean; isLo
   const { user, isAuthenticated } = useAuth();
   const { data: flags, isLoading } = useFeatureFlags();
 
-  const isAdmin = (user as any)?.role === 'admin' || user?.email === 'dropandsellauth@gmail.com';
+  const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
 
   if (!isAuthenticated) {
     return { hasAccess: false, isLoading: true };

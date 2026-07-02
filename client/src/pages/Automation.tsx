@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,9 +15,11 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
 import { useVendors } from "@/hooks/use-vendors";
-import { useStores } from "@/hooks/use-stores";
+import { useStores, useMarketplaceListings } from "@/hooks/use-stores";
 import { useProducts } from "@/hooks/use-products";
+import { useCurrency } from "@/hooks/use-currency";
 import {
   usePricingRules,
   useCreatePricingRule,
@@ -30,7 +34,6 @@ import {
   usePreviewCSV,
   useBulkAddToPublishQueue,
 } from "@/hooks/use-automation";
-import { apiRequest } from "@/lib/queryClient";
 import {
   Upload,
   Settings2,
@@ -56,21 +59,32 @@ import {
   Scissors,
   Flame,
   Pill,
+  Sparkles,
+  Image as ImageIcon,
+  Package,
+  ExternalLink,
+  Store,
+  Search,
+  Shield,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Automation() {
   const { toast } = useToast();
+  const { symbol: currSym, format: fc } = useCurrency();
   const [activeTab, setActiveTab] = useState("import");
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold font-display tracking-tight">Automation</h2>
+          <h2 className="text-2xl font-bold font-display tracking-tight">Manual</h2>
           <p className="text-muted-foreground mt-2">
             Import products, set pricing rules, and publish to marketplaces
           </p>
         </div>
+        <PageRefreshButton />
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -102,7 +116,10 @@ export default function Automation() {
         </TabsList>
 
         <TabsContent value="import">
-          <ImportSection />
+          <div className="space-y-6">
+            <VendorSiteImportSection />
+            <ImportSection />
+          </div>
         </TabsContent>
 
         <TabsContent value="pricing">
@@ -126,6 +143,260 @@ export default function Automation() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function VendorSiteImportSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { symbol: currSym, format: fc } = useCurrency();
+  const { data: vendors } = useVendors();
+
+  const [productData, setProductData] = useState({
+    title: "",
+    sku: "",
+    costPrice: "",
+    sellingPrice: "",
+    vendorId: "",
+    imageUrls: ["", "", "", ""],
+    description: "",
+  });
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleImageUrlChange = (index: number, value: string) => {
+    const newUrls = [...productData.imageUrls];
+    newUrls[index] = value;
+    setProductData({ ...productData, imageUrls: newUrls });
+  };
+
+  const generateAIDescription = async () => {
+    if (!productData.title) {
+      toast({ title: "Error", description: "Product title is required to generate description", variant: "destructive" });
+      return;
+    }
+
+    setIsGeneratingDescription(true);
+    try {
+      const vendorName = vendors?.find(v => v.id.toString() === productData.vendorId)?.name;
+      const response = await apiRequest("POST", "/api/ai/generate-description", {
+        productTitle: productData.title,
+        productSku: productData.sku,
+        vendorName,
+        costPrice: productData.costPrice ? parseFloat(productData.costPrice) : undefined,
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error('Server returned an unexpected response. Please try again.');
+      }
+      const data = await response.json();
+      setProductData({ ...productData, description: data.description });
+      toast({ title: "Success", description: "AI description generated successfully" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to generate description", variant: "destructive" });
+    } finally {
+      setIsGeneratingDescription(false);
+    }
+  };
+
+  const handleSaveProduct = async () => {
+    if (!productData.title) {
+      toast({ title: "Error", description: "Product title is required", variant: "destructive" });
+      return;
+    }
+
+    if (!productData.costPrice || !productData.sellingPrice) {
+      toast({ title: "Error", description: "Cost price and selling price are required", variant: "destructive" });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const validImages = productData.imageUrls.filter(url => url.trim() !== "");
+      const sku = productData.sku || `SKU-${Date.now()}`;
+      
+      await apiRequest("POST", "/api/products", {
+        title: productData.title,
+        sku: sku,
+        description: productData.description || null,
+        costPrice: productData.costPrice,
+        sellingPrice: productData.sellingPrice,
+        vendorId: productData.vendorId ? parseInt(productData.vendorId) : null,
+        images: validImages.length > 0 ? validImages : null,
+        quantity: 0,
+      });
+
+      toast({ title: "Success", description: "Product saved successfully" });
+      setProductData({
+        title: "",
+        sku: "",
+        costPrice: "",
+        sellingPrice: "",
+        vendorId: "",
+        imageUrls: ["", "", "", ""],
+        description: "",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to save product", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Globe className="w-5 h-5" />
+          Vendor Site Import
+        </CardTitle>
+        <CardDescription>
+          Manually import a product with AI-powered description generation
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Product Title *</Label>
+            <Input
+              value={productData.title}
+              onChange={(e) => setProductData({ ...productData, title: e.target.value })}
+              placeholder="Enter product title"
+              data-testid="input-vendor-product-title"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>SKU</Label>
+            <Input
+              value={productData.sku}
+              onChange={(e) => setProductData({ ...productData, sku: e.target.value })}
+              placeholder="Product SKU"
+              data-testid="input-vendor-product-sku"
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label>Cost Price ({currSym}) *</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={productData.costPrice}
+              onChange={(e) => setProductData({ ...productData, costPrice: e.target.value })}
+              placeholder="0.00"
+              data-testid="input-vendor-cost-price"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Selling Price ({currSym}) *</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={productData.sellingPrice}
+              onChange={(e) => setProductData({ ...productData, sellingPrice: e.target.value })}
+              placeholder="0.00"
+              data-testid="input-vendor-selling-price"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Vendor</Label>
+            <Select value={productData.vendorId} onValueChange={(v) => setProductData({ ...productData, vendorId: v })}>
+              <SelectTrigger data-testid="select-vendor-import">
+                <SelectValue placeholder="Select vendor" />
+              </SelectTrigger>
+              <SelectContent>
+                {vendors?.map((v) => (
+                  <SelectItem key={v.id} value={v.id.toString()}>
+                    {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+
+        <div className="space-y-3">
+          <Label className="flex items-center gap-2">
+            <ImageIcon className="w-4 h-4" />
+            Product Images (up to 4)
+          </Label>
+          <div className="grid gap-3 md:grid-cols-2">
+            {productData.imageUrls.map((url, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Input
+                  value={url}
+                  onChange={(e) => handleImageUrlChange(index, e.target.value)}
+                  placeholder={`Image URL ${index + 1}`}
+                  data-testid={`input-image-url-${index + 1}`}
+                />
+                {url && (
+                  <img
+                    src={url}
+                    alt={`Preview ${index + 1}`}
+                    className="w-10 h-10 object-cover rounded border"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Product Description</Label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={generateAIDescription}
+              disabled={isGeneratingDescription || !productData.title}
+              data-testid="button-generate-ai-description"
+            >
+              {isGeneratingDescription ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate with AI
+                </>
+              )}
+            </Button>
+          </div>
+          <Textarea
+            value={productData.description}
+            onChange={(e) => setProductData({ ...productData, description: e.target.value })}
+            placeholder="Enter product description or generate with AI"
+            rows={5}
+            data-testid="textarea-product-description"
+          />
+        </div>
+
+        <Button
+          onClick={handleSaveProduct}
+          disabled={isSaving || !productData.title}
+          className="w-full"
+          data-testid="button-save-vendor-product"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Package className="w-4 h-4 mr-2" />
+              Save Product
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -324,6 +595,7 @@ function ImportSection() {
 
 function PricingRulesSection() {
   const { toast } = useToast();
+  const { symbol: currSym, format: fc } = useCurrency();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
 
@@ -363,9 +635,9 @@ function PricingRulesSection() {
       const data = {
         name: formData.name,
         ruleType: formData.ruleType,
-        value: formData.value,
-        minPrice: formData.minPrice || null,
-        maxPrice: formData.maxPrice || null,
+        value: parseFloat(formData.value),
+        minPrice: formData.minPrice ? parseFloat(formData.minPrice) : null,
+        maxPrice: formData.maxPrice ? parseFloat(formData.maxPrice) : null,
         applyToVendor: formData.applyToVendor && formData.applyToVendor !== "all" ? Number(formData.applyToVendor) : null,
         priority: parseInt(formData.priority),
         isActive: formData.isActive,
@@ -578,12 +850,12 @@ function PricingRulesSection() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {rule.ruleType === "fixed" ? `£${rule.value}` : `${rule.value}%`}
+                    {rule.ruleType === "fixed" ? fc(rule.value) : `${rule.value}%`}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {rule.minPrice && `Min: £${rule.minPrice}`}
+                    {rule.minPrice && `Min: ${fc(rule.minPrice)}`}
                     {rule.minPrice && rule.maxPrice && " | "}
-                    {rule.maxPrice && `Max: £${rule.maxPrice}`}
+                    {rule.maxPrice && `Max: ${fc(rule.maxPrice)}`}
                     {!rule.minPrice && !rule.maxPrice && "—"}
                   </TableCell>
                   <TableCell>
@@ -624,6 +896,9 @@ function PricingRulesSection() {
 
 function PublishSection() {
   const { toast } = useToast();
+  const { symbol: currSym, format: fc } = useCurrency();
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
@@ -632,6 +907,7 @@ function PublishSection() {
   const { data: queue, isLoading: queueLoading } = usePublishQueue();
   const { data: products } = useProducts({});
   const { data: stores } = useStores();
+  const { data: marketplaceListings } = useMarketplaceListings();
   const { data: rules } = usePricingRules();
   const deleteFromQueue = useDeleteFromPublishQueue();
   const updateQueueItem = useUpdatePublishQueueItem();
@@ -643,7 +919,19 @@ function PublishSection() {
     updateQueueItem.mutate({ id: itemId, quantity });
   };
 
+  const [publishResults, setPublishResults] = useState<any[]>([]);
+  const [showResultsDialog, setShowResultsDialog] = useState(false);
+
   const handlePublish = async () => {
+    if (user) {
+      const subStatus = (user as any)?.subscriptionStatus;
+      if (subStatus !== 'active' && subStatus !== 'trialing') {
+        toast({ title: "Subscription required", description: "Please subscribe to a plan before publishing products", variant: "destructive" });
+        navigate("/subscription");
+        return;
+      }
+    }
+
     if (selectedItems.length === 0) {
       toast({ title: "No items selected", description: "Please select items to publish", variant: "destructive" });
       return;
@@ -652,12 +940,25 @@ function PublishSection() {
     try {
       const result = await publishItems.mutateAsync(selectedItems);
       const successCount = result.results.filter((r: any) => r.status === "published").length;
+      const skippedCount = result.results.filter((r: any) => r.status === "skipped").length;
       const failCount = result.results.filter((r: any) => r.status === "failed").length;
+      const totalOk = successCount + skippedCount;
 
-      toast({
-        title: "Publishing Complete",
-        description: `${successCount} published, ${failCount} failed`,
-      });
+      setPublishResults(result.results);
+      setShowResultsDialog(true);
+
+      if (failCount === 0) {
+        toast({
+          title: "All Published Successfully",
+          description: `${successCount} item${successCount > 1 ? 's' : ''} published${skippedCount > 0 ? `, ${skippedCount} already listed` : ''}`,
+        });
+      } else {
+        toast({
+          title: "Publishing Complete",
+          description: `${totalOk} published, ${failCount} failed — see details`,
+          variant: failCount > 0 && totalOk === 0 ? "destructive" : "default",
+        });
+      }
 
       setSelectedItems([]);
     } catch (err: any) {
@@ -673,45 +974,73 @@ function PublishSection() {
 
     try {
       const activeRule = rules?.find((r) => r.isActive);
-      const items = selectedProducts.map((productId) => {
-        const product = products?.items.find((p) => p.id === productId);
-        const costPrice = Number(product?.costPrice || 0);
-        let calculatedPrice = Number(product?.sellingPrice || costPrice);
+      const targetStoreIds = selectedStore === "all"
+        ? (stores || []).filter(s => s.status === 'active').map(s => s.id)
+        : [Number(selectedStore)];
 
-        if (activeRule) {
-          const ruleValue = Number(activeRule.value);
-          switch (activeRule.ruleType) {
-            case "markup":
-              calculatedPrice = costPrice * (1 + ruleValue / 100);
-              break;
-            case "margin":
-              calculatedPrice = costPrice / (1 - ruleValue / 100);
-              break;
-            case "fixed":
-              calculatedPrice = costPrice + ruleValue;
-              break;
+      if (targetStoreIds.length === 0) {
+        toast({ title: "No active stores", description: "You have no active stores to publish to", variant: "destructive" });
+        return;
+      }
+
+      let totalAdded = 0;
+      let failedStores: string[] = [];
+
+      for (const storeId of targetStoreIds) {
+        const storeName = stores?.find(s => s.id === storeId)?.name || `Store ${storeId}`;
+        const items = selectedProducts.map((productId) => {
+          const product = products?.items.find((p) => p.id === productId);
+          const costPrice = Number(product?.costPrice || 0);
+          let calculatedPrice = Number(product?.sellingPrice || costPrice);
+
+          if (activeRule) {
+            const ruleValue = Number(activeRule.value);
+            switch (activeRule.ruleType) {
+              case "markup":
+                calculatedPrice = costPrice * (1 + ruleValue / 100);
+                break;
+              case "margin":
+                calculatedPrice = costPrice / (1 - ruleValue / 100);
+                break;
+              case "fixed":
+                calculatedPrice = costPrice + ruleValue;
+                break;
+            }
           }
+
+          return {
+            productId,
+            storeId,
+            calculatedPrice: Math.round(calculatedPrice * 100) / 100,
+            pricingRuleId: activeRule?.id,
+            quantity: product?.quantity || 1,
+            postageType: product?.deliveryType || 'buyer_pays',
+            postageCost: product?.deliveryCost || undefined,
+          };
+        });
+
+        try {
+          await bulkAddToQueue.mutateAsync(items);
+          totalAdded += items.length;
+        } catch (storeErr: any) {
+          failedStores.push(`${storeName}: ${storeErr.message || 'Failed to add'}`);
         }
+      }
 
-        return {
-          productId,
-          storeId: Number(selectedStore),
-          calculatedPrice: Math.round(calculatedPrice * 100) / 100,
-          pricingRuleId: activeRule?.id,
-          quantity: product?.quantity || 1,
-          postageType: product?.deliveryType || 'buyer_pays',
-          postageCost: product?.deliveryCost || undefined,
-        };
-      });
-
-      await bulkAddToQueue.mutateAsync(items);
-      toast({ title: "Added to Queue", description: `${items.length} products added to publish queue` });
-
+      if (totalAdded > 0 && failedStores.length === 0) {
+        const storeLabel = targetStoreIds.length > 1 ? `${targetStoreIds.length} stores` : 'publish queue';
+        toast({ title: "Added to Queue", description: `${totalAdded} products added to ${storeLabel}` });
+      } else if (totalAdded > 0 && failedStores.length > 0) {
+        toast({ title: "Partially Added", description: `${totalAdded} added, some failed: ${failedStores.join('; ')}` });
+      } else {
+        toast({ title: "Failed to Add", description: failedStores.join('; ') || "Failed to add products to queue", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
       setIsAddDialogOpen(false);
       setSelectedProducts([]);
       setSelectedStore("");
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
     }
   };
 
@@ -740,7 +1069,7 @@ function PublishSection() {
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <Dialog open={isAddDialogOpen} onOpenChange={(open) => { setIsAddDialogOpen(open); if (open) { setSelectedStore(""); setSelectedProducts([]); } }}>
               <DialogTrigger asChild>
                 <Button variant="outline" data-testid="button-add-to-queue">
                   <Plus className="w-4 h-4 mr-2" />
@@ -759,14 +1088,36 @@ function PublishSection() {
                         <SelectValue placeholder="Choose a store" />
                       </SelectTrigger>
                       <SelectContent>
-                        {stores?.map((s) => (
-                          <SelectItem key={s.id} value={s.id.toString()}>
-                            {s.name} ({s.platform})
-                          </SelectItem>
-                        ))}
+                        {(stores || []).filter(s => s.status === 'active').length > 1 && (
+                          <SelectItem value="all">All Stores</SelectItem>
+                        )}
+                        {(stores || []).filter(s => s.status === 'active').map((s) => {
+                          const ebayUser = (s.credentials as any)?.ebayUsername;
+                          return (
+                            <SelectItem key={s.id} value={s.id.toString()}>
+                              {s.name} ({s.platform}){ebayUser ? ` — @${ebayUser}` : ''}
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>
+                  {selectedStore && selectedStore !== "all" && (() => {
+                    const store = stores?.find(s => s.id === Number(selectedStore));
+                    const ebayUser = (store?.credentials as any)?.ebayUsername;
+                    return (
+                      <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                        <p className="text-sm text-primary font-semibold">
+                          Publishing to: {store?.name || selectedStore}
+                        </p>
+                        {ebayUser && (
+                          <p className="text-xs text-primary/80 mt-1">
+                            eBay account: @{ebayUser} (Store ID: {selectedStore})
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="space-y-2">
                     <Label>Select Products ({selectedProducts.length} selected)</Label>
                     <div className="border rounded-lg max-h-[300px] overflow-y-auto">
@@ -784,7 +1135,7 @@ function PublishSection() {
                             <div>
                               <p className="font-medium text-sm">{product.title}</p>
                               <p className="text-xs text-muted-foreground">
-                                SKU: {product.sku} | Cost: £{Number(product.costPrice).toFixed(2)}
+                                SKU: {product.sku} | Cost: {fc(product.costPrice)}
                               </p>
                             </div>
                             {selectedProducts.includes(product.id) && (
@@ -805,7 +1156,10 @@ function PublishSection() {
                     disabled={selectedProducts.length === 0 || !selectedStore || bulkAddToQueue.isPending}
                     data-testid="button-confirm-add-to-queue"
                   >
-                    {bulkAddToQueue.isPending ? "Adding..." : `Add ${selectedProducts.length} Products`}
+                    {bulkAddToQueue.isPending ? "Adding..." : 
+                      selectedStore && selectedStore !== "all"
+                        ? `Add ${selectedProducts.length} to @${(stores?.find(s => s.id === Number(selectedStore))?.credentials as any)?.ebayUsername || stores?.find(s => s.id === Number(selectedStore))?.name || 'Store'}`
+                        : `Add ${selectedProducts.length} Products`}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -855,6 +1209,7 @@ function PublishSection() {
                   <TableHead>Qty</TableHead>
                   <TableHead>Postage</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Links</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -883,9 +1238,14 @@ function PublishSection() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{store?.name || "Unknown"}</Badge>
+                          <div className="flex flex-col gap-0.5">
+                          <Badge variant="outline">{store?.name || "Unknown"}</Badge>
+                          {store?.platform === 'ebay' && (store?.credentials as any)?.ebayUsername && (
+                            <span className="text-xs text-muted-foreground">@{(store.credentials as any).ebayUsername}</span>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell>£{Number(item.calculatedPrice).toFixed(2)}</TableCell>
+                      <TableCell>{fc(item.calculatedPrice)}</TableCell>
                       <TableCell>
                         {item.status === "pending" ? (
                           <Input
@@ -913,7 +1273,7 @@ function PublishSection() {
                              item.postageType === 'buyer_pays' ? 'Buyer Pays' : 'Default'}
                           </Badge>
                           {item.postageType !== 'free' && (
-                            <span className="text-xs text-muted-foreground">£{Number(item.postageCost || 0).toFixed(2)}</span>
+                            <span className="text-xs text-muted-foreground">{fc(item.postageCost || 0)}</span>
                           )}
                         </div>
                       </TableCell>
@@ -938,6 +1298,49 @@ function PublishSection() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {(() => {
+                            const sourceUrl = (product?.attributes as any)?.sourceUrl;
+                            const vendorUrl = sourceUrl || (product as any)?.vendorWebsite || null;
+                            if (vendorUrl) {
+                              return (
+                                <a
+                                  href={vendorUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 hover:underline"
+                                  data-testid={`link-vendor-${item.id}`}
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  Vendor
+                                </a>
+                              );
+                            }
+                            return null;
+                          })()}
+                          {item.status === "published" && (() => {
+                            const listing = marketplaceListings
+                              ?.filter((l: any) => l.productId === item.productId && l.storeId === item.storeId && l.status === "active" && l.listingUrl)
+                              .sort((a: any, b: any) => (b.id || 0) - (a.id || 0))[0];
+                            if (listing?.listingUrl) {
+                              return (
+                                <a
+                                  href={listing.listingUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  data-testid={`link-store-listing-${item.id}`}
+                                >
+                                  <Store className="w-3 h-3" />
+                                  Store
+                                </a>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         {item.status === "pending" && (
                           <Button
                             variant="ghost"
@@ -958,6 +1361,89 @@ function PublishSection() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={showResultsDialog} onOpenChange={setShowResultsDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Publishing Results</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            {publishResults.map((result: any, idx: number) => {
+              const queueItem = queue?.find(q => q.id === result.id);
+              const product = queueItem ? products?.items.find(p => p.id === queueItem.productId) : null;
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-start gap-3 p-3 rounded-lg border ${
+                    result.status === "published" ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950" 
+                    : result.status === "skipped" ? "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950"
+                    : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950"
+                  }`}
+                  data-testid={`publish-result-${idx}`}
+                >
+                  {result.status === "published" ? (
+                    <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+                  ) : result.status === "skipped" ? (
+                    <CheckCircle2 className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{product?.title || `Item #${result.id}`}</p>
+                    {result.status === "published" && result.listingUrl && (
+                      <a
+                        href={result.listingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary underline break-all"
+                        data-testid={`link-listing-${idx}`}
+                      >
+                        View on marketplace
+                      </a>
+                    )}
+                    {result.status === "published" && result.ebayAccount && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Published to: @{result.ebayAccount}{result.storeName ? ` (${result.storeName})` : ''}</p>
+                    )}
+                    {result.status === "published" && result.externalId && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Listing ID: {result.externalId}</p>
+                    )}
+                    {result.status === "published" && (() => {
+                      const sourceUrl = (product?.attributes as any)?.sourceUrl;
+                      const vendorUrl = sourceUrl || (product as any)?.vendorWebsite || null;
+                      if (vendorUrl) {
+                        return (
+                          <a
+                            href={vendorUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 hover:underline mt-0.5"
+                            data-testid={`link-vendor-result-${idx}`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View on vendor site
+                          </a>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {result.status === "skipped" && (
+                      <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">{result.message}</p>
+                    )}
+                    {result.status === "failed" && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{result.message}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResultsDialog(false)} data-testid="button-close-results">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -974,12 +1460,18 @@ function VEROSection() {
 
   const { data: veroList, isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/vero-list"],
-    queryFn: () => apiRequest("GET", "/api/vero-list").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: typeof newItem) => {
-      return apiRequest("POST", "/api/vero-list", data).then(res => res.json());
+      const res = await fetch("/api/vero-list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add VERO item");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
@@ -987,33 +1479,45 @@ function VEROSection() {
       setNewItem({ type: "brand", value: "", platform: "", reason: "" });
       toast({ title: "Item added to VERO list" });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to add item", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to add item", variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/vero-list/${id}`).then(res => res.json());
+      const res = await fetch(`/api/vero-list/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Item removed from VERO list" });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to delete item", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to delete item", variant: "destructive" });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      return apiRequest("PUT", `/api/vero-list/${id}`, { isActive }).then(res => res.json());
+      const res = await fetch(`/api/vero-list/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to update item", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to update item", variant: "destructive" });
     },
   });
 
@@ -1095,7 +1599,7 @@ function VEROSection() {
                       <SelectValue placeholder="All platforms" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All platforms</SelectItem>
+                      <SelectItem value="">All platforms</SelectItem>
                       <SelectItem value="ebay">eBay</SelectItem>
                       <SelectItem value="amazon">Amazon</SelectItem>
                       <SelectItem value="shopify">Shopify</SelectItem>
@@ -1216,7 +1720,186 @@ function VEROSection() {
           )}
         </CardContent>
       </Card>
+
+      <GlobalVeroDisplay />
+
+      <ScanProductsCard />
     </div>
+  );
+}
+
+function GlobalVeroDisplay() {
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: stats } = useQuery<{ total: number; active: number; brands: number; keywords: number }>({
+    queryKey: ["/api/global-vero-list/stats"],
+  });
+
+  const { data: globalItems = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/global-vero-list"],
+    enabled: expanded,
+  });
+
+  const filtered = globalItems.filter((item: any) =>
+    !search || item.value.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <Card data-testid="card-global-vero">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base" data-testid="text-global-vero-title">
+              <Shield className="h-5 w-5 text-primary" />
+              Global VeRO Protection
+            </CardTitle>
+            <CardDescription>
+              System-wide blocked brands and keywords — {stats?.active ?? 0} active entries ({stats?.brands ?? 0} brands, {stats?.keywords ?? 0} keywords)
+            </CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setExpanded(!expanded)} data-testid="button-toggle-global-vero">
+            {expanded ? "Hide" : "View List"}
+          </Button>
+        </div>
+      </CardHeader>
+      {expanded && (
+        <CardContent>
+          <div className="mb-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search global VeRO list..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-global-vero"
+              />
+            </div>
+          </div>
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : (
+            <div className="max-h-[300px] overflow-auto">
+              <div className="flex flex-wrap gap-2">
+                {filtered.map((item: any) => (
+                  <Badge
+                    key={item.id}
+                    variant={item.type === "brand" ? "default" : "secondary"}
+                    className="text-xs"
+                    data-testid={`badge-global-vero-${item.id}`}
+                  >
+                    {item.value}
+                  </Badge>
+                ))}
+                {filtered.length === 0 && (
+                  <p className="text-sm text-muted-foreground py-4">No matching entries</p>
+                )}
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            These entries are managed by system administrators and cannot be edited. Your personal VeRO list above is checked in addition to this global list.
+          </p>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+function ScanProductsCard() {
+  const { toast } = useToast();
+  const [scanResult, setScanResult] = useState<any>(null);
+
+  const scanMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/vero-scan-products", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Scan failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setScanResult(data);
+      if (data.blocked > 0) {
+        toast({ title: `${data.blocked} products flagged`, description: `${data.scanned} products scanned`, variant: "destructive" });
+      } else {
+        toast({ title: "All products are clean", description: `${data.scanned} products scanned` });
+      }
+    },
+    onError: () => {
+      toast({ title: "Scan failed", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card data-testid="card-scan-products">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Search className="h-5 w-5 text-primary" />
+          Scan Products
+        </CardTitle>
+        <CardDescription>
+          Check all your existing products against both personal and global VeRO lists
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button
+          onClick={() => scanMutation.mutate()}
+          disabled={scanMutation.isPending}
+          data-testid="button-scan-products"
+        >
+          {scanMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              Scan All Products
+            </>
+          )}
+        </Button>
+
+        {scanResult && (
+          <div className="mt-4 space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg border p-3 text-center">
+                <p className="text-2xl font-bold" data-testid="text-scanned-count">{scanResult.scanned}</p>
+                <p className="text-xs text-muted-foreground">Scanned</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center bg-green-50 dark:bg-green-950">
+                <p className="text-2xl font-bold text-green-600" data-testid="text-clean-count">{scanResult.scanned - scanResult.blocked}</p>
+                <p className="text-xs text-muted-foreground">Clean</p>
+              </div>
+              <div className="rounded-lg border p-3 text-center bg-red-50 dark:bg-red-950">
+                <p className="text-2xl font-bold text-red-600" data-testid="text-blocked-count">{scanResult.blocked}</p>
+                <p className="text-xs text-muted-foreground">Flagged</p>
+              </div>
+            </div>
+            {scanResult.blockedProducts?.length > 0 && (
+              <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950 p-3">
+                <p className="font-medium text-red-800 dark:text-red-300 text-sm mb-2">Flagged Products:</p>
+                <div className="space-y-1">
+                  {scanResult.blockedProducts.map((p: any) => (
+                    <div key={p.id} className="text-sm flex items-center gap-2" data-testid={`text-flagged-product-${p.id}`}>
+                      <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+                      <span className="truncate">{p.title}</span>
+                      <span className="text-xs text-red-600 dark:text-red-400">({p.violations.join(", ")})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1228,44 +1911,62 @@ function ContentFiltersSection() {
 
   const { data: filters, isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/content-filters"],
-    queryFn: () => apiRequest("GET", "/api/content-filters").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: { type: string; description?: string; pattern?: string }) => {
-      return apiRequest("POST", "/api/content-filters", data).then(res => res.json());
+      const res = await fetch("/api/content-filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to add filter");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Content filter enabled" });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to enable filter", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to enable filter", variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/content-filters/${id}`).then(res => res.json());
+      const res = await fetch(`/api/content-filters/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
       toast({ title: "Content filter removed" });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to remove filter", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to remove filter", variant: "destructive" });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      return apiRequest("PUT", `/api/content-filters/${id}`, { isActive }).then(res => res.json());
+      const res = await fetch(`/api/content-filters/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
     },
     onSuccess: () => {
       refetch();
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to update filter", description: err.message, variant: "destructive" });
+    onError: () => {
+      toast({ title: "Failed to update filter", variant: "destructive" });
     },
   });
 
@@ -1508,12 +2209,18 @@ function RestrictedProductsSection() {
 
   const { data: items, isLoading } = useQuery<any[]>({
     queryKey: ["/api/restricted-products"],
-    queryFn: () => apiRequest("GET", "/api/restricted-products").then(res => res.json()),
   });
 
   const addMutation = useMutation({
     mutationFn: async (data: { category: string; keyword: string; jurisdiction?: string; reason?: string }) => {
-      return apiRequest("POST", "/api/restricted-products", data).then(res => res.json());
+      const response = await fetch("/api/restricted-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to add restricted product");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
@@ -1526,19 +2233,28 @@ function RestrictedProductsSection() {
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      return apiRequest("PUT", `/api/restricted-products/${id}`, { isActive }).then(res => res.json());
+      const response = await fetch(`/api/restricted-products/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isActive }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });
     },
-    onError: (err: any) => {
-      toast({ title: "Failed to update", description: err.message, variant: "destructive" });
-    }
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/restricted-products/${id}`).then(res => res.json());
+      const response = await fetch(`/api/restricted-products/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/restricted-products"] });

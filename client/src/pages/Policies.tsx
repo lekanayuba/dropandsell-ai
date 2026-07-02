@@ -1,21 +1,28 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Shield, FileText, Database, CreditCard } from "lucide-react";
+import { Shield, FileText, Database, CreditCard, AlertTriangle } from "lucide-react";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
 
 export default function Policies() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const defaultTab = urlParams.get('tab') || 'privacy';
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-3">
-        <Shield className="h-8 w-8 text-primary" />
-        <div>
-          <h2 className="text-3xl font-bold font-display tracking-tight">Legal Policies</h2>
-          <p className="text-muted-foreground">Review our terms, privacy, and data protection policies</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Shield className="h-8 w-8 text-primary" />
+          <div>
+            <h2 className="text-2xl font-bold font-display tracking-tight">Legal Policies</h2>
+            <p className="text-muted-foreground">Review our terms, privacy, and data protection policies</p>
+          </div>
         </div>
+        <PageRefreshButton />
       </div>
 
-      <Tabs defaultValue="privacy" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue={defaultTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="privacy" data-testid="tab-privacy">
             <Shield className="h-4 w-4 mr-2" />
             Privacy
@@ -32,6 +39,10 @@ export default function Policies() {
             <CreditCard className="h-4 w-4 mr-2" />
             Direct Debit
           </TabsTrigger>
+          <TabsTrigger value="disclaimer" data-testid="tab-disclaimer">
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Disclaimer
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="privacy">
@@ -45,10 +56,10 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Introduction</h3>
                     <p className="text-muted-foreground mb-2">
-                      DropandSell AI ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our dropshipping automation platform.
+                      DropandSell Automation App ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our dropshipping automation platform.
                     </p>
                     <p className="text-muted-foreground">
-                      By using DropandSell AI, you agree to the collection and use of information in accordance with this policy. If you do not agree with the terms of this Privacy Policy, please do not access the platform.
+                      By using DropandSell Automation App, you agree to the collection and use of information in accordance with this policy. If you do not agree with the terms of this Privacy Policy, please do not access the platform.
                     </p>
                   </section>
 
@@ -158,14 +169,14 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Acceptance of Terms</h3>
                     <p className="text-muted-foreground">
-                      By creating an account and using DropandSell AI, you agree to be bound by these Terms of Service. If you do not agree to these terms, you may not use our platform. These terms constitute a legally binding agreement between you and DropandSell AI Ltd.
+                      By creating an account and using DropandSell Automation App, you agree to be bound by these Terms of Service. If you do not agree to these terms, you may not use our platform. These terms constitute a legally binding agreement between you and DropandSell Automation App Ltd.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Description of Service</h3>
                     <p className="text-muted-foreground">
-                      DropandSell AI provides a software-as-a-service (SaaS) platform for automating dropshipping operations, including marketplace integration, inventory management, pricing automation, order processing, and wallet-based auto-fulfillment.
+                      DropandSell Automation App provides a software-as-a-service (SaaS) platform for automating dropshipping operations, including marketplace integration, inventory management, pricing automation, order processing, and wallet-based auto-fulfillment.
                     </p>
                   </section>
 
@@ -184,7 +195,7 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">4. Subscription and Payments</h3>
                     <p className="text-muted-foreground mb-2">
-                      Access to DropandSell AI features requires a paid subscription. By subscribing, you agree that:
+                      Access to DropandSell Automation App features requires a paid subscription. By subscribing, you agree that:
                     </p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>Subscription fees are billed monthly in advance</li>
@@ -211,28 +222,28 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">6. Marketplace Compliance</h3>
                     <p className="text-muted-foreground">
-                      You are solely responsible for complying with the terms of service of any marketplace you connect to DropandSell AI. We provide VERO compliance detection as a tool, but this does not guarantee compliance. You accept full responsibility for the products you list and sell.
+                      You are solely responsible for complying with the terms of service of any marketplace you connect to DropandSell Automation App. We provide VERO compliance detection as a tool, but this does not guarantee compliance. You accept full responsibility for the products you list and sell.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">7. Intellectual Property</h3>
                     <p className="text-muted-foreground">
-                      DropandSell AI and its original content, features, and functionality are owned by DropandSell AI Ltd and are protected by international copyright, trademark, and other intellectual property laws. Your product data remains your property.
+                      DropandSell Automation App and its original content, features, and functionality are owned by DropandSell Automation App Ltd and are protected by international copyright, trademark, and other intellectual property laws. Your product data remains your property.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">8. Limitation of Liability</h3>
                     <p className="text-muted-foreground">
-                      To the maximum extent permitted by law, DropandSell AI shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues. Our total liability shall not exceed the amount paid by you in the 12 months preceding the claim.
+                      To the maximum extent permitted by law, DropandSell Automation App shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues. Our total liability shall not exceed the amount paid by you in the 12 months preceding the claim.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">9. Indemnification</h3>
                     <p className="text-muted-foreground">
-                      You agree to indemnify and hold harmless DropandSell AI and its officers, directors, and employees from any claims, damages, or expenses arising from your use of the platform, violation of these terms, or infringement of any third-party rights.
+                      You agree to indemnify and hold harmless DropandSell Automation App and its officers, directors, and employees from any claims, damages, or expenses arising from your use of the platform, violation of these terms, or infringement of any third-party rights.
                     </p>
                   </section>
 
@@ -268,14 +279,14 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Our Commitment</h3>
                     <p className="text-muted-foreground">
-                      DropandSell AI is committed to protecting the personal data of our users in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018. This policy outlines how we process and protect your personal data.
+                      DropandSell Automation App is committed to protecting the personal data of our users in compliance with the UK General Data Protection Regulation (UK GDPR) and the Data Protection Act 2018. This policy outlines how we process and protect your personal data.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Data Controller</h3>
                     <p className="text-muted-foreground">
-                      DropandSell AI Ltd is the data controller responsible for your personal data. If you have questions about how we handle your data, contact our Data Protection Officer at dpo@dropflow.com.
+                      DropandSell Automation App Ltd is the data controller responsible for your personal data. If you have questions about how we handle your data, contact our Data Protection Officer at dpo@dropflow.com.
                     </p>
                   </section>
 
@@ -387,13 +398,13 @@ export default function Policies() {
                   <section>
                     <h3 className="text-lg font-semibold mb-3">1. Introduction</h3>
                     <p className="text-muted-foreground">
-                      This Direct Debit Policy explains how recurring payments work for your DropandSell AI subscription and wallet top-ups. We use Stripe as our payment processor to ensure secure, reliable payment handling.
+                      This Direct Debit Policy explains how recurring payments work for your DropandSell Automation App subscription and wallet top-ups. We use Stripe as our payment processor to ensure secure, reliable payment handling.
                     </p>
                   </section>
 
                   <section>
                     <h3 className="text-lg font-semibold mb-3">2. Payment Authorization</h3>
-                    <p className="text-muted-foreground mb-2">By providing your payment details and subscribing, you authorize DropandSell AI to:</p>
+                    <p className="text-muted-foreground mb-2">By providing your payment details and subscribing, you authorize DropandSell Automation App to:</p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>Charge your payment method for monthly subscription fees</li>
                       <li>Charge your payment method for wallet top-ups you initiate</li>
@@ -426,7 +437,7 @@ export default function Policies() {
                     <p className="text-muted-foreground mb-2">We prioritize the security of your payment information:</p>
                     <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
                       <li>All payments are processed through Stripe, a PCI-DSS Level 1 certified provider</li>
-                      <li>DropandSell AI never stores your full card number</li>
+                      <li>DropandSell Automation App never stores your full card number</li>
                       <li>Strong Customer Authentication (SCA) is used where required</li>
                       <li>Encrypted communication protects all transactions</li>
                     </ul>
@@ -491,6 +502,84 @@ export default function Policies() {
                   </section>
 
                   <p className="text-xs text-muted-foreground mt-8">Last Updated: February 2026</p>
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="disclaimer">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                Store Responsibility Disclaimer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[600px] pr-4">
+                <div className="space-y-6 text-sm">
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">1. Scope and Purpose</h3>
+                    <p className="text-muted-foreground mb-2">
+                      This Disclaimer sets forth the responsibilities and obligations of users ("You", "Your") of the DropandSell Automation App ("the Platform") in relation to the management, compliance, and operation of Your connected store(s) on third-party marketplaces, including but not limited to eBay, Shopify, Amazon, TikTok Shop, and Jumia.
+                    </p>
+                    <p className="text-muted-foreground">
+                      By using the Platform, You acknowledge and accept all terms contained herein.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">2. User Responsibility</h3>
+                    <p className="text-muted-foreground mb-2">
+                      You are solely responsible for the management, operation, and regulatory compliance of Your store(s). The role of DropandSell is to facilitate and streamline the dropshipping process through automation tools and services. DropandSell does not assume ownership, control, or liability over the content, products, or transactions conducted through Your store(s).
+                    </p>
+                    <p className="text-muted-foreground">
+                      It is Your obligation to ensure that all products listed, descriptions used, and business practices employed comply with the terms of service and policies of each marketplace platform on which You operate.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">3. Vendor and Product Verification</h3>
+                    <p className="text-muted-foreground mb-2">
+                      You bear full responsibility for verifying the legitimacy and authenticity of the vendors from whom You source products. It is Your duty to ensure that no counterfeit, infringing, or otherwise prohibited goods are listed or sold through Your store(s).
+                    </p>
+                    <p className="text-muted-foreground">
+                      DropandSell does not verify, endorse, or guarantee the authenticity of products sourced from third-party vendors. Any consequences arising from the sale of counterfeit or prohibited items, including but not limited to account suspension, legal action, or financial penalties, shall be borne solely by You.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">4. Automated Compliance Measures</h3>
+                    <p className="text-muted-foreground mb-2">
+                      DropandSell provides automated content filtering tools designed to detect and remove wording, brand names, and product descriptions that may trigger policy violations on marketplace platforms such as eBay. These tools include, but are not limited to, VeRO (Verified Rights Owner Programme) brand filtering and content sanitisation.
+                    </p>
+                    <p className="text-muted-foreground">
+                      Whilst these measures are implemented in good faith to assist in maintaining compliance, they are not infallible. Some content that contravenes marketplace policies may not be detected by the automated systems and could still be published to Your store(s). You acknowledge that such instances may occur and accept full responsibility for any resulting policy infractions, account warnings, or enforcement actions.
+                    </p>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">5. Limitation of Liability</h3>
+                    <p className="text-muted-foreground mb-2">
+                      To the fullest extent permitted by applicable law, DropandSell shall not be held liable for any direct, indirect, incidental, consequential, or punitive damages arising from:
+                    </p>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-4">
+                      <li>The listing or sale of counterfeit, infringing, or prohibited products through Your store(s)</li>
+                      <li>Policy violations or enforcement actions taken by marketplace platforms against Your account(s)</li>
+                      <li>Failure of automated compliance tools to identify and remove all non-compliant content</li>
+                      <li>Loss of revenue, account standing, or business opportunities resulting from any of the foregoing</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-semibold mb-3">6. Acknowledgement</h3>
+                    <p className="text-muted-foreground">
+                      By using the DropandSell Automation App, You confirm that You have read, understood, and agree to the terms of this Disclaimer. You accept that the ultimate responsibility for Your store(s), including product authenticity, listing compliance, and adherence to marketplace policies, rests with You at all times.
+                    </p>
+                  </section>
+
+                  <p className="text-xs text-muted-foreground mt-8">Last Updated: April 2026</p>
                 </div>
               </ScrollArea>
             </CardContent>

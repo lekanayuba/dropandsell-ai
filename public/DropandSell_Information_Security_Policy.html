@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DropandSell - Information Security Policy</title>
+<style>
+@media print {
+  body { margin: 0.8in; }
+  .no-print { display: none; }
+}
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  line-height: 1.6;
+  color: #1a1a1a;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 40px 30px;
+  background: #fff;
+}
+h1 {
+  color: #285261;
+  font-size: 22px;
+  border-bottom: 3px solid #285261;
+  padding-bottom: 10px;
+  margin-bottom: 5px;
+}
+.subtitle {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 30px;
+}
+h2 {
+  color: #285261;
+  font-size: 16px;
+  margin-top: 25px;
+  margin-bottom: 8px;
+  border-left: 4px solid #285261;
+  padding-left: 10px;
+}
+p, li {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+ul { padding-left: 20px; }
+.section { margin-bottom: 20px; }
+.footer {
+  margin-top: 40px;
+  padding-top: 15px;
+  border-top: 1px solid #ccc;
+  font-size: 11px;
+  color: #888;
+}
+.print-btn {
+  background: #285261;
+  color: #fff;
+  border: none;
+  padding: 12px 30px;
+  font-size: 15px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: block;
+  margin: 30px auto;
+}
+.print-btn:hover { background: #1d3d4a; }
+</style>
+</head>
+<body>
+
+<h1>DropandSell Information Security Policy</h1>
+<p class="subtitle">Document Version: 1.0 &nbsp;|&nbsp; Effective Date: April 2026 &nbsp;|&nbsp; Last Reviewed: April 2026<br>
+Organisation: DropandSell &nbsp;|&nbsp; Website: https://dropandsell.online</p>
+
+<div class="section">
+<h2>1. Purpose</h2>
+<p>This policy establishes the information security framework for DropandSell, an e-commerce automation platform. It defines the security controls, practices, and responsibilities to protect customer data, seller information, and business operations from unauthorised access, disclosure, alteration, or destruction.</p>
+</div>
+
+<div class="section">
+<h2>2. Scope</h2>
+<p>This policy applies to all systems, data, personnel, and third-party services involved in the operation of DropandSell, including but not limited to: the web application, databases, APIs, marketplace integrations (eBay, Shopify, Amazon, TikTok Shop), and all customer and seller data processed by the platform.</p>
+</div>
+
+<div class="section">
+<h2>3. Data Protection &amp; Encryption</h2>
+<ul>
+<li><strong>Encryption in Transit:</strong> All data transmitted between users, our servers, and third-party APIs is encrypted using TLS 1.2 or higher (HTTPS).</li>
+<li><strong>Encryption at Rest:</strong> Sensitive data stored in our databases is encrypted at rest using AES-256 encryption provided by our cloud infrastructure.</li>
+<li><strong>Data Classification:</strong> We classify data into categories (Public, Internal, Confidential, Restricted) and apply appropriate security controls based on classification level.</li>
+<li><strong>API Credentials:</strong> All marketplace API keys, OAuth tokens, and secrets are stored as encrypted environment variables, never in source code or logs.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>4. Access Control</h2>
+<ul>
+<li><strong>Principle of Least Privilege:</strong> Access to systems and data is granted on a need-to-know basis. Each team member only has access to the systems required for their role.</li>
+<li><strong>Authentication:</strong> All administrative access requires strong passwords and multi-factor authentication (MFA).</li>
+<li><strong>Session Management:</strong> User sessions are secured with HTTP-only cookies, automatic timeouts, and CSRF protection.</li>
+<li><strong>User Data Isolation:</strong> The application enforces strict multi-tenancy — each user can only access their own data, orders, products, and store connections.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>5. Network Security</h2>
+<ul>
+<li><strong>Infrastructure:</strong> The application is hosted on a managed cloud platform with built-in network isolation, firewall protection, and DDoS mitigation.</li>
+<li><strong>Network Segregation:</strong> Application services run in isolated containers with network-level separation between components.</li>
+<li><strong>Monitoring:</strong> We monitor for suspicious activity including unusual API usage patterns, failed authentication attempts, and unauthorised access attempts.</li>
+<li><strong>Updates:</strong> All system dependencies, frameworks, and libraries are regularly updated to address known vulnerabilities.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>6. Endpoint Security</h2>
+<ul>
+<li>All company devices used for development and administration have endpoint protection software installed with real-time scanning enabled.</li>
+<li>Automatic security updates are enabled on all company endpoints.</li>
+<li>Screen locking, password complexity requirements, and encrypted storage are enforced on all devices.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>7. Vulnerability &amp; Threat Management</h2>
+<ul>
+<li>Regular security reviews and code audits are conducted to identify and remediate vulnerabilities.</li>
+<li>Dependencies are scanned for known vulnerabilities and updated promptly when patches are available.</li>
+<li>Input validation and output encoding are implemented to prevent injection attacks (SQL injection, XSS, etc.).</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>8. Incident Response</h2>
+<ul>
+<li><strong>Detection:</strong> Security incidents are identified through monitoring, user reports, and automated alerting.</li>
+<li><strong>Response:</strong> Incidents are investigated promptly with defined escalation procedures.</li>
+<li><strong>Notification:</strong> Affected users, partners, and regulatory authorities are notified in accordance with applicable data protection regulations (UK GDPR).</li>
+<li><strong>Remediation:</strong> Root cause analysis is performed and corrective measures are implemented to prevent recurrence.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>9. Data Retention &amp; Deletion</h2>
+<ul>
+<li>Customer data is retained only for as long as necessary to provide the service.</li>
+<li>Upon account deletion or contract termination, all associated customer data is securely deleted within 30 days.</li>
+<li>We honour data subject access requests (DSARs) and deletion requests in compliance with UK GDPR.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>10. Third-Party Integrations</h2>
+<ul>
+<li>All third-party marketplace integrations (eBay, Shopify, Amazon, TikTok Shop) use official OAuth 2.0 authentication flows.</li>
+<li>API tokens are refreshed automatically and stored securely.</li>
+<li>We only request the minimum permissions (scopes) required for the integration to function.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>11. Privacy Compliance</h2>
+<ul>
+<li>We maintain a regularly updated privacy policy available at https://dropandsell.online/privacy.</li>
+<li>Data processing activities comply with UK GDPR and applicable data protection laws.</li>
+<li>We assist sellers and platform partners with data deletion, update, and access requests upon receipt.</li>
+</ul>
+</div>
+
+<div class="section">
+<h2>12. Policy Review</h2>
+<p>This policy is reviewed and updated at least annually, or whenever significant changes to the platform, infrastructure, or regulatory requirements occur.</p>
+</div>
+
+<div class="footer">
+<p><strong>DropandSell</strong> &nbsp;|&nbsp; https://dropandsell.online &nbsp;|&nbsp; dropandsellauth@gmail.com<br>
+This document is confidential and intended for compliance review purposes.</p>
+</div>
+
+<button class="print-btn no-print" onclick="window.print()">Save as PDF / Print</button>
+
+</body>
+</html>

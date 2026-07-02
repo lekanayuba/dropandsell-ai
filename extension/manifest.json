@@ -1,21 +1,41 @@
 {
   "manifest_version": 3,
-  "name": "DropandSell AI - Product Importer",
-  "version": "1.0.0",
-  "description": "Import products from vendor websites directly to your DropandSell AI store",
+  "name": "DropandSell Automation App - Product Importer",
+  "version": "2.3.3",
+  "description": "One-click product importer with hourly automatic stock and price sync for your DropandSell store inventory.",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting",
+    "tabs",
+    "alarms",
+    "history"
   ],
   "host_permissions": [
-    "https://*.amazon.com/*",
-    "https://*.amazon.co.uk/*",
-    "https://*.amazon.de/*",
-    "https://*.amazon.fr/*",
-    "https://*.aliexpress.com/*",
-    "https://*.ebay.com/*",
-    "https://*.ebay.co.uk/*"
+    "*://*.amazon.com/*",
+    "*://*.amazon.co.uk/*",
+    "*://*.amazon.de/*",
+    "*://*.amazon.fr/*",
+    "*://*.amazon.ca/*",
+    "*://*.amazon.in/*",
+    "*://*.aliexpress.com/*",
+    "*://*.aliexpress.us/*",
+    "*://*.ebay.com/*",
+    "*://*.ebay.co.uk/*",
+    "*://*.ebay.de/*",
+    "*://*.walmart.com/*",
+    "*://*.etsy.com/*",
+    "*://*.shein.com/*",
+    "*://*.shein.co.uk/*",
+    "https://dropandsell.online/*",
+    "https://*.dropandsell.online/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://dropandsell.online/*",
+      "https://*.dropandsell.online/*"
+    ]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -32,13 +52,21 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.amazon.com/*",
-        "https://*.amazon.co.uk/*",
-        "https://*.amazon.de/*",
-        "https://*.amazon.fr/*",
-        "https://*.aliexpress.com/*",
-        "https://*.ebay.com/*",
-        "https://*.ebay.co.uk/*"
+        "*://*.amazon.com/*",
+        "*://*.amazon.co.uk/*",
+        "*://*.amazon.de/*",
+        "*://*.amazon.fr/*",
+        "*://*.amazon.ca/*",
+        "*://*.amazon.in/*",
+        "*://*.aliexpress.com/*",
+        "*://*.aliexpress.us/*",
+        "*://*.ebay.com/*",
+        "*://*.ebay.co.uk/*",
+        "*://*.ebay.de/*",
+        "*://*.walmart.com/*",
+        "*://*.etsy.com/*",
+        "*://*.shein.com/*",
+        "*://*.shein.co.uk/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

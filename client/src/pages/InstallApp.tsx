@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Smartphone, Monitor, Download, CheckCircle2, Zap, Globe, Bell } from "lucide-react";
+import { Smartphone, Monitor, Download, CheckCircle2, Zap, Globe, Bell, ArrowRight } from "lucide-react";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -10,6 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export default function InstallApp() {
+  const [, navigate] = useLocation();
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -51,7 +53,7 @@ export default function InstallApp() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <Badge variant="outline" className="mb-4">Optional</Badge>
-          <h1 className="text-3xl font-bold mb-2">Install DropandSell AI App</h1>
+          <h1 className="text-3xl font-bold mb-2">Install DropandSell Automation App</h1>
           <p className="text-muted-foreground max-w-lg mx-auto">
             Get the full app experience on your desktop or smartphone for faster access and automation.
           </p>
@@ -67,7 +69,7 @@ export default function InstallApp() {
                     App Installed Successfully!
                   </h3>
                   <p className="text-muted-foreground">
-                    You can now access DropandSell AI from your home screen or app launcher.
+                    You can now access DropandSell Automation App from your home screen or app launcher.
                   </p>
                 </div>
               </div>
@@ -114,7 +116,7 @@ export default function InstallApp() {
                     <p className="font-medium mb-1">How to install:</p>
                     <ol className="list-decimal list-inside space-y-1">
                       <li>Click the install icon in your browser's address bar</li>
-                      <li>Or use menu → "Install DropandSell AI"</li>
+                      <li>Or use menu → "Install DropandSell Automation App"</li>
                     </ol>
                   </div>
                 )}
@@ -200,6 +202,17 @@ export default function InstallApp() {
             </div>
           </CardContent>
         </Card>
+
+        <div className="text-center">
+          <Button 
+            size="lg" 
+            onClick={() => navigate('/')} 
+            data-testid="button-go-to-dashboard"
+          >
+            Go to Dashboard
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        </div>
       </div>
     </div>
   );

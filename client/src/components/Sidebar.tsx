@@ -1,190 +1,182 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import type { User as AuthUser } from "@shared/models/auth";
+import { useFeatureAccess } from "@/hooks/use-feature-flags";
+
 import { 
   LayoutDashboard, 
   Store, 
   Users, 
   Package, 
-  PackageOpen,
-  ShoppingCart, 
+  BarChart3, 
   Wallet, 
   CreditCard,
+  Zap,
   LogOut,
   Settings,
   Menu,
   HelpCircle,
   Shield,
   Gift,
-  Truck,
-  BarChart3,
-  BookOpen,
+  UserCircle,
+  DatabaseZap,
+  Puzzle,
   Lightbulb,
-  User,
-  List,
+  ShoppingCart,
+  Truck,
   Rocket,
-  Globe,
+  ShoppingBag,
+  ChevronRight
 } from "lucide-react";
+import dropandSellLogo from "@assets/Drop_1.jpg_1775119096004.jpeg";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { cn } from "@/lib/utils";
-import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import dropandSellLogo from "@assets/Drop_1.jpg_1775119096004.jpeg";
-
-interface NavLink {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-}
-
-const baseLinks: NavLink[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/getting-started", label: "Getting Started", icon: Rocket },
-  { href: "/orders", label: "Orders", icon: ShoppingCart },
-  { href: "/shipping", label: "Fulfillment", icon: Truck },
-  { href: "/stores", label: "Stores", icon: Store },
-  { href: "/vendors", label: "Vendors", icon: Users },
-  { href: "/inventory", label: "Inventory", icon: Package },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/manual", label: "Manual", icon: BookOpen },
-  { href: "/wallet", label: "Wallet", icon: Wallet },
-  { href: "/referrals", label: "Referrals", icon: Gift },
-  { href: "/subscription", label: "Subscription", icon: CreditCard },
-  { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
-  { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
-  { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
-  { href: "/profile", label: "Profile", icon: User },
-  { href: "/faq", label: "FAQ", icon: HelpCircle },
-  { href: "/policies", label: "Policies", icon: Shield },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
-
-const adminLinks: NavLink[] = [
-  { href: "/global-vaso", label: "Global VeRO", icon: Shield },
-];
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const links = isAdmin ? [...baseLinks, ...adminLinks] : baseLinks;
+  const { hasAccess: hasFulfillmentAccess } = useFeatureAccess('auto_fulfillment');
+  const { hasAccess: hasDropAndSellAccess } = useFeatureAccess('drop_and_sell');
 
-  const renderLink = (link: NavLink, isMobile: boolean = false) => {
-    const Icon = link.icon;
-    const isActive = location === link.href;
-    const testId = `link-nav-${link.href === "/" ? "dashboard" : link.href.replace(/\//g, "-").replace(/^-/, "")}`;
-    const LinkContent = (
-      <a
-        className={cn(
-          "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition-colors",
-          isActive
-            ? "bg-white/10 text-white"
-            : "text-slate-300 hover:bg-white/5 hover:text-white"
-        )}
-        data-testid={testId}
-      >
-        {isActive && (
-          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
-        )}
-        <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-primary" : "text-slate-400")} />
-        <span>{link.label}</span>
-      </a>
-    );
+  const links = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/getting-started", label: "Getting Started", icon: Rocket },
+    ...(hasFulfillmentAccess
+      ? [
+          { href: "/orders", label: "Orders", icon: ShoppingCart },
+          { href: "/fulfillment", label: "Fulfillment", icon: Truck },
+        ]
+      : []),
+    { href: "/stores", label: "Stores", icon: Store },
+    { href: "/vendors", label: "Vendors", icon: Users },
+    { href: "/inventory", label: "Inventory", icon: Package },
+    { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/automation", label: "Manual", icon: Zap },
+    { href: "/wallet", label: "Wallet", icon: Wallet },
+    { href: "/referrals", label: "Referrals", icon: Gift },
+    { href: "/subscription", label: "Subscription", icon: CreditCard },
+    { href: "/addons", label: "Add-ons", icon: Puzzle },
+    ...(hasDropAndSellAccess ? [{ href: "/drop-and-sell", label: "DROSEL Auto-Listing", icon: ShoppingBag }] : []),
+    { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+    { href: "/profile", label: "Profile", icon: UserCircle },
+    { href: "/faq", label: "FAQ", icon: HelpCircle },
+    { href: "/policies", label: "Policies", icon: Shield },
+    { href: "/settings", label: "Settings", icon: Settings },
+    ...(user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com"
+      ? [
+          { href: "/admin/subscribers", label: "Subscribers DB", icon: DatabaseZap },
+          { href: "/admin/global-vero", label: "Global VeRO", icon: Shield },
+          { href: "/admin/paypal-payouts", label: "PayPal Payouts", icon: Wallet },
+        ]
+      : []),
+  ];
 
-    if (isMobile) {
-      return (
-        <SheetClose asChild key={link.href}>
-          <Link href={link.href}>{LinkContent}</Link>
-        </SheetClose>
-      );
-    }
-
-    return (
-      <Link href={link.href} key={link.href}>
-        {LinkContent}
-      </Link>
-    );
-  };
-
-  const NavContent = ({ isMobile = false }: { isMobile?: boolean }) => (
-    <div className="flex h-full flex-col bg-slate-900 text-slate-300">
-      <div className="flex h-16 items-center gap-2.5 border-b border-slate-800 px-5">
-        <Link href="/" className="flex items-center gap-2.5" data-testid="link-logo-home">
-          <img
-            src={dropandSellLogo}
-            alt="DropandSell"
-            className="h-9 w-9 rounded-lg object-contain"
-            data-testid="img-app-logo"
-          />
-          <div className="leading-tight">
-            <span className="block text-[15px] font-display font-bold text-white">DropandSell</span>
-            <span className="block text-[11px] text-slate-400">Automation Platform</span>
+  const NavContent = () => (
+    <div className="flex flex-col h-full" style={{ background: 'hsl(var(--sidebar-bg))' }}>
+      <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: 'hsl(var(--sidebar-border))' }}>
+        <div className="flex items-center gap-2.5">
+          <img src={dropandSellLogo} alt="DropandSell Automation App" className="h-10 w-10 rounded-lg object-contain" style={{ filter: 'brightness(1.1)' }} data-testid="img-app-logo" />
+          <div>
+            <span className="text-[15px] font-semibold tracking-tight text-white font-display">DropandSell</span>
+            <p className="text-[11px] leading-tight" style={{ color: 'hsl(var(--sidebar-muted))' }}>Automation Platform</p>
           </div>
-        </Link>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-3">
-        <nav className="grid gap-0.5 px-3">
-          {links.map(link => renderLink(link, isMobile))}
-        </nav>
+      <div className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+        {links.map((link) => {
+          const Icon = link.icon;
+          const isActive = location === link.href;
+          return (
+            <Link key={link.href} href={link.href}>
+              <div
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[15px] font-medium transition-all duration-150 cursor-pointer group relative",
+                  isActive
+                    ? "text-white"
+                    : "hover:text-white"
+                )}
+                style={{
+                  background: isActive ? 'hsl(var(--sidebar-active) / 0.18)' : undefined,
+                  color: isActive ? 'hsl(var(--sidebar-active))' : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = 'hsl(var(--sidebar-hover))';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = '';
+                  }
+                }}
+              >
+                {isActive && (
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full" style={{ background: 'hsl(var(--sidebar-active))' }} />
+                )}
+                <Icon className="w-5 h-5 flex-shrink-0" style={{ color: isActive ? 'hsl(var(--sidebar-active))' : 'hsl(var(--sidebar-muted))' }} />
+                <span style={{ color: isActive ? 'white' : 'hsl(var(--sidebar-fg))' }}>{link.label}</span>
+                {isActive && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-50" />}
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
-      <UserMenu user={user ?? null} onLogout={logout} isAdmin={isAdmin} />
+      <div className="px-3 py-3 border-t" style={{ borderColor: 'hsl(var(--sidebar-border))' }}>
+        <div className="flex items-center gap-2.5 px-3 py-2 mb-2">
+          <Avatar className="h-8 w-8 border-2" style={{ borderColor: 'hsl(var(--sidebar-border))' }}>
+            <AvatarImage src={user?.profileImageUrl} />
+            <AvatarFallback className="text-xs font-medium bg-primary/20 text-primary">{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-medium truncate text-white">{user?.firstName} {user?.lastName}</p>
+            <p className="text-[11px] truncate" style={{ color: 'hsl(var(--sidebar-muted))' }}>{user?.email}</p>
+          </div>
+        </div>
+        <button 
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 cursor-pointer"
+          style={{ color: 'hsl(var(--sidebar-muted))' }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'hsl(0 63% 40% / 0.15)';
+            e.currentTarget.style.color = 'hsl(0 80% 65%)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = '';
+            e.currentTarget.style.color = 'hsl(var(--sidebar-muted))';
+          }}
+          onClick={() => logout()}
+        >
+          <LogOut className="w-4 h-4" />
+          Sign Out
+        </button>
+        <div className="mt-2 px-1">
+          <LanguageSwitcher variant="sidebar" />
+        </div>
+      </div>
     </div>
   );
 
   return (
     <>
-      {/* Mobile Sidebar */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="shrink-0" data-testid="button-open-menu">
+            <Button variant="outline" size="icon" className="shadow-lg">
               <Menu className="w-5 h-5" />
-              <span className="sr-only">Toggle navigation menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex flex-col p-0 w-[280px] border-slate-800">
-            <NavContent isMobile={true} />
+          <SheetContent side="left" className="p-0 w-[280px]">
+            <NavContent />
           </SheetContent>
         </Sheet>
       </div>
 
-      {/* Desktop Sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-10 lg:block w-[280px] border-r border-slate-800">
+      <div className="hidden lg:block w-[260px] fixed inset-y-0 left-0 z-30 shadow-2xl">
         <NavContent />
       </div>
     </>
-  );
-}
-
-function UserMenu({ user, onLogout, isAdmin }: { user: AuthUser | null, onLogout: () => void, isAdmin: boolean }) {
-  return (
-    <div className="mt-auto border-t border-slate-800 p-3">
-      <div className="mb-2 flex items-center gap-2.5 px-2 py-1.5">
-        <Avatar className="h-9 w-9 border border-slate-700">
-          <AvatarImage src={user?.profileImageUrl ?? undefined} alt="User avatar" />
-          <AvatarFallback className="bg-slate-800 text-slate-200">{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-white" data-testid="text-user-name">
-            {isAdmin ? "Admin Zone" : `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || "Account"}
-          </p>
-          <p className="truncate text-[11px] text-slate-400" data-testid="text-user-email">{user?.email}</p>
-        </div>
-      </div>
-      <button
-        onClick={onLogout}
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:bg-red-500/15 hover:text-red-400"
-        data-testid="button-logout"
-      >
-        <LogOut className="h-4 w-4" />
-        <span>Sign Out</span>
-      </button>
-      <div className="mt-1 flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-500">
-        <Globe className="h-3.5 w-3.5" />
-        <span>English</span>
-      </div>
-    </div>
   );
 }

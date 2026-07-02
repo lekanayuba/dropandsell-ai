@@ -1,11 +1,15 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check, Crown, Zap, Rocket, Building2, Building, Castle } from "lucide-react";
+import { Check, Crown, Zap, Rocket, Building2, Building, Castle, Download } from "lucide-react";
+import { PageRefreshButton } from "@/components/PageRefreshButton";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { downloadExcel } from "@/lib/export-excel";
+import { useCurrency } from "@/hooks/use-currency";
 
 type Plan = {
   id: string;
@@ -13,9 +17,13 @@ type Plan = {
   description: string;
   priceId: string | null;
   amount: number;
+  yearlyAmount: number;
+  yearlyMonthly: number;
   currency: string;
   listingsLimit: number;
+  storeLimit: number;
   interval: string;
+  planId?: string;
 };
 
 type CurrentSubscription = {
@@ -37,6 +45,10 @@ const planColors = [
 
 export default function Subscription() {
   const { toast } = useToast();
+  const { symbol: currSym, format: fc } = useCurrency();
+  const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
+
+  const isYearly = billingInterval === 'year';
 
   const { data: plans, isLoading: plansLoading } = useQuery<Plan[]>({
     queryKey: ["/api/subscription/plans"],
@@ -47,8 +59,13 @@ export default function Subscription() {
   });
 
   const checkoutMutation = useMutation({
-    mutationFn: async (priceId: string) => {
-      const response = await apiRequest("POST", "/api/subscription/checkout", { priceId });
+    mutationFn: async (plan: Plan) => {
+      const response = await apiRequest("POST", "/api/stripe/create-checkout-session", { 
+        planId: plan.planId || plan.id,
+        billingInterval,
+        successUrl: window.location.origin + '/payment-success',
+        cancelUrl: window.location.origin + '/subscription',
+      });
       return response.json();
     },
     onSuccess: (data) => {
@@ -104,12 +121,58 @@ export default function Subscription() {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="text-center space-y-4">
-        <h2 className="text-3xl font-bold font-display tracking-tight">Choose Your Plan</h2>
+      <div className="text-center space-y-4 relative">
+        <div className="absolute right-0 top-0 flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!plans?.length) return;
+              downloadExcel(plans.map((p: any) => ({
+                Plan: p.name,
+                Description: p.description || '',
+                'Monthly Price': fc(p.amount),
+                'Yearly Price': fc(p.yearlyAmount),
+                'Yearly (per month)': fc(p.yearlyMonthly),
+                'Listings Limit': p.listingsLimit,
+                Status: currentSubscription?.planName === p.name ? 'Current Plan' : 'Available',
+              })), 'subscription-plans');
+            }}
+            disabled={!plans?.length}
+            data-testid="button-download-subscriptions"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Export
+          </Button>
+          <PageRefreshButton />
+        </div>
+        <h2 className="text-2xl font-bold font-display tracking-tight">Choose Your Plan</h2>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Scale your dropshipping business with the right plan. All plans include multi-marketplace integration, 
-          VERO compliance detection, and automated order fulfillment.
+          All plans include multi-marketplace integration, 
+          VERO compliance detection, and automated order fulfillment. Cancel anytime.
         </p>
+
+        <div className="flex items-center justify-center gap-3 pt-2" data-testid="billing-toggle">
+          <span className={`text-sm font-medium transition-colors ${!isYearly ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isYearly}
+            onClick={() => setBillingInterval(isYearly ? 'month' : 'year')}
+            className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${isYearly ? 'bg-primary' : 'bg-muted'}`}
+            data-testid="toggle-billing-interval"
+          >
+            <span className={`inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${isYearly ? 'translate-x-8' : 'translate-x-1'}`} />
+          </button>
+          <span className={`text-sm font-medium transition-colors ${isYearly ? 'text-foreground' : 'text-muted-foreground'}`}>
+            Yearly
+          </span>
+          {isYearly && (
+            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              Save 10%
+            </Badge>
+          )}
+        </div>
       </div>
 
       {currentSubscription && (
@@ -120,7 +183,9 @@ export default function Subscription() {
               <div>
                 <p className="font-medium">Current Plan: {currentSubscription.planName}</p>
                 <p className="text-sm text-muted-foreground">
-                  Renews on {new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}
+                  {currentSubscription.currentPeriodEnd && new Date(currentSubscription.currentPeriodEnd).getFullYear() > 2000
+                    ? `Renews on ${new Date(currentSubscription.currentPeriodEnd).toLocaleDateString()}`
+                    : 'Active subscription'}
                 </p>
               </div>
             </div>
@@ -148,7 +213,14 @@ export default function Subscription() {
               key={plan.id} 
               className={`relative flex flex-col transition-all duration-300 hover:-translate-y-1 ${
                 isPopular ? "border-primary shadow-lg shadow-primary/20" : "border-border/50"
-              } ${isCurrentPlan ? "ring-2 ring-primary" : ""}`}
+              } ${isCurrentPlan ? "ring-2 ring-primary" : ""} ${
+                !isCurrentPlan ? "cursor-pointer" : ""
+              }`}
+              onClick={() => {
+                if (!isCurrentPlan && !checkoutMutation.isPending) {
+                  checkoutMutation.mutate(plan);
+                }
+              }}
               data-testid={`card-plan-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
             >
               {isPopular && (
@@ -167,8 +239,22 @@ export default function Subscription() {
 
               <CardContent className="flex-1 space-y-6">
                 <div className="text-center">
-                  <span className="text-4xl font-bold">£{plan.amount}</span>
-                  <span className="text-muted-foreground">/{plan.interval}</span>
+                  {isYearly ? (
+                    <>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-lg line-through text-muted-foreground">{fc(plan.amount)}</span>
+                        <span className="text-4xl font-bold">{fc(plan.yearlyMonthly)}</span>
+                        <span className="text-muted-foreground">/mo</span>
+                      </div>
+                      <p className="text-sm font-medium text-primary mt-1">{fc(plan.yearlyAmount)}/year — Save 10%</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-4xl font-bold">{fc(plan.amount)}</span>
+                      <span className="text-muted-foreground">/mo</span>
+                      <p className="text-sm font-medium text-primary mt-1">Billed monthly</p>
+                    </>
+                  )}
                 </div>
 
                 <ul className="space-y-3">
@@ -176,6 +262,12 @@ export default function Subscription() {
                     <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
                     <span className="text-sm">
                       <strong>{plan.listingsLimit.toLocaleString()}</strong> product listings
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-3">
+                    <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    <span className="text-sm">
+                      Up to <strong>{plan.storeLimit || 2}</strong> store connections
                     </span>
                   </li>
                   <li className="flex items-center gap-3">
@@ -219,8 +311,11 @@ export default function Subscription() {
                 <Button 
                   className={`w-full ${isPopular ? "shadow-lg shadow-primary/30" : ""}`}
                   variant={isCurrentPlan ? "outline" : isPopular ? "default" : "secondary"}
-                  disabled={isCurrentPlan || !plan.priceId || checkoutMutation.isPending}
-                  onClick={() => plan.priceId && checkoutMutation.mutate(plan.priceId)}
+                  disabled={isCurrentPlan || checkoutMutation.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    checkoutMutation.mutate(plan);
+                  }}
                   data-testid={`button-subscribe-${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
                 >
                   {isCurrentPlan 
@@ -236,8 +331,8 @@ export default function Subscription() {
       </div>
 
       <div className="text-center text-sm text-muted-foreground space-y-2 pt-8">
-        <p>All prices are in GBP and billed monthly. Cancel anytime.</p>
-        <p>Need a custom plan? <a href="mailto:support@dropflow.com" className="text-primary hover:underline">Contact us</a></p>
+        <p>{isYearly ? 'Billed annually at a 10% discount.' : 'Billed monthly.'} Cancel anytime.</p>
+        <p>Need a custom plan? <a href="mailto:support@dropflow.io" className="text-primary hover:underline">Contact us</a></p>
       </div>
     </div>
   );

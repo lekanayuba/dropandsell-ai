@@ -4,31 +4,26 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Shield, FileText, Database, CreditCard, CheckCircle2 } from "lucide-react";
+import { Shield, FileText, Database, CreditCard, CheckCircle2, AlertTriangle } from "lucide-react";
 
 export default function AcceptPolicies() {
   const [, setLocation] = useLocation();
-  const [acceptedPolicies, setAcceptedPolicies] = useState({
-    privacy: false,
-    terms: false,
-    data: false,
-    debit: false,
-  });
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedData, setAcceptedData] = useState(false);
+  const [acceptedDebit, setAcceptedDebit] = useState(false);
+  const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
 
-  const handleAcceptanceChange = (policy: keyof typeof acceptedPolicies, checked: boolean) => {
-    setAcceptedPolicies(prev => ({ ...prev, [policy]: checked }));
-  };
-  const allAccepted = Object.values(acceptedPolicies).every(Boolean);
+  const allAccepted = acceptedPrivacy && acceptedTerms && acceptedData && acceptedDebit && acceptedDisclaimer;
 
   const acceptPolicies = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", "/api/user/accept-policies");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: USER_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       setLocation("/onboarding");
     }
   });
@@ -42,7 +37,7 @@ export default function AcceptPolicies() {
           </div>
           <h1 className="text-3xl font-bold font-display mb-2">Review Our Policies</h1>
           <p className="text-muted-foreground">
-            Please read and accept our policies to continue using DropandSell AI
+            Please read and accept our policies to continue using DropandSell Automation App
           </p>
         </div>
 
@@ -57,8 +52,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="privacy"
-                checked={acceptedPolicies.privacy}
-                onCheckedChange={(checked) => handleAcceptanceChange('privacy', !!checked)}
+                checked={acceptedPrivacy}
+                onCheckedChange={(checked) => setAcceptedPrivacy(checked === true)}
                 data-testid="checkbox-privacy"
               />
               <div className="flex-1">
@@ -67,7 +62,7 @@ export default function AcceptPolicies() {
                   Privacy Policy
                 </label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  I have read and agree to the Privacy Policy, which explains how DropandSell AI collects, uses, and protects my personal data.
+                  I have read and agree to the Privacy Policy, which explains how DropandSell Automation App collects, uses, and protects my personal data.
                 </p>
                 <a
                   href="/policies?tab=privacy"
@@ -84,8 +79,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="terms"
-                checked={acceptedPolicies.terms}
-                onCheckedChange={(checked) => handleAcceptanceChange('terms', !!checked)}
+                checked={acceptedTerms}
+                onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
                 data-testid="checkbox-terms"
               />
               <div className="flex-1">
@@ -94,7 +89,7 @@ export default function AcceptPolicies() {
                   User Agreement (Terms of Service)
                 </label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  I agree to the Terms of Service and understand my responsibilities when using DropandSell AI.
+                  I agree to the Terms of Service and understand my responsibilities when using DropandSell Automation App.
                 </p>
                 <a
                   href="/policies?tab=terms"
@@ -111,8 +106,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="data"
-                checked={acceptedPolicies.data}
-                onCheckedChange={(checked) => handleAcceptanceChange('data', !!checked)}
+                checked={acceptedData}
+                onCheckedChange={(checked) => setAcceptedData(checked === true)}
                 data-testid="checkbox-data"
               />
               <div className="flex-1">
@@ -138,8 +133,8 @@ export default function AcceptPolicies() {
             <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate">
               <Checkbox
                 id="debit"
-                checked={acceptedPolicies.debit}
-                onCheckedChange={(checked) => handleAcceptanceChange('debit', !!checked)}
+                checked={acceptedDebit}
+                onCheckedChange={(checked) => setAcceptedDebit(checked === true)}
                 data-testid="checkbox-debit"
               />
               <div className="flex-1">
@@ -158,6 +153,33 @@ export default function AcceptPolicies() {
                   data-testid="link-read-debit"
                 >
                   Read full policy
+                </a>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4 p-4 border rounded-lg hover-elevate border-amber-200 bg-amber-50/30">
+              <Checkbox
+                id="disclaimer"
+                checked={acceptedDisclaimer}
+                onCheckedChange={(checked) => setAcceptedDisclaimer(checked === true)}
+                data-testid="checkbox-disclaimer"
+              />
+              <div className="flex-1">
+                <label htmlFor="disclaimer" className="font-medium cursor-pointer flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Store Responsibility Disclaimer
+                </label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  I acknowledge and understand that I am solely responsible for the management and compliance of my store(s). The role of DropandSell is to facilitate and streamline the dropshipping process through automation. It is my responsibility to verify that the vendors from whom I source products are not offering counterfeit goods. Whilst DropandSell employs automated measures to detect and remove content that may trigger policy violations on platforms such as eBay, I understand that some items or descriptions may not be identified and could still result in policy infractions for which I bear full responsibility.
+                </p>
+                <a
+                  href="/policies?tab=disclaimer"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline"
+                  data-testid="link-read-disclaimer"
+                >
+                  Read full disclaimer
                 </a>
               </div>
             </div>

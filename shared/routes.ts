@@ -9,9 +9,7 @@ import {
   orders,
   transactions,
   wallet,
-  subscriptions,
-  notifications,
-  addonCatalog,
+  subscriptions
 } from './schema';
 
 // ============================================
@@ -48,34 +46,15 @@ export const api = {
           totalOrders: z.number(),
           activeListings: z.number(),
           walletBalance: z.number(),
-          outOfStockProducts: z.number(),
-        }),
-      },
-    },
-  },
-
-  // Add-on Catalog
-  addonCatalog: {
-    list: {
-      method: 'GET' as const,
-      path: '/api/addon-catalog',
-      responses: {
-        200: z.object({
-          items: z.array(z.custom<typeof addonCatalog.$inferSelect>()),
-          lastRefreshed: z.string().nullable(),
-          newThisMonth: z.number(),
-        }),
-      },
-    },
-    refresh: {
-      method: 'POST' as const,
-      path: '/api/addon-catalog/refresh',
-      responses: {
-        200: z.object({
-          refreshed: z.boolean(),
-          itemsAdded: z.number(),
-          itemsUpdated: z.number(),
-          lastRefreshedAt: z.date().nullable(),
+          newOrders: z.number(),
+          recentOrders: z.array(z.object({
+            id: z.number(),
+            customerName: z.string().nullable(),
+            totalAmount: z.string().nullable(),
+            status: z.string(),
+            fulfillmentStatus: z.string().nullable(),
+            createdAt: z.string().nullable(),
+          })).optional(),
         }),
       },
     },
@@ -172,61 +151,6 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
-    sync: {
-      method: 'POST' as const,
-      path: '/api/stores/:id/sync',
-      responses: {
-        200: z.object({
-          synced: z.boolean(),
-          platform: z.string(),
-          syncedAt: z.string(),
-          totalListings: z.number(),
-          outOfStockCount: z.number(),
-          inStockCount: z.number(),
-          message: z.string(),
-        }),
-      },
-    },
-    syncAll: {
-      method: 'POST' as const,
-      path: '/api/stores/sync-all',
-      responses: {
-        200: z.object({
-          synced: z.boolean(),
-          storesSynced: z.number(),
-          storesFailed: z.number(),
-          totalStores: z.number(),
-          syncedAt: z.string(),
-        }),
-      },
-    },
-    syncStatus: {
-      method: 'GET' as const,
-      path: '/api/stores/:id/sync-status',
-      responses: {
-        200: z.object({
-          storeId: z.number(),
-          syncing: z.boolean(),
-          lastSync: z.string().nullable(),
-        }),
-      },
-    },
-    autoSettings: {
-      method: 'PUT' as const,
-      path: '/api/stores/:id/auto-settings',
-      input: z.object({
-        autoRestock: z.boolean().optional(),
-        autoPauseListings: z.boolean().optional(),
-        autoMarkOutOfStock: z.boolean().optional(),
-        autoSwitchSupplier: z.boolean().optional(),
-        threshold: z.number().optional(),
-      }),
-      responses: {
-        200: z.custom<typeof stores.$inferSelect>(),
-        400: errorSchemas.validation,
-        404: errorSchemas.notFound,
-      },
-    },
   },
 
   // Vendors
@@ -235,7 +159,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/vendors',
       responses: {
-        200: z.array(z.any()),
+        200: z.array(z.custom<typeof vendors.$inferSelect>()),
       },
     },
     create: {
@@ -262,45 +186,6 @@ export const api = {
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,
-      },
-    },
-    calculateHealth: {
-      method: 'POST' as const,
-      path: '/api/vendors/calculate-health',
-      responses: {
-        200: z.object({
-          calculated: z.boolean(),
-          count: z.number(),
-          vendors: z.array(z.any()),
-        }),
-      },
-    },
-    import: {
-      method: 'POST' as const,
-      path: '/api/vendors/import',
-      input: z.object({
-        vendors: z.array(z.object({
-          name: z.string(),
-          website: z.string().optional(),
-          contactPerson: z.string().optional(),
-          contactEmail: z.string().optional(),
-          contactPhone: z.string().optional(),
-          category: z.string().optional(),
-          tags: z.string().optional(),
-          country: z.string().optional(),
-          leadTime: z.string().optional(),
-          paymentTerms: z.string().optional(),
-          minOrderAmount: z.string().optional(),
-          notes: z.string().optional(),
-          integrationType: z.string().optional(),
-          status: z.string().optional(),
-        })),
-      }),
-      responses: {
-        201: z.object({
-          imported: z.number(),
-          vendors: z.array(z.any()),
-        }),
       },
     },
   },
@@ -357,56 +242,6 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
-    findSimilarImages: {
-      method: 'POST' as const,
-      path: '/api/products/:id/find-similar-images',
-      responses: {
-        200: z.object({
-          sourceImage: z.string(),
-          sourceTitle: z.string(),
-          results: z.array(z.object({
-            productId: z.number(),
-            productTitle: z.string(),
-            imageUrl: z.string(),
-            matchScore: z.number(),
-            matchReason: z.string(),
-          })),
-        }),
-        400: errorSchemas.validation,
-        404: errorSchemas.notFound,
-      },
-    },
-    autoReplaceSupplier: {
-      method: 'POST' as const,
-      path: '/api/products/:id/auto-replace-supplier',
-      responses: {
-        200: z.object({
-          replaced: z.boolean(),
-          newVendorId: z.number().nullable(),
-          newVendorName: z.string().nullable(),
-          reason: z.string(),
-        }),
-      },
-    },
-    batchAutoReplaceSuppliers: {
-      method: 'POST' as const,
-      path: '/api/products/auto-replace-suppliers',
-      responses: {
-        200: z.object({
-          total: z.number(),
-          replaced: z.number(),
-          failed: z.number(),
-          results: z.array(z.any()),
-        }),
-      },
-    },
-    replacementLogs: {
-      method: 'GET' as const,
-      path: '/api/products/replacement-logs',
-      responses: {
-        200: z.array(z.any()),
-      },
-    },
   },
 
   // Orders
@@ -428,38 +263,6 @@ export const api = {
       responses: {
         200: z.custom<typeof orders.$inferSelect>(),
         404: errorSchemas.notFound,
-      },
-    },
-  },
-
-  // Notifications
-  notification: {
-    list: {
-      method: 'GET' as const,
-      path: '/api/notifications',
-      responses: {
-        200: z.array(z.custom<typeof notifications.$inferSelect>()),
-      },
-    },
-    unreadCount: {
-      method: 'GET' as const,
-      path: '/api/notifications/unread-count',
-      responses: {
-        200: z.object({ count: z.number() }),
-      },
-    },
-    markRead: {
-      method: 'PUT' as const,
-      path: '/api/notifications/:id/read',
-      responses: {
-        200: z.custom<typeof notifications.$inferSelect>(),
-      },
-    },
-    readAll: {
-      method: 'PUT' as const,
-      path: '/api/notifications/read-all',
-      responses: {
-        200: z.object({ success: z.boolean() }),
       },
     },
   },
@@ -489,76 +292,6 @@ export const api = {
           success: z.boolean(),
           newBalance: z.number(),
         }),
-      },
-    },
-  },
-
-  // Temu Integration
-  temu: {
-    import: {
-      method: 'POST' as const,
-      path: '/api/platforms/temu/import',
-      input: z.object({
-        url: z.string(),
-      }),
-      responses: {
-        201: z.object({
-          imported: z.boolean(),
-          message: z.string(),
-          product: z.any(),
-          variations: z.array(z.any()),
-        }),
-      },
-    },
-    syncPrices: {
-      method: 'POST' as const,
-      path: '/api/platforms/temu/sync-prices',
-      responses: {
-        200: z.object({
-          synced: z.boolean(),
-          totalTemuProducts: z.number(),
-          pricesUpdated: z.number(),
-          failed: z.number(),
-        }),
-      },
-    },
-    syncStock: {
-      method: 'POST' as const,
-      path: '/api/platforms/temu/sync-stock',
-      responses: {
-        200: z.object({
-          synced: z.boolean(),
-          totalTemuProducts: z.number(),
-          backInStock: z.array(z.number()),
-          wentOutOfStock: z.array(z.number()),
-          failed: z.number(),
-        }),
-      },
-    },
-    products: {
-      method: 'GET' as const,
-      path: '/api/platforms/temu/products',
-      responses: {
-        200: z.array(z.any()),
-      },
-    },
-    upscaleImage: {
-      method: 'POST' as const,
-      path: '/api/platforms/temu/upscale-image',
-      input: z.object({ imageUrl: z.string() }),
-      responses: {
-        200: z.object({
-          originalUrl: z.string(),
-          upscaledUrl: z.string(),
-        }),
-      },
-    },
-    similarImages: {
-      method: 'POST' as const,
-      path: '/api/platforms/temu/similar-images',
-      input: z.object({ productId: z.number() }),
-      responses: {
-        200: z.array(z.any()),
       },
     },
   },
