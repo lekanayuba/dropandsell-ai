@@ -1,4 +1,4 @@
-const CURRENT_VERSION = '2.2.0';
+const CURRENT_VERSION = '2.3.4';
 
 // ---------- INSTALL / STARTUP ----------
 chrome.runtime.onInstalled.addListener(() => {

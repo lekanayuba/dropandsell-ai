@@ -153,6 +153,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   setupEventListeners();
+
+  // The toolbar popup always closes when it loses focus (standard Chrome
+  // behaviour) — e.g. when you click the page or switch tabs. To let users keep
+  // working while they switch tabs, "Keep open" re-opens this same UI in its own
+  // detached window, which stays put until they close it themselves.
+  const isDetachedWindow = new URLSearchParams(location.search).get('window') === '1';
+  const popoutBtn = document.getElementById('popoutBtn');
+  if (popoutBtn) {
+    if (isDetachedWindow) {
+      popoutBtn.style.display = 'none';
+    } else {
+      popoutBtn.addEventListener('click', async () => {
+        try {
+          await chrome.windows.create({
+            url: chrome.runtime.getURL('popup.html?window=1'),
+            type: 'popup',
+            width: 420,
+            height: 720,
+          });
+          window.close();
+        } catch (e) {
+          console.log('[DropandSell] Could not open detached window:', e?.message);
+        }
+      });
+    }
+  }
   
   if (apiUrl && apiKey && uniqueUrl) {
     // Verify credentials are still valid before showing product section

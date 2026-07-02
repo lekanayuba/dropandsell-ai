@@ -32,6 +32,27 @@
       font-weight: 600;
     }
     
+    .popout-btn {
+      margin-left: auto;
+      background: rgba(255, 255, 255, 0.18);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s ease;
+    }
+    
+    .popout-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
     .header .logo {
       width: 32px;
       height: 32px;
@@ -607,6 +628,10 @@
   <div class="header">
     <div class="logo">DS</div>
     <h1>DropandSell Automation App</h1>
+    <button id="popoutBtn" class="popout-btn" title="Open in its own window so it stays open while you switch tabs">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+      Keep open
+    </button>
   </div>
   
   <div class="update-banner" id="updateBanner">

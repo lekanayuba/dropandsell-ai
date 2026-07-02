@@ -12863,9 +12863,9 @@ This document is confidential and intended for compliance review purposes.</p></
 
   app.get('/api/extension/version', (req, res) => {
     res.json({
-      version: '2.2.0',
+      version: '2.3.4',
       updateRequired: false,
-      changelog: 'New: Fully automatic vendor stock refresh every hour, in the background. The extension silently re-checks every product in your inventory once an hour — no clicks needed. You can turn it off in the extension popup. (Approve the new browser permission prompt when it appears so the extension can clean up after itself.)',
+      changelog: 'New: "Keep open" button. The normal toolbar popup closes whenever you click away or switch tabs — that is how Chrome works. Tap "Keep open" (top-right of the extension) to pop it into its own window that stays open while you switch tabs to copy or check details, so you never lose your place.',
     });
   });
 
