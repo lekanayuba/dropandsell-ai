@@ -477,6 +477,28 @@ export default function AdminDashboard() {
                         <a.icon className={cn("w-3.5 h-3.5", a.color)} />{a.label}
                       </Button>
                     ))}
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-8 text-xs gap-1.5"
+                      data-testid="button-restore-access"
+                      onClick={async () => {
+                        if (!window.confirm("Restore login access for ALL users and reactivate everyone who had a subscription?\n\nCurrent values are backed up first so this can be reversed.")) return;
+                        try {
+                          const r = await fetch("/api/admin/restore-access", { method: "POST", credentials: "include" });
+                          const data = await r.json();
+                          if (!r.ok) throw new Error(data.message || "Failed");
+                          window.alert(`Access restored.\n\nUsers who can log in: ${data.totals?.can_login}/${data.totals?.total}\nActive subscribers: ${data.totals?.active_subs}`);
+                          qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+                          qc.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+                          qc.invalidateQueries({ queryKey: ["/api/admin/detailed-stats"] });
+                        } catch (e: any) {
+                          window.alert("Error: " + (e?.message || "Could not restore access"));
+                        }
+                      }}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-white" />Restore User Access
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

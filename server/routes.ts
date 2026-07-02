@@ -3824,6 +3824,76 @@ Guidelines:
     }
   });
 
+  // Bulk-restore access: give every user login access, and reactivate only real
+  // subscribers (anyone who had a plan or an existing subscription relationship).
+  // Current values are snapshotted to users_access_backup first for reversibility.
+  adminApi.post('/admin/restore-access', async (req: any, res) => {
+    const origin = req.get('origin');
+    const host = req.get('host');
+    if (origin && host) {
+      try {
+        if (new URL(origin).host !== host) {
+          return res.status(403).json({ message: 'Invalid origin' });
+        }
+      } catch {
+        return res.status(403).json({ message: 'Invalid origin' });
+      }
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users_access_backup (
+          id varchar,
+          email_verified timestamp,
+          policies_accepted timestamp,
+          onboarding_completed timestamp,
+          subscription_status varchar,
+          subscription_plan varchar,
+          backed_up_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await client.query(`
+        INSERT INTO users_access_backup (id, email_verified, policies_accepted, onboarding_completed, subscription_status, subscription_plan)
+        SELECT id, email_verified, policies_accepted, onboarding_completed, subscription_status, subscription_plan FROM users
+      `);
+      const loginRes = await client.query(`
+        UPDATE users SET
+          email_verified = COALESCE(email_verified, now()),
+          policies_accepted = COALESCE(policies_accepted, now()),
+          onboarding_completed = COALESCE(onboarding_completed, now())
+        WHERE email_verified IS NULL OR policies_accepted IS NULL OR onboarding_completed IS NULL
+      `);
+      const subRes = await client.query(`
+        UPDATE users SET subscription_status = 'active'
+        WHERE subscription_status IS DISTINCT FROM 'active'
+          AND (
+            (subscription_plan IS NOT NULL AND subscription_plan <> '')
+            OR (subscription_status IS NOT NULL AND subscription_status <> '')
+          )
+      `);
+      const totals = await client.query(`
+        SELECT
+          count(*)::int AS total,
+          count(*) FILTER (WHERE email_verified IS NOT NULL AND policies_accepted IS NOT NULL AND onboarding_completed IS NOT NULL)::int AS can_login,
+          count(*) FILTER (WHERE subscription_status = 'active')::int AS active_subs
+        FROM users
+      `);
+      await client.query('COMMIT');
+      res.json({
+        success: true,
+        loginAccessRestored: loginRes.rowCount ?? 0,
+        subscribersReactivated: subRes.rowCount ?? 0,
+        totals: totals.rows[0],
+      });
+    } catch (err: any) {
+      try { await client.query('ROLLBACK'); } catch {}
+      res.status(500).json({ message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
   adminApi.get('/admin/conversations', async (req: any, res) => {
     try {
       const allConversations = await db.select().from(conversations).orderBy(desc(conversations.createdAt));
