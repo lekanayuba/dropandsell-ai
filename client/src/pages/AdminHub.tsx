@@ -33,7 +33,7 @@ const ADMIN_TOOLS = [
     testid: "link-admin-support",
   },
   {
-    href: "/suggestions",
+    href: "/admin/suggestions",
     label: "Suggestions & Feedback",
     description: "Review and respond to feature requests and reports.",
     icon: Lightbulb,

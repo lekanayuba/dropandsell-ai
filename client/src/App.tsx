@@ -285,6 +285,7 @@ function Router() {
       <Route path="/admin/global-vero" component={() => <AdminRoute component={AdminGlobalVero} />} />
       <Route path="/admin/paypal-payouts" component={() => <AdminRoute component={AdminPaypalPayouts} />} />
       <Route path="/admin/support" component={() => <AdminRoute component={AdminSupport} />} />
+      <Route path="/admin/suggestions" component={() => <AdminRoute component={Suggestions} />} />
       <Route component={NotFound} />
     </Switch>
   );
