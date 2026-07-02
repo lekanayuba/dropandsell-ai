@@ -41,6 +41,7 @@ import EbayCallback from "@/pages/EbayCallback";
 import TikTokCallback from "@/pages/TikTokCallback";
 import ShopifyCallback from "@/pages/ShopifyCallback";
 import ResetPassword from "@/pages/ResetPassword";
+import AdminHub from "@/pages/AdminHub";
 import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminGlobalVero from "@/pages/AdminGlobalVero";
 import AdminPaypalPayouts from "@/pages/AdminPaypalPayouts";
@@ -87,6 +88,46 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   // Require a phone number before using the app (admins exempt)
   if (!user?.phone && user?.isAdmin !== "true") {
     return <CollectPhone />;
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background text-foreground font-body selection:bg-primary/20">
+      <Sidebar />
+      <main className="flex-1 lg:ml-[260px] transition-all duration-300 overflow-y-auto">
+        <ExtensionBar />
+        <ListingResolvedBanner />
+        <div className="p-5 lg:p-8">
+          <Component />
+        </div>
+      </main>
+      <ScrollToTop />
+    </div>
+  );
+}
+
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+  useReferralHandler();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  if (!user?.emailVerified) {
+    return <VerifyEmail />;
+  }
+
+  const isAdmin = user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com";
+  if (!isAdmin) {
+    return <Redirect to="/" />;
   }
 
   return (
@@ -240,9 +281,10 @@ function Router() {
       <Route path="/drop-and-sell" component={() => <FeatureGatedRoute component={DropAndSell} featureKey="drop_and_sell" />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />
       <Route path="/getting-started" component={() => <ProtectedRoute component={GettingStarted} />} />
-      <Route path="/admin/subscribers" component={() => <ProtectedRoute component={AdminSubscribers} />} />
-      <Route path="/admin/global-vero" component={() => <ProtectedRoute component={AdminGlobalVero} />} />
-      <Route path="/admin/paypal-payouts" component={() => <ProtectedRoute component={AdminPaypalPayouts} />} />
+      <Route path="/admin" component={() => <AdminRoute component={AdminHub} />} />
+      <Route path="/admin/subscribers" component={() => <AdminRoute component={AdminSubscribers} />} />
+      <Route path="/admin/global-vero" component={() => <AdminRoute component={AdminGlobalVero} />} />
+      <Route path="/admin/paypal-payouts" component={() => <AdminRoute component={AdminPaypalPayouts} />} />
       <Route component={NotFound} />
     </Switch>
   );

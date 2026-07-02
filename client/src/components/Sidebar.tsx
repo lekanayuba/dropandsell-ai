@@ -66,6 +66,7 @@ export function Sidebar() {
     { href: "/settings", label: "Settings", icon: Settings },
     ...(user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com"
       ? [
+          { href: "/admin", label: "Admin Dashboard", icon: LayoutDashboard },
           { href: "/admin/subscribers", label: "Subscribers DB", icon: DatabaseZap },
           { href: "/admin/global-vero", label: "Global VeRO", icon: Shield },
           { href: "/admin/paypal-payouts", label: "PayPal Payouts", icon: Wallet },
