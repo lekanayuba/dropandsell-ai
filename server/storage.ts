@@ -2,20 +2,24 @@ import {
   stores, vendors, products, productVariations, orders, wallet, transactions, subscriptions, referrals, notifications,
   addonCatalog, catalogRefreshLog, shippingProfiles,
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
+  skuMappings, fulfillmentJobs, returnRequests, auditLogs,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertProductVariation, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
   type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile,
+  type SkuMapping, type InsertSkuMapping, type FulfillmentJob, type InsertFulfillmentJob,
+  type ReturnRequest, type InsertReturnRequest, type AuditLog, type InsertAuditLog,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db, pool, STORE_COLUMNS, STORE_INSERT_COLUMNS } from "./db";
 import { notifyUser } from "./websocket";
-import { eq, desc, and, or, ilike, sql, inArray } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, inArray, gte, lt } from "drizzle-orm";
 
 export interface IStorage {
   // Stores
   getStores(userId: string): Promise<typeof stores.$inferSelect[]>;
   getStore(id: number): Promise<typeof stores.$inferSelect | undefined>;
+  getAllActiveStoresByPlatform(platform: string): Promise<typeof stores.$inferSelect[]>;
   createStore(store: InsertStore & { userId: string }): Promise<typeof stores.$inferSelect>;
   updateStore(id: number, userId: string, updates: Partial<InsertStore>): Promise<typeof stores.$inferSelect>;
   deleteStore(id: number, userId: string): Promise<void>;
@@ -31,6 +35,7 @@ export interface IStorage {
   getProductsCount(userId: string): Promise<number>;
   getProductsByIds(ids: number[], userId?: string): Promise<typeof products.$inferSelect[]>;
   getProduct(id: number, userId?: string): Promise<typeof products.$inferSelect | undefined>;
+  getProductBySku(userId: string, sku: string): Promise<any | undefined>;
   createProduct(product: InsertProduct & { userId: string }): Promise<typeof products.$inferSelect>;
   updateProduct(id: number, userId: string, updates: Partial<InsertProduct>): Promise<typeof products.$inferSelect>;
   deleteProduct(id: number, userId: string): Promise<void>;
@@ -48,7 +53,31 @@ export interface IStorage {
   getOrdersCount(userId: string): Promise<number>;
   getOrder(id: number, userId?: string): Promise<typeof orders.$inferSelect | undefined>;
   createOrder(order: InsertOrder & { userId: string }): Promise<typeof orders.$inferSelect>;
-  updateOrder(id: number, updates: Partial<InsertOrder>): Promise<typeof orders.$inferSelect | undefined>;
+  updateOrder(id: number, updates: Partial<InsertOrder>, userId?: string): Promise<typeof orders.$inferSelect | undefined>;
+  getOrderByExternalId(externalOrderId: string, userId: string): Promise<typeof orders.$inferSelect | undefined>;
+
+  // SKU Mappings
+  getSkuMappingByEbaySku(userId: string, ebaySku: string): Promise<SkuMapping | undefined>;
+  createSkuMapping(mapping: InsertSkuMapping & { userId: string }): Promise<SkuMapping>;
+  updateSkuMapping(id: number, userId: string, updates: Partial<InsertSkuMapping>): Promise<SkuMapping>;
+
+  // Fulfillment Jobs
+  getFulfillmentJobs(userId: string, filters?: { status?: string; orderId?: number }): Promise<FulfillmentJob[]>;
+  getFulfillmentJob(id: number, userId: string): Promise<FulfillmentJob | undefined>;
+  getFulfillmentJobByOrderId(orderId: number, userId: string): Promise<FulfillmentJob | undefined>;
+  createFulfillmentJob(job: InsertFulfillmentJob & { userId: string }): Promise<FulfillmentJob>;
+  updateFulfillmentJob(id: number, userId: string, updates: Partial<InsertFulfillmentJob>): Promise<FulfillmentJob>;
+
+  // Return Requests
+  getReturnRequests(userId: string): Promise<ReturnRequest[]>;
+  createReturnRequest(request: InsertReturnRequest & { userId: string }): Promise<ReturnRequest>;
+  updateReturnRequest(id: number, userId: string, updates: Partial<InsertReturnRequest>): Promise<ReturnRequest>;
+
+  // Audit Logs
+  createAuditLog(log: InsertAuditLog & { userId: string }): Promise<AuditLog>;
+
+  // Fulfilled Orders
+  getFulfilledOrders(userId: string, filters?: { status?: string; vendorName?: string; dateFrom?: Date; dateTo?: Date }): Promise<any[]>;
 
   // Notifications
   getNotifications(userId: string, offset?: number, limit?: number): Promise<typeof notifications.$inferSelect[]>;
@@ -150,6 +179,14 @@ export class DatabaseStorage implements IStorage {
       );
     }
     return result.rows[0] as typeof stores.$inferSelect | undefined;
+  }
+
+  async getAllActiveStoresByPlatform(platform: string) {
+    const result = await pool.query(
+      `SELECT ${STORE_COLUMNS} FROM stores WHERE platform = $1 AND status = $2 ORDER BY id`,
+      [platform, 'active']
+    );
+    return result.rows as typeof stores.$inferSelect[];
   }
 
   async createStore(store: InsertStore & { userId: string }) {
@@ -262,6 +299,17 @@ export class DatabaseStorage implements IStorage {
     return product;
   }
 
+  async getProductBySku(userId: string, sku: string) {
+    const [product] = await db.select({
+      product: products,
+      vendorName: vendors.name,
+      vendorWebsite: vendors.website,
+    }).from(products)
+      .leftJoin(vendors, eq(products.vendorId, vendors.id))
+      .where(and(eq(products.userId, userId), eq(products.sku, sku)));
+    return product ? { ...product.product, vendorName: product.vendorName, vendorWebsite: product.vendorWebsite } : undefined;
+  }
+
   async createProduct(product: InsertProduct & { userId: string }) {
     const [newProduct] = await db.insert(products).values(product).returning();
     return newProduct;
@@ -337,12 +385,125 @@ export class DatabaseStorage implements IStorage {
     return newOrder;
   }
 
-  async updateOrder(id: number, updates: Partial<InsertOrder>) {
+  async updateOrder(id: number, updates: Partial<InsertOrder>, userId?: string) {
     const [updated] = await db.update(orders)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(orders.id, id))
+      .where(userId ? and(eq(orders.id, id), eq(orders.userId, userId)) : eq(orders.id, id))
       .returning();
     return updated;
+  }
+
+  async getOrderByExternalId(externalOrderId: string, userId: string) {
+    const [order] = await db.select().from(orders)
+      .where(and(eq(orders.externalOrderId, externalOrderId), eq(orders.userId, userId)));
+    return order;
+  }
+
+  // SKU Mappings
+  async getSkuMappingByEbaySku(userId: string, ebaySku: string): Promise<SkuMapping | undefined> {
+    const [mapping] = await db.select().from(skuMappings)
+      .where(and(eq(skuMappings.userId, userId), eq(skuMappings.ebaySku, ebaySku), eq(skuMappings.isActive, true)))
+      .orderBy(desc(skuMappings.createdAt))
+      .limit(1);
+    return mapping;
+  }
+
+  async createSkuMapping(mapping: InsertSkuMapping & { userId: string }): Promise<SkuMapping> {
+    const [created] = await db.insert(skuMappings).values(mapping).returning();
+    return created;
+  }
+
+  async updateSkuMapping(id: number, userId: string, updates: Partial<InsertSkuMapping>): Promise<SkuMapping> {
+    const [updated] = await db.update(skuMappings).set(updates)
+      .where(and(eq(skuMappings.id, id), eq(skuMappings.userId, userId))).returning();
+    return updated;
+  }
+
+  // Fulfillment Jobs
+  async getFulfillmentJobs(userId: string, filters?: { status?: string; orderId?: number }): Promise<FulfillmentJob[]> {
+    const conditions = [eq(fulfillmentJobs.userId, userId)];
+    if (filters?.status) conditions.push(eq(fulfillmentJobs.status, filters.status));
+    if (filters?.orderId) conditions.push(eq(fulfillmentJobs.orderId, filters.orderId));
+    return await db.select().from(fulfillmentJobs).where(and(...conditions)).orderBy(desc(fulfillmentJobs.createdAt));
+  }
+
+  async getFulfillmentJob(id: number, userId: string): Promise<FulfillmentJob | undefined> {
+    const [job] = await db.select().from(fulfillmentJobs)
+      .where(and(eq(fulfillmentJobs.id, id), eq(fulfillmentJobs.userId, userId)));
+    return job;
+  }
+
+  async getFulfillmentJobByOrderId(orderId: number, userId: string): Promise<FulfillmentJob | undefined> {
+    const [job] = await db.select().from(fulfillmentJobs)
+      .where(and(eq(fulfillmentJobs.orderId, orderId), eq(fulfillmentJobs.userId, userId)));
+    return job;
+  }
+
+  async createFulfillmentJob(job: InsertFulfillmentJob & { userId: string }): Promise<FulfillmentJob> {
+    const [created] = await db.insert(fulfillmentJobs).values(job).returning();
+    return created;
+  }
+
+  async updateFulfillmentJob(id: number, userId: string, updates: Partial<InsertFulfillmentJob>): Promise<FulfillmentJob> {
+    const [updated] = await db.update(fulfillmentJobs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(fulfillmentJobs.id, id), eq(fulfillmentJobs.userId, userId))).returning();
+    return updated;
+  }
+
+  // Return Requests
+  async getReturnRequests(userId: string): Promise<ReturnRequest[]> {
+    return await db.select().from(returnRequests)
+      .where(eq(returnRequests.userId, userId)).orderBy(desc(returnRequests.createdAt));
+  }
+
+  async createReturnRequest(request: InsertReturnRequest & { userId: string }): Promise<ReturnRequest> {
+    const [created] = await db.insert(returnRequests).values(request).returning();
+    return created;
+  }
+
+  async updateReturnRequest(id: number, userId: string, updates: Partial<InsertReturnRequest>): Promise<ReturnRequest> {
+    const [updated] = await db.update(returnRequests)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(returnRequests.id, id), eq(returnRequests.userId, userId))).returning();
+    return updated;
+  }
+
+  // Audit Logs
+  async createAuditLog(log: InsertAuditLog & { userId: string }): Promise<AuditLog> {
+    const [created] = await db.insert(auditLogs).values(log).returning();
+    return created;
+  }
+
+  // Fulfilled Orders (join orders with fulfillment jobs)
+  async getFulfilledOrders(userId: string, filters?: { status?: string; vendorName?: string; dateFrom?: Date; dateTo?: Date }): Promise<any[]> {
+    const conditions = [eq(fulfillmentJobs.userId, userId)];
+    if (filters?.status) {
+      if (filters.status === 'delivered') {
+        conditions.push(or(
+          eq(fulfillmentJobs.status, 'delivered'),
+          and(eq(fulfillmentJobs.status, 'shipped'), eq(orders.status, 'delivered'))
+        )!);
+      } else {
+        conditions.push(eq(fulfillmentJobs.status, filters.status));
+      }
+    }
+    if (filters?.vendorName) conditions.push(eq(fulfillmentJobs.vendorName, filters.vendorName));
+    if (filters?.dateFrom) conditions.push(gte(fulfillmentJobs.createdAt, filters.dateFrom));
+    if (filters?.dateTo) conditions.push(lt(fulfillmentJobs.createdAt, filters.dateTo));
+
+    const results = await db.select({
+      fulfillmentJob: fulfillmentJobs,
+      order: orders,
+    }).from(fulfillmentJobs)
+      .innerJoin(orders, eq(fulfillmentJobs.orderId, orders.id))
+      .where(and(...conditions))
+      .orderBy(desc(fulfillmentJobs.createdAt));
+
+    return results.map(r => ({
+      ...r.fulfillmentJob,
+      order: r.order,
+    }));
   }
 
   // Notifications

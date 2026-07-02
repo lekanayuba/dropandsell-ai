@@ -4677,5 +4677,1911 @@ Guidelines:
   // Register conversation API (persistent chat with SSE streaming)
   registerChatRoutes(app);
 
+  // ===================================================================
+  // ORDERS / FULFILLMENT / RETURNS / MARKETPLACE SYNC ROUTES
+  // ===================================================================
+
+  async function ensureValidEbayToken(store: any, userId: string): Promise<string | null> {
+    const creds = store.credentials as any;
+
+    if (creds?.authToken && creds.tokenExpiry && Date.now() < creds.tokenExpiry - 60000) {
+      return creds.authToken;
+    }
+
+    if (!creds?.refreshToken) return null;
+
+    const appId = process.env.EBAY_APP_ID;
+    const certId = process.env.EBAY_CERT_ID;
+    if (!appId || !certId) return null;
+
+    const basicAuth = Buffer.from(`${appId}:${certId}`).toString('base64');
+    const tokenResponse = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basicAuth}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: creds.refreshToken,
+        scope: 'https://api.ebay.com/oauth/api_scope https://api.ebay.com/oauth/api_scope/sell.inventory https://api.ebay.com/oauth/api_scope/sell.marketing https://api.ebay.com/oauth/api_scope/sell.account https://api.ebay.com/oauth/api_scope/sell.fulfillment',
+      }).toString(),
+    });
+
+    const tokenData = await tokenResponse.json() as any;
+    if (!tokenResponse.ok || tokenData.error) {
+      console.error(`[eBay Sync] Token refresh failed for store ${store.id}:`, tokenData.error_description);
+      return null;
+    }
+
+    const newCredentials = {
+      ...creds,
+      authToken: tokenData.access_token,
+      tokenExpiry: Date.now() + (tokenData.expires_in * 1000),
+    };
+    await storage.updateStore(store.id, userId, { credentials: newCredentials });
+    store.credentials = newCredentials;
+    return tokenData.access_token;
+  }
+
+  async function fetchEbayOrders(accessToken: string, daysBack: number = 30): Promise<any[]> {
+    const allOrders: any[] = [];
+    const filterDate = new Date();
+    filterDate.setDate(filterDate.getDate() - daysBack);
+    const isoDate = filterDate.toISOString();
+
+    let offset = 0;
+    const limit = 50;
+    let hasMore = true;
+
+    while (hasMore) {
+      const url = `https://api.ebay.com/sell/fulfillment/v1/order?filter=creationdate:[${isoDate}..]&limit=${limit}&offset=${offset}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[eBay Sync] Fulfillment API error (${response.status}):`, errText);
+        break;
+      }
+
+      const data = await response.json() as any;
+      const ebayOrders = data.orders || [];
+      allOrders.push(...ebayOrders);
+
+      if (ebayOrders.length < limit || (data.total && offset + limit >= data.total)) {
+        hasMore = false;
+      } else {
+        offset += limit;
+      }
+    }
+
+    return allOrders;
+  }
+
+  async function refreshAmazonAccessToken(refreshToken: string): Promise<{ accessToken: string; expiresIn: number } | null> {
+    try {
+      const clientId = process.env.AMAZON_LWA_CLIENT_ID;
+      const clientSecret = process.env.AMAZON_LWA_CLIENT_SECRET;
+      if (!clientId || !clientSecret) return null;
+      const response = await fetch('https://api.amazon.com/auth/o2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }).toString(),
+      });
+      const data = await response.json() as any;
+      if (data.error || !data.access_token) return null;
+      return { accessToken: data.access_token, expiresIn: data.expires_in };
+    } catch {
+      return null;
+    }
+  }
+
+  function convertToEbayTracking(rawTrackingNumber: string, selectedCarrier: string): { trackingNumber: string; shippingCarrierCode: string; autoDetected: boolean } {
+    const cleaned = rawTrackingNumber.trim().replace(/\s+/g, '');
+    let trackingNumber = cleaned;
+    let shippingCarrierCode = selectedCarrier;
+    let autoDetected = false;
+
+    const EBAY_CARRIER_MAP: Record<string, string> = {
+      AMAZON_LOGISTICS: 'AmazonLogistics',
+      AMAZON: 'AmazonLogistics',
+      AMAZON_LOGISTICS_UK: 'AmazonLogistics',
+      AMAZON_LOGISTICS_US: 'AmazonLogistics',
+      ROYAL_MAIL: 'RoyalMail',
+      ROYALMAIL: 'RoyalMail',
+      DPD: 'DPD',
+      DPD_UK: 'DPD',
+      DPD_LOCAL: 'DPD',
+      HERMES: 'Hermes',
+      EVRI: 'Hermes',
+      DHL: 'DHL',
+      DHL_EXPRESS: 'DHL',
+      DHL_GLOBAL_MAIL: 'DHLeCommerce',
+      DHL_ECOMMERCE: 'DHLeCommerce',
+      DHLECOMMERCE: 'DHLeCommerce',
+      FEDEX: 'FedEx',
+      UPS: 'UPS',
+      USPS: 'USPS',
+      YODEL: 'Yodel',
+      PARCELFORCE: 'ParcelForce',
+      TNT: 'TNT',
+      COLLECT_PLUS: 'CollectPlus',
+      COLLECTPLUS: 'CollectPlus',
+      YANWEN: 'Yanwen',
+      CHINA_POST: 'ChinaPost',
+      CHINAPOST: 'ChinaPost',
+      CAINIAO: 'Cainiao',
+      ALIEXPRESS: 'Cainiao',
+      ALIEXPRESS_STANDARD: 'Cainiao',
+      '4PX': '4PX',
+      CJPACKET: 'CJPacket',
+      CJ_PACKET: 'CJPacket',
+      SF_EXPRESS: 'SFExpress',
+      SFEXPRESS: 'SFExpress',
+      CANADA_POST: 'CanadaPost',
+      CANADAPOST: 'CanadaPost',
+      AUSTRALIA_POST: 'AustraliaPost',
+      AUSPOST: 'AustraliaPost',
+      JAPAN_POST: 'JapanPost',
+      JAPANPOST: 'JapanPost',
+      ONTRAC: 'OnTrac',
+      LASERSHIP: 'LaserShip',
+      OTHER: 'Other',
+    };
+
+    if (/^TBA\d{12,}$/i.test(cleaned)) {
+      shippingCarrierCode = 'AmazonLogistics';
+      autoDetected = true;
+    }
+    else if (/^1Z[A-Z0-9]{16}$/i.test(cleaned)) {
+      shippingCarrierCode = 'UPS';
+      autoDetected = true;
+    }
+    else if (/^\d{12,22}$/.test(cleaned) && (cleaned.startsWith('94') || cleaned.startsWith('92') || cleaned.startsWith('93') || cleaned.startsWith('420'))) {
+      shippingCarrierCode = 'USPS';
+      autoDetected = true;
+    }
+    else if (/^\d{12,15}$/.test(cleaned) && cleaned.length === 12) {
+      shippingCarrierCode = 'FedEx';
+      autoDetected = true;
+    }
+    else if (/^\d{10}$/.test(cleaned) && selectedCarrier === 'DHL') {
+      shippingCarrierCode = 'DHL';
+      autoDetected = true;
+    }
+    else if (/^[A-Z]{2}\d{9}[A-Z]{2}$/i.test(cleaned)) {
+      if (/CN$/i.test(cleaned)) {
+        shippingCarrierCode = 'ChinaPost';
+        autoDetected = true;
+      } else if (/GB$/i.test(cleaned)) {
+        shippingCarrierCode = 'RoyalMail';
+        autoDetected = true;
+      }
+    }
+    else if (/^LP\d{14,}$/i.test(cleaned) || /^CJPAK/i.test(cleaned)) {
+      shippingCarrierCode = 'Cainiao';
+      autoDetected = true;
+    }
+    else if (/^YT\d{16}$/i.test(cleaned) || /^YP\d+$/i.test(cleaned)) {
+      shippingCarrierCode = 'Yanwen';
+      autoDetected = true;
+    }
+    else if (/^4PX/i.test(cleaned)) {
+      shippingCarrierCode = '4PX';
+      autoDetected = true;
+    }
+    else if (/^JD\d{13,18}$/i.test(cleaned) || /^JJD\d{12,18}$/i.test(cleaned)) {
+      shippingCarrierCode = 'DPD';
+      autoDetected = true;
+    }
+    else if (/^H\d{14,}$/i.test(cleaned)) {
+      shippingCarrierCode = 'Hermes';
+      autoDetected = true;
+    }
+
+    if (!autoDetected) {
+      const upperCarrier = selectedCarrier.toUpperCase().replace(/[\s\-]/g, '_');
+      shippingCarrierCode = EBAY_CARRIER_MAP[upperCarrier] || EBAY_CARRIER_MAP['OTHER'];
+    }
+
+    return { trackingNumber, shippingCarrierCode, autoDetected };
+  }
+
+  function getCarrierTrackingUrl(carrierCode: string, trackingNumber: string): { url: string | null; label: string } {
+    if (!trackingNumber) return { url: null, label: 'Carrier' };
+    const code = (carrierCode || '').toUpperCase().replace(/[\s-]/g, '_');
+    const num = encodeURIComponent(trackingNumber.trim());
+    const map: Record<string, { url: string; label: string }> = {
+      AMAZON: { url: `https://track.amazon.com/tracking/${num}`, label: 'Amazon Logistics' },
+      AMAZON_LOGISTICS: { url: `https://track.amazon.com/tracking/${num}`, label: 'Amazon Logistics' },
+      ROYAL_MAIL: { url: `https://www.royalmail.com/track-your-item#/tracking-results/${num}`, label: 'Royal Mail' },
+      ROYALMAIL: { url: `https://www.royalmail.com/track-your-item#/tracking-results/${num}`, label: 'Royal Mail' },
+      DPD: { url: `https://track.dpd.co.uk/parcels/${num}`, label: 'DPD' },
+      HERMES: { url: `https://www.evri.com/track/parcel/${num}`, label: 'Evri (Hermes)' },
+      EVRI: { url: `https://www.evri.com/track/parcel/${num}`, label: 'Evri (Hermes)' },
+      DHL: { url: `https://www.dhl.com/gb-en/home/tracking/tracking-express.html?tracking-id=${num}`, label: 'DHL' },
+      DHLGM: { url: `https://webtrack.dhlglobalmail.com/?trackingnumber=${num}`, label: 'DHL Global Mail' },
+      FEDEX: { url: `https://www.fedex.com/fedextrack/?trknbr=${num}`, label: 'FedEx' },
+      UPS: { url: `https://www.ups.com/track?tracknum=${num}`, label: 'UPS' },
+      USPS: { url: `https://tools.usps.com/go/TrackConfirmAction?tLabels=${num}`, label: 'USPS' },
+      YODEL: { url: `https://www.yodel.co.uk/tracking?trackingNumber=${num}`, label: 'Yodel' },
+      PARCELFORCE: { url: `https://www.parcelforce.com/track-trace?trackNumber=${num}`, label: 'Parcelforce' },
+      TNT: { url: `https://www.tnt.com/express/en_gb/site/shipping-tools/tracking.html?searchType=con&cons=${num}`, label: 'TNT' },
+      CAINIAO: { url: `https://global.cainiao.com/detail.htm?mailNoList=${num}`, label: 'Cainiao' },
+      ALIEXPRESS: { url: `https://global.cainiao.com/detail.htm?mailNoList=${num}`, label: 'Cainiao / AliExpress' },
+      YANWEN: { url: `https://track.yw56.com.cn/en/querydel?nums=${num}`, label: 'Yanwen' },
+      CHINA_POST: { url: `https://track.chinapost.com.cn/result.html?searchType=1&queryCode=${num}`, label: 'China Post' },
+      CHINAPOST: { url: `https://track.chinapost.com.cn/result.html?searchType=1&queryCode=${num}`, label: 'China Post' },
+      '4PX': { url: `https://track.4px.com/#/result/0/${num}/`, label: '4PX' },
+      CANADA_POST: { url: `https://www.canadapost-postescanada.ca/track-reperage/en#/details/${num}`, label: 'Canada Post' },
+      CANPAR: { url: `https://www.canpar.com/en/track/TrackingAction.do?reference=${num}`, label: 'Canpar' },
+      AUSPOST: { url: `https://auspost.com.au/mypost/track/details/${num}`, label: 'Australia Post' },
+      AUSTRALIA_POST: { url: `https://auspost.com.au/mypost/track/details/${num}`, label: 'Australia Post' },
+      JAPAN_POST: { url: `https://trackings.post.japanpost.jp/services/srv/search/?reqCodeNo1=${num}&locale=en`, label: 'Japan Post' },
+    };
+    const entry = map[code];
+    if (entry) return entry;
+    return {
+      url: `https://www.17track.net/en/track?nums=${num}`,
+      label: '17track (universal)',
+    };
+  }
+
+  function getEbayOrderUrl(ebayOrderId: string): string {
+    const id = encodeURIComponent(ebayOrderId);
+    return `https://www.ebay.com/sh/ord?q=${id}&filter=status:ALL_ORDERS`;
+  }
+
+  // === FULFILLMENT JOBS ===
+  protectedApi.get('/fulfillment-jobs', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const status = req.query.status as string | undefined;
+    const orderId = req.query.orderId ? Number(req.query.orderId) : undefined;
+    const jobs = await storage.getFulfillmentJobs(userId, { status, orderId });
+    res.json(jobs);
+  });
+
+  protectedApi.get('/fulfillment-jobs/:id', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const id = Number(req.params.id);
+    const job = await storage.getFulfillmentJob(id, userId);
+    if (!job) return res.status(404).json({ message: 'Fulfillment job not found' });
+    res.json(job);
+  });
+
+  protectedApi.post('/fulfillment-jobs/trigger', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ message: 'orderId required' });
+
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      const existingJob = await storage.getFulfillmentJobByOrderId(orderId, userId);
+      if (existingJob && existingJob.status !== 'failed') {
+        return res.status(400).json({ message: 'Fulfillment job already exists for this order', job: existingJob });
+      }
+
+      const lineItems = (order as any).lineItems || [];
+      const sku = lineItems[0]?.sku || (order as any).sku || '';
+
+      let skuMapping;
+      if (sku) {
+        skuMapping = await storage.getSkuMappingByEbaySku(userId, sku);
+      }
+
+      const isMappedReady = skuMapping && (skuMapping.vendorSku || skuMapping.vendorProductUrl);
+
+      const job = await storage.createFulfillmentJob({
+        userId,
+        orderId,
+        skuMappingId: isMappedReady ? skuMapping!.id : null,
+        vendorId: isMappedReady ? skuMapping!.vendorId : null,
+        vendorName: isMappedReady ? skuMapping!.vendorName : null,
+        status: 'pending',
+        sourcingType: isMappedReady ? 'primary' : 'manual',
+        retryCount: 0,
+      });
+
+      await storage.createAuditLog({
+        userId,
+        orderId,
+        action: 'fulfillment_triggered',
+        source: 'ebay',
+        vendorUsed: skuMapping?.vendorName || 'unassigned',
+        fulfillmentStatus: 'pending',
+        details: { jobId: job.id, sku, skuMappingFound: !!skuMapping },
+      });
+
+      await storage.updateOrder(orderId, { fulfillmentStatus: 'in_progress' });
+
+      res.json(job);
+    } catch (err: any) {
+      console.error('[Fulfillment] Trigger error:', err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.get('/fulfillment-jobs/prepare/:orderId', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.orderId);
+
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      const lineItems = (order as any).lineItems || [];
+      const sku = lineItems[0]?.sku || (order as any).sku || '';
+      const productTitle = lineItems[0]?.title || lineItems[0]?.name || (order as any).title || 'Unknown Product';
+      const quantity = lineItems[0]?.quantity || 1;
+      const variationAspects = lineItems[0]?.variationAspects || [];
+
+      let skuMapping = null;
+      if (sku) {
+        skuMapping = await storage.getSkuMappingByEbaySku(userId, sku);
+      }
+
+      const addr = (order as any).shippingAddress || {};
+      const shippingLines = [
+        addr.name,
+        addr.addressLine1,
+        addr.addressLine2,
+        [addr.city, addr.stateOrProvince, addr.postalCode].filter(Boolean).join(', '),
+        addr.countryCode,
+      ].filter(Boolean);
+      const shippingFormatted = shippingLines.join('\n');
+
+      const existingJob = await storage.getFulfillmentJobByOrderId(orderId, userId);
+
+      res.json({
+        order: {
+          id: order.id,
+          externalOrderId: (order as any).externalOrderId,
+          customerName: (order as any).customerName,
+          totalAmount: (order as any).totalAmount,
+          status: (order as any).status,
+          fulfillmentStatus: (order as any).fulfillmentStatus,
+          lineItems,
+        },
+        product: {
+          title: productTitle,
+          sku,
+          quantity,
+          variationAspects,
+        },
+        vendor: skuMapping && (skuMapping.vendorSku || skuMapping.vendorProductUrl) ? {
+          name: skuMapping.vendorName,
+          sku: skuMapping.vendorSku,
+          productUrl: skuMapping.vendorProductUrl,
+          costPrice: skuMapping.costPrice,
+        } : null,
+        shipping: {
+          raw: addr,
+          formatted: shippingFormatted,
+        },
+        existingJob: existingJob ? {
+          id: existingJob.id,
+          status: existingJob.status,
+          trackingNumber: existingJob.trackingNumber,
+          carrier: existingJob.carrier,
+        } : null,
+        skuMapped: !!(skuMapping && (skuMapping.vendorSku || skuMapping.vendorProductUrl)),
+        skuMappingExists: !!skuMapping,
+        needsVendorMapping: !!(skuMapping && !skuMapping.vendorSku && !skuMapping.vendorProductUrl),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/fulfillment-jobs/:id/update-tracking', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const { trackingNumber: rawTracking, carrier: rawCarrier } = req.body;
+
+      if (!rawTracking || !rawCarrier) {
+        return res.status(400).json({ message: 'trackingNumber and carrier are required' });
+      }
+
+      const converted = convertToEbayTracking(rawTracking, rawCarrier);
+      const trackingNumber = converted.trackingNumber;
+      const carrier = rawCarrier;
+      const ebayCarrierCode = converted.shippingCarrierCode;
+
+      const job = await storage.getFulfillmentJob(id, userId);
+      if (!job) return res.status(404).json({ message: 'Fulfillment job not found' });
+
+      const updatedJob = await storage.updateFulfillmentJob(id, userId, {
+        trackingNumber,
+        carrier,
+        status: 'shipped',
+        fulfilledAt: new Date(),
+      } as any);
+
+      await storage.updateOrder(job.orderId, {
+        trackingNumber,
+        carrier,
+        fulfillmentStatus: 'fulfilled',
+        status: 'shipped',
+      });
+
+      console.log(`[Tracking] Converted: "${rawTracking}" + "${rawCarrier}" → eBay carrier "${ebayCarrierCode}"${converted.autoDetected ? ' (auto-detected)' : ''}`);
+
+      const order = await storage.getOrder(job.orderId, userId);
+      if (order?.externalOrderId && order?.storeId) {
+        const store = await storage.getStore(order.storeId);
+        if (store && store.platform === 'ebay') {
+          try {
+            const accessToken = await ensureValidEbayToken(store, userId);
+            if (accessToken) {
+              const lineItems = (order as any).lineItems || [];
+              let ebayLineItems = lineItems
+                .filter((li: any) => li.lineItemId && li.lineItemId !== '0' && li.lineItemId !== '')
+                .map((li: any) => ({ lineItemId: li.lineItemId, quantity: li.quantity || 1 }));
+
+              if (ebayLineItems.length === 0) {
+                try {
+                  const orderResp = await fetch(
+                    `https://api.ebay.com/sell/fulfillment/v1/order/${order.externalOrderId}`,
+                    { headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' } }
+                  );
+                  if (orderResp.ok) {
+                    const orderData = await orderResp.json();
+                    ebayLineItems = (orderData.lineItems || []).map((li: any) => ({
+                      lineItemId: li.lineItemId,
+                      quantity: li.quantity || 1,
+                    }));
+                  }
+                } catch (fetchErr: any) {
+                  console.error('[eBay Tracking] Failed to fetch order line items:', fetchErr.message);
+                }
+              }
+
+              if (ebayLineItems.length === 0) {
+                console.error('[eBay Tracking] No valid line items for order', order.externalOrderId);
+              }
+
+              if (ebayLineItems.length > 0) {
+                const { pushOrReplaceEbayFulfillment } = await import('./marketplaces/ebay');
+                const pushResult = await pushOrReplaceEbayFulfillment(accessToken, order.externalOrderId!, {
+                  trackingNumber,
+                  shippingCarrierCode: ebayCarrierCode,
+                  lineItems: ebayLineItems,
+                });
+
+                if (pushResult.success) {
+                  await storage.createAuditLog({
+                    userId,
+                    orderId: job.orderId,
+                    action: 'tracking_pushed_to_ebay',
+                    source: 'ebay',
+                    details: { trackingNumber, carrier: rawCarrier, ebayCarrierCode, autoDetected: converted.autoDetected, ebayOrderId: order.externalOrderId, replaced: pushResult.replaced },
+                  });
+                } else {
+                  console.error('[eBay Tracking] Push failed:', pushResult.error);
+                  await storage.createAuditLog({
+                    userId,
+                    orderId: job.orderId,
+                    action: 'tracking_push_failed',
+                    source: 'ebay',
+                    details: { trackingNumber, carrier: rawCarrier, ebayCarrierCode, error: pushResult.error },
+                  });
+                }
+              }
+            }
+          } catch (ebayErr: any) {
+            console.error('[eBay Tracking] Error:', ebayErr.message);
+          }
+        }
+
+        if (store && store.platform === 'tiktokshop') {
+          try {
+            const creds = store.credentials as any;
+            if (creds?.accessToken && creds?.appKey && creds?.appSecret) {
+              const { uploadTikTokTracking } = await import('./marketplaces/tiktokshop');
+              const ttResult = await uploadTikTokTracking(creds, order.externalOrderId!, trackingNumber, carrier);
+              if (ttResult.success) {
+                await storage.createAuditLog({
+                  userId,
+                  orderId: job.orderId,
+                  action: 'tracking_pushed_to_tiktok',
+                  source: 'tiktokshop',
+                  details: { trackingNumber, carrier, tiktokOrderId: order.externalOrderId },
+                });
+              } else {
+                console.error('[TikTok Tracking] Push failed:', ttResult.error);
+                await storage.createAuditLog({
+                  userId,
+                  orderId: job.orderId,
+                  action: 'tracking_push_failed',
+                  source: 'tiktokshop',
+                  details: { trackingNumber, carrier, error: ttResult.error },
+                });
+              }
+            }
+          } catch (ttErr: any) {
+            console.error('[TikTok Tracking] Error:', ttErr.message);
+          }
+        }
+      }
+
+      await storage.createAuditLog({
+        userId,
+        orderId: job.orderId,
+        action: 'tracking_updated',
+        vendorUsed: job.vendorName || undefined,
+        fulfillmentStatus: 'shipped',
+        details: { trackingNumber, carrier, jobId: id },
+      });
+
+      res.json(updatedJob);
+    } catch (err: any) {
+      console.error('[Fulfillment] Update tracking error:', err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/fulfillment-jobs/:id/complete', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const { vendorOrderId, amountCharged, paymentMethod } = req.body;
+
+      const existingJob = await storage.getFulfillmentJob(id, userId);
+      if (!existingJob) return res.status(404).json({ message: 'Fulfillment job not found' });
+
+      const updatedJob = await storage.updateFulfillmentJob(id, userId, {
+        vendorOrderId,
+        amountCharged: amountCharged ? String(amountCharged) : undefined,
+        paymentMethod,
+        paymentStatus: 'completed',
+        status: 'processing',
+      });
+
+      await storage.createAuditLog({
+        userId,
+        orderId: updatedJob.orderId,
+        action: 'vendor_order_placed',
+        vendorUsed: updatedJob.vendorName || undefined,
+        paymentMethod,
+        fulfillmentStatus: 'processing',
+        details: { vendorOrderId, amountCharged, jobId: id },
+      });
+
+      res.json(updatedJob);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/fulfillment-jobs/:id/retry', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const job = await storage.getFulfillmentJob(id, userId);
+      if (!job) return res.status(404).json({ message: 'Fulfillment job not found' });
+
+      const updatedJob = await storage.updateFulfillmentJob(id, userId, {
+        status: 'pending',
+        errorMessage: null,
+        retryCount: job.retryCount + 1,
+      });
+
+      await storage.createAuditLog({
+        userId,
+        orderId: job.orderId,
+        action: 'fulfillment_retried',
+        details: { jobId: id, retryCount: job.retryCount + 1 },
+      });
+
+      res.json(updatedJob);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === FULFILLED / CANCELLED ORDERS ===
+  protectedApi.get('/fulfilled-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const status = req.query.status as string | undefined;
+      const vendorName = req.query.vendorName as string | undefined;
+      const dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom as string) : undefined;
+      const dateTo = req.query.dateTo ? new Date(req.query.dateTo as string) : undefined;
+      const results = await storage.getFulfilledOrders(userId, { status, vendorName, dateFrom, dateTo });
+      const enriched = results.map((item: any) => {
+        if (item.order?.status === 'delivered' && item.status === 'shipped') {
+          return { ...item, status: 'delivered' };
+        }
+        return item;
+      });
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.get('/cancelled-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const allOrders = await storage.getOrders(userId);
+      const cancelled = allOrders.filter((o: any) => o.status === 'cancelled');
+      res.json(cancelled);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/orders/:id/accept-cancellation', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.id);
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+      if (order.status !== 'cancelled') return res.status(400).json({ message: 'Order is not cancelled' });
+
+      await storage.updateOrder(orderId, { fulfillmentStatus: 'cancelled' }, userId);
+      await storage.createAuditLog({
+        userId,
+        orderId,
+        action: 'cancellation_accepted',
+        source: 'manual',
+        details: { externalOrderId: order.externalOrderId },
+      });
+
+      let ebayWarning: string | null = null;
+      if (order.externalOrderId && order.storeId) {
+        const store = await storage.getStore(order.storeId);
+        if (store && store.platform === 'ebay') {
+          try {
+            const accessToken = await ensureValidEbayToken(store, userId);
+            if (accessToken) {
+              const ebayRes = await fetch(
+                `https://api.ebay.com/sell/fulfillment/v1/order/${order.externalOrderId}/issue_refund`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    reasonForRefund: 'BUYER_CANCEL',
+                    orderLevelRefundAmount: {
+                      value: order.totalAmount?.toString() || '0',
+                      currency: 'GBP',
+                    },
+                  }),
+                }
+              );
+              if (!ebayRes.ok) {
+                const errText = await ebayRes.text().catch(() => '');
+                ebayWarning = `eBay refund request failed (${ebayRes.status}). Please issue refund manually on eBay.`;
+                console.error('[eBay Refund] Failed:', ebayRes.status, errText);
+              }
+              await storage.createAuditLog({
+                userId,
+                orderId,
+                action: ebayRes.ok ? 'ebay_refund_issued' : 'ebay_refund_failed',
+                source: 'ebay',
+                details: { externalOrderId: order.externalOrderId, status: ebayRes.status },
+              });
+            }
+          } catch (ebayErr: any) {
+            console.error('[eBay Refund] Error:', ebayErr.message);
+            ebayWarning = 'Could not connect to eBay to issue refund. Please process refund manually.';
+          }
+        }
+      }
+
+      res.json({ success: true, message: 'Cancellation accepted', ebayWarning });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/orders/:id/dispute-cancellation', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.id);
+      const { reason } = req.body;
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+      if (order.status !== 'cancelled') return res.status(400).json({ message: 'Order is not cancelled' });
+
+      await storage.updateOrder(orderId, { status: 'processing', fulfillmentStatus: 'unfulfilled' }, userId);
+      await storage.createAuditLog({
+        userId,
+        orderId,
+        action: 'cancellation_disputed',
+        source: 'manual',
+        details: { reason: reason || 'Seller dispute', externalOrderId: order.externalOrderId },
+      });
+
+      let ebayWarning: string | null = null;
+      if (order.externalOrderId && order.storeId) {
+        const store = await storage.getStore(order.storeId);
+        if (store && store.platform === 'ebay') {
+          try {
+            const accessToken = await ensureValidEbayToken(store, userId);
+            if (accessToken) {
+              const ebayRes = await fetch(
+                `https://api.ebay.com/post-order/v2/cancellation/${order.externalOrderId}/reject`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                    'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB',
+                  },
+                  body: JSON.stringify({
+                    shipmentDate: { value: new Date().toISOString() },
+                    trackingNumber: order.trackingNumber || '',
+                  }),
+                }
+              );
+              if (!ebayRes.ok) {
+                const errText = await ebayRes.text().catch(() => '');
+                ebayWarning = `eBay dispute request failed (${ebayRes.status}). You may need to dispute the cancellation manually on eBay.`;
+                console.error('[eBay Dispute] Failed:', ebayRes.status, errText);
+              }
+              await storage.createAuditLog({
+                userId,
+                orderId,
+                action: ebayRes.ok ? 'ebay_cancellation_rejected' : 'ebay_dispute_failed',
+                source: 'ebay',
+                details: { externalOrderId: order.externalOrderId, status: ebayRes.status },
+              });
+            }
+          } catch (ebayErr: any) {
+            console.error('[eBay Dispute] Error:', ebayErr.message);
+            ebayWarning = 'Could not connect to eBay to dispute cancellation. Please dispute manually on eBay.';
+          }
+        }
+      }
+
+      res.json({ success: true, message: 'Cancellation disputed — order restored to processing', ebayWarning });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === ORDER TRACKING / DELIVERY ===
+  protectedApi.post('/orders/:id/update-tracking', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.id);
+      const { trackingNumber, carrier } = req.body;
+      if (!trackingNumber || !carrier) {
+        return res.status(400).json({ message: 'Tracking number and carrier are required' });
+      }
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      let finalTrackingNumber = trackingNumber.trim();
+      let finalCarrier = carrier.trim();
+      let ebaySynced = false;
+      let ebayError: string | null = null;
+
+      const converted = convertToEbayTracking(finalTrackingNumber, finalCarrier);
+      finalTrackingNumber = converted.trackingNumber;
+      const ebayCarrierCode = converted.shippingCarrierCode;
+      const autoDetected = converted.autoDetected;
+
+      const statusUpdate: any = {
+        trackingNumber: finalTrackingNumber,
+        carrier: ebayCarrierCode,
+      };
+      if (order.status !== 'delivered' && order.status !== 'cancelled') {
+        statusUpdate.status = 'shipped';
+      }
+      const updated = await storage.updateOrder(orderId, statusUpdate, userId);
+
+      let syncSkippedReason: string | null = null;
+
+      if (!order.externalOrderId) {
+        syncSkippedReason = 'Order has no external marketplace ID';
+      }
+
+      if (order.externalOrderId) {
+        let ebayStore: any = null;
+
+        if (order.storeId) {
+          const store = await storage.getStore(order.storeId);
+          if (store && store.platform === 'ebay') {
+            ebayStore = store;
+          } else if (store && store.platform !== 'ebay') {
+            syncSkippedReason = `Store is ${store.platform}, not eBay`;
+          } else if (!store) {
+            syncSkippedReason = 'Linked store not found';
+          }
+        }
+
+        if (!ebayStore && !syncSkippedReason) {
+          const allEbayStores = await storage.getAllActiveStoresByPlatform('ebay');
+          const userEbayStores = allEbayStores.filter((s: any) => s.userId === userId);
+          if (userEbayStores.length > 0) {
+            ebayStore = userEbayStores[0];
+          } else {
+            syncSkippedReason = 'No active eBay stores found';
+          }
+        }
+
+        if (ebayStore) {
+          try {
+            const accessToken = await ensureValidEbayToken(ebayStore, userId);
+            if (accessToken) {
+              const lineItems = (order as any).lineItems || [];
+              let ebayLineItems = lineItems
+                .filter((li: any) => li.lineItemId && li.lineItemId !== '0' && li.lineItemId !== '')
+                .map((li: any) => ({ lineItemId: li.lineItemId, quantity: li.quantity || 1 }));
+
+              if (ebayLineItems.length === 0) {
+                try {
+                  const orderResp = await fetch(
+                    `https://api.ebay.com/sell/fulfillment/v1/order/${order.externalOrderId}`,
+                    { headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' } }
+                  );
+                  if (orderResp.ok) {
+                    const orderData = await orderResp.json();
+                    ebayLineItems = (orderData.lineItems || []).map((li: any) => ({
+                      lineItemId: li.lineItemId,
+                      quantity: li.quantity || 1,
+                    }));
+                  }
+                } catch (fetchErr: any) {
+                  console.error('[eBay Tracking] Failed to fetch order line items:', fetchErr.message);
+                }
+              }
+
+              if (ebayLineItems.length === 0) {
+                console.error('[eBay Tracking] No valid line items for order', order.externalOrderId);
+                syncSkippedReason = 'Could not determine eBay line item IDs';
+              } else {
+                const { pushOrReplaceEbayFulfillment } = await import('./marketplaces/ebay');
+                const pushResult = await pushOrReplaceEbayFulfillment(accessToken, order.externalOrderId!, {
+                  trackingNumber: finalTrackingNumber,
+                  shippingCarrierCode: ebayCarrierCode,
+                  lineItems: ebayLineItems,
+                });
+
+                if (pushResult.success) {
+                  ebaySynced = true;
+                  await storage.createAuditLog({
+                    userId,
+                    orderId,
+                    action: 'tracking_pushed_to_ebay',
+                    source: 'ebay',
+                    details: { trackingNumber: finalTrackingNumber, carrier: finalCarrier, ebayCarrierCode, autoDetected, ebayOrderId: order.externalOrderId, replaced: pushResult.replaced },
+                  });
+                } else {
+                  ebayError = pushResult.error || null;
+                  console.error('[eBay Tracking] Push failed:', pushResult.error);
+                  await storage.createAuditLog({
+                    userId,
+                    orderId,
+                    action: 'tracking_push_failed',
+                    source: 'ebay',
+                    details: { trackingNumber: finalTrackingNumber, carrier: finalCarrier, ebayCarrierCode, error: pushResult.error },
+                  });
+                }
+              }
+            }
+          } catch (ebayErr: any) {
+            ebayError = ebayErr.message;
+            console.error('[eBay Tracking] Error:', ebayErr.message);
+          }
+        }
+      }
+
+      res.json({ ...updated, ebaySynced, ebayError, ebayCarrierCode, autoDetected, syncSkippedReason });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/orders/:id/mark-delivered', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const orderId = Number(req.params.id);
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      if (order.status !== 'shipped' && order.status !== 'processing') {
+        return res.status(400).json({ message: `Cannot mark order as delivered from "${order.status}" status` });
+      }
+
+      const updated = await storage.updateOrder(orderId, { status: 'delivered' }, userId);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/admin/mark-all-delivered', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId) as any;
+      const isAdmin = user?.role === 'admin' || user?.email === 'dropandsellauth@gmail.com';
+      if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
+
+      const result = await db.update(orders)
+        .set({ status: 'delivered', updatedAt: new Date() })
+        .where(eq(orders.status, 'shipped'))
+        .returning();
+
+      res.json({ updated: result.length, message: `${result.length} shipped orders marked as delivered` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === STANDALONE TRACKING PUSH TO EBAY ===
+  protectedApi.post('/tracking/push-to-ebay', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { trackingNumber, carrier, ebayOrderId, storeId } = req.body;
+
+      if (!trackingNumber || !ebayOrderId) {
+        return res.status(400).json({ message: 'trackingNumber and ebayOrderId are required' });
+      }
+
+      const converted = convertToEbayTracking(trackingNumber.trim(), (carrier || 'OTHER').trim());
+
+      let ebayStore: any = null;
+      if (storeId) {
+        ebayStore = await storage.getStore(Number(storeId));
+        if (!ebayStore || ebayStore.platform !== 'ebay' || ebayStore.userId !== userId) {
+          return res.status(400).json({ message: 'Invalid eBay store selected' });
+        }
+      } else {
+        const allEbayStores = await storage.getAllActiveStoresByPlatform('ebay');
+        const userEbayStores = allEbayStores.filter((s: any) => s.userId === userId);
+        if (userEbayStores.length === 0) {
+          return res.status(400).json({ message: 'No active eBay stores found. Please connect an eBay store first.' });
+        }
+        ebayStore = userEbayStores[0];
+      }
+
+      const accessToken = await ensureValidEbayToken(ebayStore, userId);
+      if (!accessToken) {
+        return res.status(401).json({ message: 'Failed to authenticate with eBay. Please reconnect your store.' });
+      }
+
+      let ebayLineItems: { lineItemId: string; quantity: number }[] = [];
+      const localOrder = await storage.getOrderByExternalId(ebayOrderId, userId);
+      const storedLineItems = (localOrder as any)?.lineItems || [];
+      if (storedLineItems.length > 0 && storedLineItems[0]?.lineItemId) {
+        ebayLineItems = storedLineItems
+          .filter((li: any) => li.lineItemId && li.lineItemId !== '0')
+          .map((li: any) => ({ lineItemId: li.lineItemId, quantity: li.quantity || 1 }));
+      }
+
+      if (ebayLineItems.length === 0) {
+        try {
+          const orderResp = await fetch(
+            `https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}`,
+            { headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' } }
+          );
+          if (orderResp.ok) {
+            const orderData = await orderResp.json();
+            ebayLineItems = (orderData.lineItems || []).map((li: any) => ({
+              lineItemId: li.lineItemId,
+              quantity: li.quantity || 1,
+            }));
+          }
+        } catch (fetchErr: any) {
+          console.error('[eBay Tracking] Failed to fetch order line items:', fetchErr.message);
+        }
+      }
+
+      if (ebayLineItems.length === 0) {
+        return res.status(400).json({ message: 'Could not determine eBay line item IDs for this order. Please ensure the order exists and try again.' });
+      }
+
+      const { pushOrReplaceEbayFulfillment } = await import('./marketplaces/ebay');
+      const pushResult = await pushOrReplaceEbayFulfillment(accessToken, ebayOrderId, {
+        trackingNumber: converted.trackingNumber,
+        shippingCarrierCode: converted.shippingCarrierCode,
+        lineItems: ebayLineItems,
+      });
+
+      if (pushResult.success) {
+        const live = getCarrierTrackingUrl(converted.shippingCarrierCode, converted.trackingNumber);
+        const ebayOrderUrl = getEbayOrderUrl(ebayOrderId);
+        await storage.createAuditLog({
+          userId,
+          action: 'tracking_pushed_to_ebay',
+          source: 'ebay',
+          details: {
+            trackingNumber: converted.trackingNumber,
+            carrier: converted.shippingCarrierCode,
+            autoDetected: converted.autoDetected,
+            ebayOrderId,
+            standalone: true,
+            replaced: pushResult.replaced,
+            carrierTrackingUrl: live.url,
+            ebayOrderUrl,
+          },
+        });
+
+        res.json({
+          success: true,
+          trackingNumber: converted.trackingNumber,
+          shippingCarrierCode: converted.shippingCarrierCode,
+          autoDetected: converted.autoDetected,
+          ebayOrderId,
+          replaced: pushResult.replaced,
+          carrierTrackingUrl: live.url,
+          carrierLabel: live.label,
+          ebayOrderUrl,
+        });
+      } else {
+        console.error('[eBay Tracking Push] Failed:', pushResult.error);
+        await storage.createAuditLog({
+          userId,
+          action: 'tracking_push_failed',
+          source: 'ebay',
+          details: {
+            trackingNumber: converted.trackingNumber,
+            carrier: converted.shippingCarrierCode,
+            ebayOrderId,
+            standalone: true,
+            error: pushResult.error,
+          },
+        });
+        res.status(400).json({ message: `eBay rejected the tracking: ${pushResult.error}` });
+      }
+    } catch (err: any) {
+      console.error('[eBay Tracking Push] Error:', err.message);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === RETURN REQUESTS ===
+  protectedApi.get('/return-requests', async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const requests = await storage.getReturnRequests(userId);
+    res.json(requests);
+  });
+
+  const returnRequestSchema = z.object({
+    orderId: z.number(),
+    reason: z.string().min(1).max(1000),
+    fulfillmentJobId: z.number().optional().nullable(),
+  });
+
+  protectedApi.post('/return-requests', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const parsed = returnRequestSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: 'Invalid data', errors: parsed.error.flatten().fieldErrors });
+      const { orderId, reason, fulfillmentJobId } = parsed.data;
+
+      const order = await storage.getOrder(orderId, userId);
+      if (!order) return res.status(404).json({ message: 'Order not found' });
+
+      const request = await storage.createReturnRequest({
+        userId,
+        orderId,
+        fulfillmentJobId: fulfillmentJobId || null,
+        reason,
+        status: 'pending',
+      });
+
+      await storage.createAuditLog({
+        userId,
+        orderId,
+        action: 'return_requested',
+        details: { returnId: request.id, reason },
+      });
+
+      res.json(request);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.put('/return-requests/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const updated = await storage.updateReturnRequest(id, userId, req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // === FEATURE FLAGS ===
+  protectedApi.get('/feature-flags', async (req: any, res) => {
+    res.json([]);
+  });
+
+  // === MARKETPLACE ORDER SYNC ===
+  const ebayUserSyncLocks = new Set<string>();
+
+  protectedApi.post('/ebay/sync-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+
+      if (ebayUserSyncLocks.has(userId)) {
+        return res.json({ success: true, newOrders: 0, updatedOrders: 0, revenueAdded: 0, skipped: 'Sync already in progress' });
+      }
+
+      const stores = await storage.getStores(userId);
+      const ebayStores = stores.filter(s => s.platform === 'ebay' && s.status === 'active');
+
+      if (ebayStores.length === 0) {
+        return res.json({ success: true, newOrders: 0, updatedOrders: 0, revenueAdded: 0, message: 'No active eBay stores' });
+      }
+
+      if (!process.env.EBAY_APP_ID || !process.env.EBAY_CERT_ID) {
+        return res.status(400).json({ message: 'Store not connected or credentials missing' });
+      }
+
+      ebayUserSyncLocks.add(userId);
+
+      let totalNew = 0;
+      let totalUpdated = 0;
+      let totalRevenue = 0;
+      const errors: string[] = [];
+
+      for (const store of ebayStores) {
+        try {
+          const accessToken = await ensureValidEbayToken(store, userId);
+          if (!accessToken) {
+            errors.push(`Store "${store.name}": token expired or missing — please reconnect`);
+            continue;
+          }
+
+          const ebayOrders = await fetchEbayOrders(accessToken);
+          console.log(`[eBay Sync] Fetched ${ebayOrders.length} orders from store "${store.name}"`);
+
+          const pendingEbayUpdates = new Map<string, { itemId: string; sku: string; quantity: number }>();
+
+          for (const ebayOrder of ebayOrders) {
+            const orderId = ebayOrder.orderId;
+            const orderStatus = ebayOrder.orderFulfillmentStatus || 'NOT_STARTED';
+
+            const pricingSummary = ebayOrder.pricingSummary || {};
+            const totalStr = pricingSummary.total?.value || '0';
+            const totalAmount = parseFloat(totalStr);
+
+            const buyer = ebayOrder.buyer || {};
+            const buyerName = buyer.username || '';
+
+            const fulfillmentInstructions = ebayOrder.fulfillmentStartInstructions || [];
+            const shippingStep = fulfillmentInstructions[0]?.shippingStep || {};
+            const shipTo = shippingStep.shipTo || {};
+            const contactAddress = shipTo.contactAddress || {};
+
+            const shippingAddress = {
+              name: shipTo.fullName || buyerName,
+              addressLine1: contactAddress.addressLine1 || '',
+              addressLine2: contactAddress.addressLine2 || '',
+              city: contactAddress.city || '',
+              stateOrProvince: contactAddress.stateOrProvince || '',
+              postalCode: contactAddress.postalCode || '',
+              countryCode: contactAddress.countryCode || '',
+            };
+
+            let appStatus = 'pending';
+            const paymentStatus = ebayOrder.orderPaymentStatus || '';
+            if (paymentStatus === 'PAID' || paymentStatus === 'FULLY_REFUNDED') {
+              appStatus = 'processing';
+            }
+            if (orderStatus === 'FULFILLED') {
+              appStatus = 'shipped';
+            }
+            if (ebayOrder.cancelStatus?.cancelState === 'CANCELED') {
+              appStatus = 'cancelled';
+            }
+
+            const isDelivered = (ebayOrder.lineItems || []).every((li: any) => {
+              const status = (li.deliveredDate || li.properties?.deliveredDate) ? true : false;
+              return status;
+            });
+            const hasDeliveryConfirmation = orderStatus === 'FULFILLED' && (
+              isDelivered ||
+              (ebayOrder.fulfillmentHrefs && ebayOrder.fulfillmentHrefs.length > 0 &&
+               (ebayOrder.lineItems || []).some((li: any) => li.properties?.buyerProtection?.status === 'ACTIVE'))
+            );
+
+            if (hasDeliveryConfirmation && appStatus === 'shipped') {
+              appStatus = 'delivered';
+            }
+
+            let fulfillmentStatus = 'unfulfilled';
+            if (orderStatus === 'FULFILLED') fulfillmentStatus = 'fulfilled';
+            else if (orderStatus === 'IN_PROGRESS') fulfillmentStatus = 'in_progress';
+
+            const ebayLineItems = (ebayOrder.lineItems || []).map((li: any) => ({
+              sku: li.sku || '',
+              title: li.title || '',
+              quantity: li.quantity || 1,
+              lineItemId: li.lineItemId || '',
+              price: li.total?.value || li.lineItemCost?.value || '0',
+              variationAspects: li.variationAspects || [],
+              imageUrl: li.image?.imageUrl || '',
+            }));
+
+            const existingOrder = await storage.getOrderByExternalId(orderId, userId);
+            if (existingOrder) {
+              const statusChanged = existingOrder.status !== appStatus || existingOrder.fulfillmentStatus !== fulfillmentStatus;
+              const existingLineItems = (existingOrder as any).lineItems || [];
+              const hasNewVariationData = ebayLineItems.some((li: any) => li.variationAspects?.length > 0) && !existingLineItems.some((li: any) => li.variationAspects?.length > 0);
+              const needsLineItemUpdate = (ebayLineItems.length > 0 && existingLineItems.length === 0) || hasNewVariationData;
+              if (statusChanged || needsLineItemUpdate) {
+                const wasPendingNowPaid = existingOrder.status === 'pending' && (appStatus === 'processing' || appStatus === 'shipped');
+                await storage.updateOrder(existingOrder.id, {
+                  status: appStatus,
+                  fulfillmentStatus,
+                  totalAmount: String(totalAmount),
+                  lineItems: ebayLineItems.length > 0 ? ebayLineItems : undefined,
+                });
+                totalUpdated++;
+                if (wasPendingNowPaid && paymentStatus === 'PAID' && totalAmount > 0) {
+                  totalRevenue += totalAmount;
+                }
+              }
+
+              for (const li of ebayLineItems) {
+                if (li.sku) {
+                  try {
+                    const existingMapping = await storage.getSkuMappingByEbaySku(userId, li.sku);
+                    if (!existingMapping) {
+                      const product = await storage.getProductBySku(userId, li.sku);
+                      if (product) {
+                        const attrs = (product.attributes || {}) as Record<string, any>;
+                        const vendorName = product.vendorName || 'Unknown';
+                        const sourceUrl = attrs.sourceUrl || '';
+                        await storage.createSkuMapping({
+                          userId,
+                          ebaySku: li.sku,
+                          vendorId: product.vendorId,
+                          vendorSku: product.sku,
+                          vendorProductUrl: sourceUrl,
+                          vendorName,
+                          costPrice: String(product.costPrice),
+                          ebayTitle: li.title || undefined,
+                          ebayPrice: li.price || undefined,
+                          isActive: true,
+                        });
+                        console.log(`[Auto-SKU] Created mapping for existing order: eBay SKU ${li.sku} → ${vendorName}`);
+                      } else {
+                        await storage.createSkuMapping({
+                          userId,
+                          ebaySku: li.sku,
+                          vendorSku: '',
+                          vendorName: '',
+                          ebayTitle: li.title || undefined,
+                          ebayPrice: li.price || undefined,
+                          isActive: true,
+                        });
+                        console.log(`[Auto-SKU] Created placeholder mapping for external SKU ${li.sku}: "${li.title}"`);
+                      }
+                    } else if (!existingMapping.ebayTitle && li.title) {
+                      await storage.updateSkuMapping(existingMapping.id, userId, {
+                        ebayTitle: li.title,
+                        ebayPrice: li.price || undefined,
+                      });
+                    }
+                  } catch (mapErr: any) {
+                    console.error(`[Auto-SKU] Error creating mapping for SKU ${li.sku}:`, mapErr.message);
+                  }
+                }
+              }
+            } else {
+              await storage.createOrder({
+                userId,
+                storeId: store.id,
+                externalOrderId: orderId,
+                customerName: shippingAddress.name || buyerName,
+                customerEmail: buyer.buyerRegistrationAddress?.email || '',
+                shippingAddress,
+                lineItems: ebayLineItems.length > 0 ? ebayLineItems : undefined,
+                totalAmount: String(totalAmount),
+                status: appStatus,
+                fulfillmentStatus,
+              });
+              totalNew++;
+
+              if (paymentStatus === 'PAID' && totalAmount > 0) {
+                totalRevenue += totalAmount;
+              }
+
+              const ruleUser = await storage.getUser(userId) as any;
+              const RESTOCK_BUFFER = (ruleUser?.autoRestockEnabled && ruleUser.autoRestockBuffer && ruleUser.autoRestockBuffer > 0)
+                ? ruleUser.autoRestockBuffer
+                : 10;
+
+              for (const li of ebayLineItems) {
+                if (li.sku) {
+                  try {
+                    const product = await storage.getProductBySku(userId, li.sku);
+                    if (product) {
+                      const soldQty = li.quantity || 1;
+                      const currentQty = product.quantity || 0;
+                      const newQty = Math.max(0, currentQty - soldQty);
+                      const finalQty = newQty === 0 ? RESTOCK_BUFFER : newQty;
+
+                      await storage.updateProduct(product.id, userId, { quantity: finalQty });
+                      if (newQty === 0) {
+                        console.log(`[Auto-Restock] Product "${product.title}" (SKU: ${li.sku}) sold out → restocked to ${RESTOCK_BUFFER}`);
+                      } else {
+                        console.log(`[Stock Update] Product "${product.title}" (SKU: ${li.sku}): ${currentQty} → ${finalQty}`);
+                      }
+
+                      if (newQty === 0 || newQty < 3) {
+                        try {
+                          const listings = await storage.getMarketplaceListings(store.id);
+                          const match = listings.find((l: any) => l.productId === product.id && l.externalId);
+                          if (match?.externalId) {
+                            const key = `${match.externalId}::${li.sku}`;
+                            pendingEbayUpdates.set(key, { itemId: match.externalId, sku: li.sku, quantity: finalQty });
+                          } else {
+                            console.warn(`[Auto-Restock] No marketplace_listing row found for product ${product.id} on store "${store.name}" — local qty restocked to ${finalQty} but cannot push to eBay.`);
+                          }
+                        } catch (lookupErr: any) {
+                          console.error(`[Auto-Restock] Listing lookup failed for product ${product.id}:`, lookupErr?.message || lookupErr);
+                        }
+                      }
+
+                      const existingMapping = await storage.getSkuMappingByEbaySku(userId, li.sku);
+                      if (!existingMapping) {
+                        const attrs = (product.attributes || {}) as Record<string, any>;
+                        const vendorName = product.vendorName || 'Unknown';
+                        const sourceUrl = attrs.sourceUrl || '';
+                        await storage.createSkuMapping({
+                          userId,
+                          ebaySku: li.sku,
+                          vendorId: product.vendorId,
+                          vendorSku: product.sku,
+                          vendorProductUrl: sourceUrl,
+                          vendorName,
+                          costPrice: String(product.costPrice),
+                          ebayTitle: li.title || undefined,
+                          ebayPrice: li.price || undefined,
+                          isActive: true,
+                        });
+                        console.log(`[Auto-SKU] Created mapping: eBay SKU ${li.sku} → ${vendorName} (${product.sku})`);
+                      } else if (!existingMapping.ebayTitle && li.title) {
+                        await storage.updateSkuMapping(existingMapping.id, userId, {
+                          ebayTitle: li.title,
+                          ebayPrice: li.price || undefined,
+                        });
+                      }
+                    } else {
+                      const existingMapping = await storage.getSkuMappingByEbaySku(userId, li.sku);
+                      if (!existingMapping) {
+                        await storage.createSkuMapping({
+                          userId,
+                          ebaySku: li.sku,
+                          vendorSku: '',
+                          vendorName: '',
+                          ebayTitle: li.title || undefined,
+                          ebayPrice: li.price || undefined,
+                          isActive: true,
+                        });
+                        console.log(`[Auto-SKU] Created placeholder mapping for new order SKU ${li.sku}: "${li.title}"`);
+                      } else if (!existingMapping.ebayTitle && li.title) {
+                        await storage.updateSkuMapping(existingMapping.id, userId, {
+                          ebayTitle: li.title,
+                          ebayPrice: li.price || undefined,
+                        });
+                      }
+                    }
+                  } catch (mapErr: any) {
+                    console.error(`[Auto-SKU] Error processing SKU ${li.sku}:`, mapErr.message);
+                  }
+                }
+              }
+            }
+          }
+
+          if (pendingEbayUpdates.size > 0) {
+            const updates = Array.from(pendingEbayUpdates.values());
+            try {
+              const { reviseEbayQuantity } = await import('./marketplaces/ebay');
+              const result = await reviseEbayQuantity(store.credentials, updates);
+              const failedItemIds = new Set(result.failed.map((f) => f.itemId));
+              const successCount = updates.length - failedItemIds.size;
+              if (successCount > 0) {
+                console.log(`[Auto-Restock] Pushed quantity to eBay for ${successCount} listing(s) on store "${store.name}"`);
+              }
+              try {
+                const allListings = await storage.getMarketplaceListings(store.id);
+                for (const u of updates) {
+                  const listing = allListings.find((l: any) => l.externalId === u.itemId);
+                  if (!listing) continue;
+                  const newStatus = failedItemIds.has(u.itemId) ? 'error' : 'synced';
+                  await storage.updateMarketplaceListing(listing.id, { syncStatus: newStatus, lastSync: new Date() } as any);
+                }
+              } catch {}
+              for (const f of result.failed) {
+                console.error(`[Auto-Restock] eBay rejected restock for item ${f.itemId}: ${f.error}`);
+              }
+            } catch (revErr: any) {
+              console.error(`[Auto-Restock] Failed to push restock to eBay for store "${store.name}":`, revErr?.message || revErr);
+              try {
+                const allListings = await storage.getMarketplaceListings(store.id);
+                for (const u of updates) {
+                  const listing = allListings.find((l: any) => l.externalId === u.itemId);
+                  if (listing) {
+                    await storage.updateMarketplaceListing(listing.id, { syncStatus: 'error', lastSync: new Date() } as any);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch (storeErr: any) {
+          console.error(`[eBay Sync] Error syncing store "${store.name}":`, storeErr.message);
+          errors.push(`Store "${store.name}": ${storeErr.message}`);
+        }
+      }
+
+      if (totalRevenue > 0) {
+        try {
+          let userWallet = await storage.getWallet(userId);
+          if (!userWallet) {
+            userWallet = await storage.createWallet(userId);
+          }
+          await storage.updateWalletBalance(userWallet.id, totalRevenue);
+          await storage.createTransaction({
+            walletId: userWallet.id,
+            type: 'deposit',
+            amount: String(totalRevenue.toFixed(2)),
+            description: `eBay sales revenue (${totalNew} new order${totalNew !== 1 ? 's' : ''})`,
+            status: 'completed',
+          });
+          console.log(`[eBay Sync] Credited £${totalRevenue.toFixed(2)} to wallet for ${totalNew} new orders`);
+        } catch (walletErr: any) {
+          console.error(`[eBay Sync] Wallet credit error:`, walletErr.message);
+          errors.push(`Wallet update failed: ${walletErr.message}`);
+        }
+      }
+
+      ebayUserSyncLocks.delete(userId);
+      res.json({
+        success: true,
+        newOrders: totalNew,
+        updatedOrders: totalUpdated,
+        revenueAdded: totalRevenue,
+        errors: errors.length ? errors : undefined,
+      });
+    } catch (err: any) {
+      const uid = req.user?.claims?.sub;
+      if (uid) ebayUserSyncLocks.delete(uid);
+      console.error('[eBay Sync] Error:', err.message);
+      res.status(500).json({ message: err.message || 'Failed to sync eBay orders' });
+    }
+  });
+
+  protectedApi.post('/amazon/sync-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stores = await storage.getStores(userId);
+      const amazonStores = stores.filter(s => s.platform === 'amazon' && s.status === 'active');
+
+      if (amazonStores.length === 0) {
+        return res.status(400).json({ message: 'No active Amazon stores connected' });
+      }
+
+      let totalNew = 0;
+      let totalUpdated = 0;
+      const errors: string[] = [];
+
+      for (const store of amazonStores) {
+        try {
+          const creds = store.credentials as any;
+          if (!creds?.refreshToken) {
+            errors.push(`Store "${store.name}": missing refresh token — please reconnect`);
+            continue;
+          }
+
+          const tokenResult = await refreshAmazonAccessToken(creds.refreshToken);
+          if (!tokenResult) {
+            errors.push(`Store "${store.name}": failed to refresh access token — please reconnect`);
+            continue;
+          }
+
+          await storage.updateStore(store.id, userId, {
+            credentials: { ...creds, accessToken: tokenResult.accessToken, tokenExpiry: Date.now() + (tokenResult.expiresIn * 1000) },
+          });
+
+          const endpoint = creds.endpoint || 'https://sellingpartnerapi-eu.amazon.com';
+          const marketplaceId = creds.marketplaceId || 'A1F83G8C2ARO7P';
+
+          const createdAfter = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+          const ordersUrl = `${endpoint}/orders/v0/orders?MarketplaceIds=${marketplaceId}&CreatedAfter=${createdAfter}&OrderStatuses=Unshipped,PartiallyShipped,Shipped`;
+
+          const ordersResponse = await fetch(ordersUrl, {
+            headers: {
+              'x-amz-access-token': tokenResult.accessToken,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!ordersResponse.ok) {
+            const errText = await ordersResponse.text();
+            console.error(`[AMAZON] Orders API error for store "${store.name}":`, errText);
+            errors.push(`Store "${store.name}": Amazon API error (${ordersResponse.status})`);
+            continue;
+          }
+
+          const ordersData = await ordersResponse.json() as any;
+          const amazonOrders = ordersData?.payload?.Orders || [];
+          console.log(`[AMAZON] Fetched ${amazonOrders.length} orders from store "${store.name}"`);
+
+          for (const amzOrder of amazonOrders) {
+            const orderId = amzOrder.AmazonOrderId;
+            const orderStatus = amzOrder.OrderStatus || '';
+
+            const totalAmount = parseFloat(amzOrder.OrderTotal?.Amount || '0');
+            const buyerName = amzOrder.BuyerInfo?.BuyerEmail ? amzOrder.BuyerInfo.BuyerEmail.split('@')[0] : 'Amazon Buyer';
+
+            const shippingAddress: any = {};
+            if (amzOrder.ShippingAddress) {
+              const addr = amzOrder.ShippingAddress;
+              shippingAddress.name = addr.Name || buyerName;
+              shippingAddress.addressLine1 = addr.AddressLine1 || '';
+              shippingAddress.addressLine2 = addr.AddressLine2 || '';
+              shippingAddress.city = addr.City || '';
+              shippingAddress.stateOrProvince = addr.StateOrRegion || '';
+              shippingAddress.postalCode = addr.PostalCode || '';
+              shippingAddress.countryCode = addr.CountryCode || '';
+            }
+
+            let appStatus = 'pending';
+            if (orderStatus === 'Unshipped') appStatus = 'processing';
+            else if (orderStatus === 'PartiallyShipped') appStatus = 'processing';
+            else if (orderStatus === 'Shipped') appStatus = 'shipped';
+            else if (orderStatus === 'Canceled') appStatus = 'cancelled';
+
+            let fulfillmentStatus = 'unfulfilled';
+            if (orderStatus === 'Shipped') fulfillmentStatus = 'fulfilled';
+            else if (orderStatus === 'PartiallyShipped') fulfillmentStatus = 'in_progress';
+
+            const existingOrder = await storage.getOrderByExternalId(orderId, userId);
+            if (existingOrder) {
+              const statusChanged = existingOrder.status !== appStatus || existingOrder.fulfillmentStatus !== fulfillmentStatus;
+              if (statusChanged) {
+                await storage.updateOrder(existingOrder.id, {
+                  status: appStatus,
+                  fulfillmentStatus,
+                });
+                totalUpdated++;
+              }
+            } else {
+              await storage.createOrder({
+                userId,
+                storeId: store.id,
+                externalOrderId: orderId,
+                customerName: shippingAddress.name || buyerName,
+                customerEmail: amzOrder.BuyerInfo?.BuyerEmail || '',
+                shippingAddress,
+                totalAmount: totalAmount.toFixed(2),
+                status: appStatus,
+                fulfillmentStatus,
+                lineItems: [],
+              });
+              totalNew++;
+            }
+          }
+
+          await storage.updateStore(store.id, userId, { lastSync: new Date() } as any);
+        } catch (storeErr: any) {
+          console.error(`[AMAZON] Sync error for store "${store.name}":`, storeErr);
+          errors.push(`Store "${store.name}": ${storeErr.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        newOrders: totalNew,
+        updatedOrders: totalUpdated,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (err: any) {
+      console.error('[AMAZON] Sync orders error:', err);
+      res.status(500).json({ message: err.message || 'Failed to sync Amazon orders' });
+    }
+  });
+
+  protectedApi.post('/jumia/sync-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const userStores = await storage.getStores(userId);
+      const jumiaStores = userStores.filter(s => s.platform === 'jumia' && s.status === 'active');
+
+      if (jumiaStores.length === 0) {
+        return res.status(400).json({ message: 'No active Jumia stores connected' });
+      }
+
+      const { fetchJumiaOrders, fetchJumiaOrderItems } = await import('./marketplaces/jumia');
+
+      let totalNew = 0;
+      let totalUpdated = 0;
+      const errors: string[] = [];
+
+      for (const store of jumiaStores) {
+        try {
+          const creds = store.credentials as any;
+          if (!creds?.apiKey || !creds?.userId || !creds?.country) {
+            errors.push(`Store "${store.name}": missing API credentials`);
+            continue;
+          }
+
+          const createdAfter = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+          const jumiaOrders = await fetchJumiaOrders(creds, createdAfter);
+          console.log(`[JUMIA] Fetched ${jumiaOrders.length} orders from store "${store.name}"`);
+
+          for (const jOrder of jumiaOrders) {
+            const orderId = jOrder.OrderId || jOrder.OrderNumber;
+            if (!orderId) {
+              console.warn(`[JUMIA] Skipping order with no ID from store "${store.name}"`);
+              continue;
+            }
+            const orderStatus = (jOrder.Statuses?.[0] || jOrder.Status || '').toLowerCase();
+
+            let appStatus = 'pending';
+            if (orderStatus === 'pending') appStatus = 'pending';
+            else if (orderStatus === 'ready_to_ship' || orderStatus === 'processing') appStatus = 'processing';
+            else if (orderStatus === 'shipped') appStatus = 'shipped';
+            else if (orderStatus === 'delivered') appStatus = 'delivered';
+            else if (orderStatus === 'canceled' || orderStatus === 'failed') appStatus = 'cancelled';
+
+            let fulfillmentStatus = 'unfulfilled';
+            if (orderStatus === 'shipped' || orderStatus === 'delivered') fulfillmentStatus = 'fulfilled';
+            else if (orderStatus === 'ready_to_ship') fulfillmentStatus = 'in_progress';
+
+            const totalAmount = parseFloat(jOrder.Price || '0');
+            const customerName = [jOrder.AddressShipping?.FirstName, jOrder.AddressShipping?.LastName].filter(Boolean).join(' ') || 'Jumia Buyer';
+
+            const shippingAddress: any = {};
+            if (jOrder.AddressShipping) {
+              const addr = jOrder.AddressShipping;
+              shippingAddress.name = customerName;
+              shippingAddress.addressLine1 = addr.Address1 || addr.Address || '';
+              shippingAddress.addressLine2 = addr.Address2 || '';
+              shippingAddress.city = addr.City || '';
+              shippingAddress.stateOrProvince = addr.Region || '';
+              shippingAddress.postalCode = addr.PostCode || '';
+              shippingAddress.countryCode = addr.Country || creds.country?.toUpperCase() || '';
+              shippingAddress.phone = addr.Phone || addr.Phone2 || '';
+            }
+
+            let lineItems: any[] = [];
+            try {
+              const items = await fetchJumiaOrderItems(creds, orderId);
+              lineItems = items.map((item: any) => ({
+                title: item.Name || item.ProductMainImage || '',
+                sku: item.Sku || item.ShopSku || '',
+                quantity: parseInt(item.Quantity || '1'),
+                price: parseFloat(item.ItemPrice || item.PaidPrice || '0'),
+              }));
+            } catch {}
+
+            const existingOrder = await storage.getOrderByExternalId(orderId, userId);
+            if (existingOrder) {
+              const statusChanged = existingOrder.status !== appStatus || existingOrder.fulfillmentStatus !== fulfillmentStatus;
+              if (statusChanged) {
+                await storage.updateOrder(existingOrder.id, {
+                  status: appStatus,
+                  fulfillmentStatus,
+                });
+                totalUpdated++;
+              }
+            } else {
+              await storage.createOrder({
+                userId,
+                storeId: store.id,
+                externalOrderId: orderId,
+                customerName,
+                customerEmail: jOrder.AddressShipping?.CustomerEmail || '',
+                shippingAddress,
+                totalAmount: totalAmount.toFixed(2),
+                status: appStatus,
+                fulfillmentStatus,
+                lineItems,
+              });
+              totalNew++;
+            }
+          }
+
+          await storage.updateStore(store.id, userId, { lastSync: new Date() } as any);
+        } catch (storeErr: any) {
+          console.error(`[JUMIA] Sync error for store "${store.name}":`, storeErr);
+          errors.push(`Store "${store.name}": ${storeErr.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        newOrders: totalNew,
+        updatedOrders: totalUpdated,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (err: any) {
+      console.error('[JUMIA] Sync orders error:', err);
+      res.status(500).json({ message: err.message || 'Failed to sync Jumia orders' });
+    }
+  });
+
+  protectedApi.post('/tiktok/sync-orders', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stores = await storage.getStores(userId);
+      const tiktokStores = stores.filter(s => s.platform === 'tiktokshop' && s.status === 'active');
+
+      if (tiktokStores.length === 0) {
+        return res.status(400).json({ message: 'No active TikTok Shop stores connected' });
+      }
+
+      let totalNew = 0;
+      let totalUpdated = 0;
+      const errors: string[] = [];
+
+      for (const store of tiktokStores) {
+        try {
+          const creds = store.credentials as any;
+          if (!creds?.accessToken || !creds?.appKey || !creds?.appSecret) {
+            errors.push(`Store "${store.name}": missing credentials — please reconnect`);
+            continue;
+          }
+
+          const { fetchTikTokOrders, fetchTikTokProductImages } = await import('./marketplaces/tiktokshop');
+          const createdAfter = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
+          const ttOrders = await fetchTikTokOrders(creds, createdAfter);
+          console.log(`[TikTok] Fetched ${ttOrders.length} orders from store "${store.name}"`);
+
+          const userProducts = await storage.getProducts(userId);
+          const skuToProduct = new Map<string, any>();
+          for (const p of userProducts) {
+            if (p.sku) skuToProduct.set(p.sku, p);
+          }
+          const enrichedProductIds = new Set<string>();
+
+          for (const ttOrder of ttOrders) {
+            const orderId = ttOrder.id;
+            if (!orderId) continue;
+
+            const orderStatus = (ttOrder.status || '').toUpperCase();
+            let appStatus = 'pending';
+            if (orderStatus === 'AWAITING_SHIPMENT' || orderStatus === 'PARTIALLY_SHIPPING') appStatus = 'processing';
+            else if (orderStatus === 'AWAITING_COLLECTION') appStatus = 'processing';
+            else if (orderStatus === 'IN_TRANSIT') appStatus = 'shipped';
+            else if (orderStatus === 'DELIVERED') appStatus = 'delivered';
+            else if (orderStatus === 'CANCELLED') appStatus = 'cancelled';
+            else if (orderStatus === 'UNPAID') appStatus = 'pending';
+            else if (orderStatus === 'ON_HOLD') appStatus = 'pending';
+            else if (orderStatus === 'COMPLETED') appStatus = 'completed';
+
+            let fulfillmentStatus = 'unfulfilled';
+            if (orderStatus === 'IN_TRANSIT' || orderStatus === 'DELIVERED' || orderStatus === 'COMPLETED') fulfillmentStatus = 'fulfilled';
+            else if (orderStatus === 'AWAITING_COLLECTION' || orderStatus === 'AWAITING_SHIPMENT' || orderStatus === 'PARTIALLY_SHIPPING') fulfillmentStatus = 'in_progress';
+
+            const buyerName = ttOrder.recipient_address?.name || 'TikTok Buyer';
+            const buyerPhone = ttOrder.recipient_address?.phone || '';
+
+            const shippingAddress: any = {};
+            if (ttOrder.recipient_address) {
+              const addr = ttOrder.recipient_address;
+              shippingAddress.name = addr.name || buyerName;
+              shippingAddress.addressLine1 = addr.address_detail || addr.full_address || '';
+              shippingAddress.city = addr.city || '';
+              shippingAddress.stateOrProvince = addr.state || addr.region || '';
+              shippingAddress.postalCode = addr.zipcode || addr.postal_code || '';
+              shippingAddress.countryCode = addr.region_code || '';
+              shippingAddress.phone = buyerPhone;
+            }
+
+            const totalAmount = ttOrder.payment?.total_amount || ttOrder.payment?.product_total_amount || '0';
+
+            const lineItems = (ttOrder.line_items || []).map((item: any) => {
+              const itemImages: string[] = [];
+              if (item.sku_image) itemImages.push(item.sku_image);
+              if (item.product_image?.url) itemImages.push(item.product_image.url);
+              if (item.product_images && Array.isArray(item.product_images)) {
+                for (const img of item.product_images) {
+                  const imgUrl = typeof img === 'string' ? img : (img?.url || img?.thumb_url);
+                  if (imgUrl && !itemImages.includes(imgUrl)) itemImages.push(imgUrl);
+                }
+              }
+              return {
+                title: item.product_name || item.sku_name || 'TikTok Item',
+                quantity: parseInt(item.quantity || '1'),
+                price: item.sale_price || item.original_price || '0',
+                sku: item.seller_sku || item.sku_id || '',
+                externalProductId: item.product_id || '',
+                images: itemImages.slice(0, 5),
+              };
+            });
+
+            const existingOrder = await storage.getOrderByExternalId(orderId, userId);
+            if (existingOrder) {
+              const statusChanged = existingOrder.status !== appStatus || existingOrder.fulfillmentStatus !== fulfillmentStatus;
+              if (statusChanged) {
+                await storage.updateOrder(existingOrder.id, {
+                  status: appStatus,
+                  fulfillmentStatus,
+                });
+                totalUpdated++;
+              }
+            } else {
+              await storage.createOrder({
+                userId,
+                storeId: store.id,
+                externalOrderId: orderId,
+                customerName: buyerName,
+                customerEmail: '',
+                shippingAddress,
+                totalAmount: typeof totalAmount === 'string' ? totalAmount : String(totalAmount),
+                status: appStatus,
+                fulfillmentStatus,
+                lineItems,
+              });
+              totalNew++;
+
+              for (const item of lineItems) {
+                if (item.externalProductId && item.sku && !enrichedProductIds.has(item.externalProductId)) {
+                  enrichedProductIds.add(item.externalProductId);
+                  try {
+                    const matched = skuToProduct.get(item.sku);
+                    if (matched && (!matched.images || matched.images.length < 5)) {
+                      const productImages = await fetchTikTokProductImages(creds, item.externalProductId);
+                      if (productImages.length > 0) {
+                        const existingImages = Array.isArray(matched.images) ? matched.images : [];
+                        const combined = [...existingImages];
+                        for (const img of productImages) {
+                          if (!combined.includes(img)) combined.push(img);
+                          if (combined.length >= 5) break;
+                        }
+                        if (combined.length > existingImages.length) {
+                          await storage.updateProduct(matched.id, userId, { images: combined });
+                          console.log(`[TikTok] Enriched product "${matched.title}" with ${combined.length - existingImages.length} images from TikTok`);
+                        }
+                      }
+                    }
+                  } catch (imgErr: any) {
+                    console.warn(`[TikTok] Could not fetch images for product ${item.externalProductId}:`, imgErr.message);
+                  }
+                }
+              }
+            }
+          }
+
+          await storage.updateStore(store.id, userId, { lastSync: new Date() } as any);
+        } catch (storeErr: any) {
+          console.error(`[TikTok] Sync error for store "${store.name}":`, storeErr);
+          errors.push(`Store "${store.name}": ${storeErr.message}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        newOrders: totalNew,
+        updatedOrders: totalUpdated,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (err: any) {
+      console.error('[TikTok] Sync orders error:', err);
+      res.status(500).json({ message: err.message || 'Failed to sync TikTok orders' });
+    }
+  });
+
   return httpServer;
 }

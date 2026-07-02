@@ -2,3 +2,4 @@
 - [Email broadcasts](email-broadcasts.md) — how mass emails to verified subscribers are sent (recipients from prod, script in app runtime).
 - [Prod data writes](prod-data-writes.md) — agent executeSql on prod is READ-ONLY; write prod data via an admin-guarded endpoint run on the deployed app.
 - [Backup branch](backup-branch.md) — original full app is on `gitsafe-backup/main`; rebuild may reference assets missing from current tree; restore via `git show`.
+- [Order/admin conventions](orders-conventions.md) — ownership enforced in routes via getOrder(id,userId) pre-check (pass userId to updateOrder too); admin = role==='admin' or founder email, NOT isAdmin flag.
