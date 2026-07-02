@@ -10,6 +10,9 @@ export * from "./models/auth";
 // Export chat models for AI integrations
 export * from "./models/chat";
 
+// Export support (live agent) chat models
+export * from "./models/support";
+
 // === TABLE DEFINITIONS ===
 
 // Stores (Marketplace connections)

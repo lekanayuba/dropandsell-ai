@@ -25,7 +25,8 @@ import {
   Truck,
   Rocket,
   ShoppingBag,
-  ChevronRight
+  ChevronRight,
+  MessageSquare,
 } from "lucide-react";
 import dropandSellLogo from "@assets/Drop_1.jpg_1775119096004.jpeg";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -73,6 +74,7 @@ export function Sidebar({ variant = "client" }: { variant?: "client" | "admin" }
     { href: "/admin/subscribers", label: "Subscribers DB", icon: DatabaseZap },
     { href: "/admin/global-vero", label: "Global VeRO", icon: Shield },
     { href: "/admin/paypal-payouts", label: "PayPal Payouts", icon: Wallet },
+    { href: "/admin/support", label: "Live Support", icon: MessageSquare },
   ];
 
   const links = isAdminVariant ? adminLinks : clientLinks;

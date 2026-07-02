@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
-import { DatabaseZap, Shield, Wallet, Lightbulb, UserX, ChevronRight, LayoutDashboard } from "lucide-react";
+import { DatabaseZap, Shield, Wallet, Lightbulb, UserX, ChevronRight, LayoutDashboard, MessageSquare } from "lucide-react";
 
 const ADMIN_TOOLS = [
   {
@@ -24,6 +24,13 @@ const ADMIN_TOOLS = [
     description: "Track and settle partner payout accruals.",
     icon: Wallet,
     testid: "link-admin-paypal-payouts",
+  },
+  {
+    href: "/admin/support",
+    label: "Live Support",
+    description: "Reply to customer chat messages in real time.",
+    icon: MessageSquare,
+    testid: "link-admin-support",
   },
   {
     href: "/suggestions",

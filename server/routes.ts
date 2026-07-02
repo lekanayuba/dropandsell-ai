@@ -8704,37 +8704,181 @@ Guidelines:
     }
   });
 
-  const contactRateLimit = new Map<string, number>();
-  protectedApi.post('/contact-agent', async (req: any, res) => {
+  // === LIVE SUPPORT CHAT (user <-> admin) ===
+  const supportStartRateLimit = new Map<string, number>();
+
+  // Start a new support conversation (user side)
+  protectedApi.post('/support/start', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const lastSent = contactRateLimit.get(userId) || 0;
-      if (Date.now() - lastSent < 60 * 1000) {
-        return res.status(429).json({ message: 'Please wait a minute before sending another message.' });
+      const last = supportStartRateLimit.get(userId) || 0;
+      if (Date.now() - last < 30 * 1000) {
+        return res.status(429).json({ message: 'Please wait a moment before starting another chat.' });
       }
 
-      const { name, email, phone, message, chatHistory } = req.body;
+      const { name, email, phone, message } = req.body;
       if (!name || !email || !message) {
         return res.status(400).json({ message: 'Name, email, and message are required' });
       }
-      const escapeHtml = (str: string) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      const { sendContactAgentEmail } = await import('./email.js');
-      const sent = await sendContactAgentEmail(
-        escapeHtml(name.substring(0, 100)),
-        email.substring(0, 200),
-        escapeHtml((phone || '').substring(0, 30)),
-        escapeHtml(message.substring(0, 5000)),
-        escapeHtml((chatHistory || '').substring(0, 10000))
-      );
-      if (sent) {
-        contactRateLimit.set(userId, Date.now());
-        res.json({ success: true, message: 'Your message has been sent to our support team.' });
-      } else {
-        res.status(500).json({ message: 'Failed to send message. Please try again later.' });
-      }
+
+      const support = await import('./supportStorage');
+      const conversation = await support.createSupportConversation({
+        userId,
+        name: String(name).substring(0, 100),
+        email: String(email).substring(0, 200),
+        phone: (phone ? String(phone) : '').substring(0, 30),
+        message: String(message).substring(0, 5000),
+      });
+      supportStartRateLimit.set(userId, Date.now());
+
+      res.json({ conversationId: conversation.id });
     } catch (err: any) {
-      console.error('Contact agent error:', err?.message || err);
+      console.error('Support start error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to start chat' });
+    }
+  });
+
+  // Get the current user's latest conversation with messages (user side, polled)
+  protectedApi.get('/support/mine', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const support = await import('./supportStorage');
+      const conversation = await support.getLatestUserConversation(userId);
+      if (!conversation) {
+        return res.json({ conversation: null, messages: [] });
+      }
+      const messages = await support.getSupportMessages(conversation.id);
+      if (conversation.unreadForUser) {
+        await support.markConversationRead(conversation.id, 'user');
+      }
+      res.json({ conversation, messages });
+    } catch (err: any) {
+      console.error('Support mine error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to load chat' });
+    }
+  });
+
+  // User adds a follow-up message to their own conversation
+  protectedApi.post('/support/:id/message', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const conversationId = Number(req.params.id);
+      if (!Number.isFinite(conversationId)) return res.status(400).json({ message: 'Invalid conversation id' });
+      const { content } = req.body;
+      if (!content || !String(content).trim()) return res.status(400).json({ message: 'Message is required' });
+
+      const support = await import('./supportStorage');
+      const conversation = await support.getSupportConversationById(conversationId);
+      if (!conversation || conversation.userId !== userId) {
+        return res.status(404).json({ message: 'Conversation not found' });
+      }
+
+      const msg = await support.addSupportMessage(conversationId, 'user', String(content).substring(0, 5000));
+      res.json(msg);
+    } catch (err: any) {
+      console.error('Support message error:', err?.message || err);
       res.status(500).json({ message: 'Failed to send message' });
+    }
+  });
+
+  // Admin: list all conversations
+  protectedApi.get('/support/admin/conversations', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const adminUser = await storage.getUser(userId);
+      if (!adminUser || adminUser.isAdmin !== 'true') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const support = await import('./supportStorage');
+      const conversations = await support.listSupportConversations();
+      res.json(conversations);
+    } catch (err: any) {
+      console.error('Support admin list error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to load conversations' });
+    }
+  });
+
+  // Admin: unread badge count
+  protectedApi.get('/support/admin/unread-count', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const adminUser = await storage.getUser(userId);
+      if (!adminUser || adminUser.isAdmin !== 'true') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const support = await import('./supportStorage');
+      const count = await support.countAdminUnread();
+      res.json({ count });
+    } catch (err: any) {
+      console.error('Support unread count error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to load count' });
+    }
+  });
+
+  // Admin: get one conversation with messages (marks admin-read)
+  protectedApi.get('/support/admin/conversations/:id', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const adminUser = await storage.getUser(userId);
+      if (!adminUser || adminUser.isAdmin !== 'true') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const conversationId = Number(req.params.id);
+      if (!Number.isFinite(conversationId)) return res.status(400).json({ message: 'Invalid conversation id' });
+      const support = await import('./supportStorage');
+      const conversation = await support.getSupportConversationById(conversationId);
+      if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+      const messages = await support.getSupportMessages(conversationId);
+      if (conversation.unreadForAdmin) {
+        await support.markConversationRead(conversationId, 'admin');
+      }
+      res.json({ conversation, messages });
+    } catch (err: any) {
+      console.error('Support admin get error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to load conversation' });
+    }
+  });
+
+  // Admin: reply to a conversation
+  protectedApi.post('/support/admin/conversations/:id/reply', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const adminUser = await storage.getUser(userId);
+      if (!adminUser || adminUser.isAdmin !== 'true') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const conversationId = Number(req.params.id);
+      if (!Number.isFinite(conversationId)) return res.status(400).json({ message: 'Invalid conversation id' });
+      const { content } = req.body;
+      if (!content || !String(content).trim()) return res.status(400).json({ message: 'Message is required' });
+
+      const support = await import('./supportStorage');
+      const conversation = await support.getSupportConversationById(conversationId);
+      if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+      const msg = await support.addSupportMessage(conversationId, 'admin', String(content).substring(0, 5000));
+      res.json(msg);
+    } catch (err: any) {
+      console.error('Support admin reply error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to send reply' });
+    }
+  });
+
+  // Admin: close a conversation
+  protectedApi.post('/support/admin/conversations/:id/close', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const adminUser = await storage.getUser(userId);
+      if (!adminUser || adminUser.isAdmin !== 'true') {
+        return res.status(403).json({ message: 'Admin access required' });
+      }
+      const conversationId = Number(req.params.id);
+      if (!Number.isFinite(conversationId)) return res.status(400).json({ message: 'Invalid conversation id' });
+      const support = await import('./supportStorage');
+      await support.setConversationStatus(conversationId, 'closed');
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Support admin close error:', err?.message || err);
+      res.status(500).json({ message: 'Failed to close conversation' });
     }
   });
 

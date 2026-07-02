@@ -46,6 +46,7 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminSubscribers from "@/pages/AdminSubscribers";
 import AdminGlobalVero from "@/pages/AdminGlobalVero";
 import AdminPaypalPayouts from "@/pages/AdminPaypalPayouts";
+import AdminSupport from "@/pages/AdminSupport";
 import Addons from "@/pages/Addons";
 import Suggestions from "@/pages/Suggestions";
 import Orders from "@/pages/Orders";
@@ -283,6 +284,7 @@ function Router() {
       <Route path="/admin/subscribers" component={() => <AdminRoute component={AdminSubscribers} />} />
       <Route path="/admin/global-vero" component={() => <AdminRoute component={AdminGlobalVero} />} />
       <Route path="/admin/paypal-payouts" component={() => <AdminRoute component={AdminPaypalPayouts} />} />
+      <Route path="/admin/support" component={() => <AdminRoute component={AdminSupport} />} />
       <Route component={NotFound} />
     </Switch>
   );
