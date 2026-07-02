@@ -25,7 +25,6 @@ import {
   Rocket,
   Bell,
   FileEdit,
-  DatabaseZap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
@@ -45,7 +44,7 @@ interface NavGroup {
   links: NavLink[];
 }
 
-function buildNavGroups(isAdmin: boolean): NavGroup[] {
+function buildNavGroups(): NavGroup[] {
   const groups: NavGroup[] = [
     {
       title: "Store",
@@ -91,18 +90,6 @@ function buildNavGroups(isAdmin: boolean): NavGroup[] {
     },
   ];
 
-  if (isAdmin) {
-    groups.push({
-      title: "Admin",
-      links: [
-        { href: "/admin", label: "Admin Dashboard", icon: LayoutDashboard },
-        { href: "/admin/support", label: "Support Inbox", icon: HelpCircle },
-        { href: "/subscribers-db", label: "Subscribers DB", icon: DatabaseZap },
-        { href: "/global-vaso", label: "Global VeRO", icon: Shield },
-      ],
-    });
-  }
-
   return groups;
 }
 
@@ -110,8 +97,7 @@ function buildNavGroups(isAdmin: boolean): NavGroup[] {
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === "admin";
-  const navGroups = buildNavGroups(isAdmin);
+  const navGroups = buildNavGroups();
 
   const renderLink = (link: NavLink, isMobile: boolean = false) => {
     const Icon = link.icon;
