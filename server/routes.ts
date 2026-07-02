@@ -27,7 +27,7 @@ const upload = multer({
 
 const FREE_ACCESS_EMAILS: Record<string, { isAdmin: boolean; unlimitedStores?: boolean; freeAddons?: boolean; bonusStores?: number; skipPlanOverride?: boolean }> = {
   'cyrinaudochukwu28@gmail.com': { isAdmin: false, unlimitedStores: true },
-  'dropandsellauth@gmail.com': { isAdmin: true, freeAddons: true },
+  'dropandsellauth@gmail.com': { isAdmin: false, freeAddons: true },
   'mukaila.ayuba@outlook.com': { isAdmin: false, unlimitedStores: true, freeAddons: true },
   'rtrebecca@yahoo.com': { isAdmin: false, freeAddons: true },
   'triple.u.fam@gmail.com': { isAdmin: false, bonusStores: 1, skipPlanOverride: true },
@@ -433,7 +433,7 @@ export async function registerRoutes(
         return res.status(401).json({ message: 'Invalid username or password' });
       }
 
-      const isAdmin = user.isAdmin === 'true' || user.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user.isAdmin === 'true';
       if (!isAdmin) {
         return res.status(403).json({ message: 'This account does not have admin access.' });
       }
@@ -1033,7 +1033,7 @@ export async function registerRoutes(
 
       if (input.platform === 'jumia') {
         const user = await storage.getUser(userId);
-        const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+        const isAdmin = user?.isAdmin === 'true';
         if (!isAdmin) {
           const flag = await storage.getFeatureFlag('jumia_marketplace');
           if (!flag || !flag.isEnabled || flag.adminOnly) {
@@ -1081,7 +1081,7 @@ export async function registerRoutes(
 
       if (input.platform === 'jumia') {
         const user = await storage.getUser(userId);
-        const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+        const isAdmin = user?.isAdmin === 'true';
         if (!isAdmin) {
           const flag = await storage.getFeatureFlag('jumia_marketplace');
           if (!flag || !flag.isEnabled || flag.adminOnly) {
@@ -4063,7 +4063,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const result = await db.update(orders)
@@ -4080,7 +4080,7 @@ export async function registerRoutes(
   async function requireFulfillmentAccess(req: any, res: any, next: any) {
     const userId = req.user.claims.sub;
     const user = await storage.getUser(userId);
-    const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+    const isAdmin = user?.isAdmin === 'true';
     if (isAdmin) return next();
     const flag = await storage.getFeatureFlag('auto_fulfillment');
     if (flag && flag.isEnabled && !flag.adminOnly) return next();
@@ -4090,7 +4090,7 @@ export async function registerRoutes(
   async function requireJumiaAccess(req: any, res: any, next: any) {
     const userId = req.user.claims.sub;
     const user = await storage.getUser(userId);
-    const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+    const isAdmin = user?.isAdmin === 'true';
     if (isAdmin) return next();
     const flag = await storage.getFeatureFlag('jumia_marketplace');
     if (flag && flag.isEnabled && !flag.adminOnly) return next();
@@ -4104,7 +4104,7 @@ export async function registerRoutes(
   async function requireDropAndSellAccess(req: any, res: any, next: any) {
     const userId = req.user.claims.sub;
     const user = await storage.getUser(userId);
-    const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+    const isAdmin = user?.isAdmin === 'true';
     if (isAdmin) return next();
     if (user?.email && DROP_AND_SELL_TESTERS.has(user.email.toLowerCase())) return next();
     const flag = await storage.getFeatureFlag('drop_and_sell');
@@ -4116,7 +4116,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (isAdmin) {
         const allOrders = await storage.getAllDropAndSellOrders();
         const enriched = [];
@@ -4232,7 +4232,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const { pricePerSet } = req.body;
@@ -4364,7 +4364,7 @@ export async function registerRoutes(
       if (!Number.isFinite(orderId)) return res.status(400).json({ message: 'Invalid order id' });
 
       const requester = await storage.getUser(userId);
-      const isAdmin = requester?.isAdmin === 'true' || requester?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = requester?.isAdmin === 'true';
 
       // Admin path: allow tidying up the All Jobs table by removing
       // cancelled orders regardless of original owner / payment / freelancer.
@@ -4416,7 +4416,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4444,7 +4444,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4495,7 +4495,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4616,7 +4616,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4673,7 +4673,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4716,7 +4716,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -4771,7 +4771,7 @@ export async function registerRoutes(
       // never logs in to click Approve). Re-uses the same code path so the
       // lister still gets paid + notified exactly the same way.
       const requester = await storage.getUser(userId);
-      const isAdmin = requester?.isAdmin === 'true' || requester?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = requester?.isAdmin === 'true';
       let order;
       if (isAdmin) {
         const allOrders = await storage.getAllDropAndSellOrders();
@@ -4865,7 +4865,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const freelancers = await storage.getFreelancerProfiles();
       res.json(freelancers);
@@ -6523,7 +6523,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const profileId = Number(req.params.id);
       const profiles = await storage.getFreelancerProfiles();
@@ -6540,7 +6540,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const profileId = Number(req.params.id);
       await db.update(freelancerProfiles).set({ applicationStatus: 'rejected' }).where(eq(freelancerProfiles.id, profileId));
@@ -6554,7 +6554,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       await storage.deleteFreelancerProfile(Number(req.params.id));
@@ -6568,7 +6568,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const orderId = Number(req.params.id);
@@ -6599,7 +6599,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const freelancerId = Number(req.params.id);
@@ -7754,7 +7754,7 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const flags = await storage.getFeatureFlags();
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       const isTester = user?.email && DROP_AND_SELL_TESTERS.has(user.email.toLowerCase());
       const visibleFlags = flags.map(f => ({
         ...f,
@@ -7773,7 +7773,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const featureKey = req.params.key;
@@ -7806,7 +7806,7 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const featureKey = req.params.key;
@@ -9121,7 +9121,7 @@ Guidelines:
   protectedApi.post('/admin/global-vero-list', async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const { type, value, platform, reason, category, severity, isActive } = req.body;
       if (!value || !type) return res.status(400).json({ message: 'Type and value are required' });
@@ -9138,7 +9138,7 @@ Guidelines:
   protectedApi.put('/admin/global-vero-list/:id', async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const id = Number(req.params.id);
       const { type, value, platform, reason, category, severity, isActive } = req.body;
@@ -9161,7 +9161,7 @@ Guidelines:
   protectedApi.delete('/admin/global-vero-list/:id', async (req: any, res) => {
     try {
       const user = await storage.getUser(req.user.claims.sub);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
       const id = Number(req.params.id);
       await db.delete(globalVeroList).where(eq(globalVeroList.id, id));
@@ -9239,7 +9239,7 @@ Guidelines:
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      if (!user || (user.isAdmin !== 'true' && user.email !== 'dropandsellauth@gmail.com')) {
+      if (!user || (user.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -9899,7 +9899,7 @@ Guidelines:
 
           if (store.platform === 'jumia') {
             const user = await storage.getUser(userId);
-            const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+            const isAdmin = user?.isAdmin === 'true';
             if (!isAdmin) {
               const flag = await storage.getFeatureFlag('jumia_marketplace');
               if (!flag || !flag.isEnabled || flag.adminOnly) {
@@ -10853,7 +10853,7 @@ Guidelines:
     try {
       const userId = req.user.claims.sub;
       const adminUser = await storage.getUser(userId);
-      if (!adminUser || (adminUser.email !== 'dropandsellauth@gmail.com' && adminUser.isAdmin !== 'true')) {
+      if (!adminUser || (adminUser.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const { paypalPayoutAccruals } = await import('@shared/schema');
@@ -10912,7 +10912,7 @@ Guidelines:
     try {
       const userId = req.user.claims.sub;
       const adminUser = await storage.getUser(userId);
-      if (!adminUser || (adminUser.email !== 'dropandsellauth@gmail.com' && adminUser.isAdmin !== 'true')) {
+      if (!adminUser || (adminUser.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const schema = z.object({
@@ -10954,7 +10954,7 @@ Guidelines:
     try {
       const userId = req.user.claims.sub;
       const adminUser = await storage.getUser(userId);
-      if (!adminUser || (adminUser.email !== 'dropandsellauth@gmail.com' && adminUser.isAdmin !== 'true')) {
+      if (!adminUser || (adminUser.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const [allUsers, allAddonPurchases, allReferrals, allFreelancers] = await Promise.all([
@@ -11034,7 +11034,7 @@ Guidelines:
     try {
       const adminId = req.user.claims.sub;
       const adminUser = await storage.getUser(adminId);
-      if (!adminUser || (adminUser.email !== 'dropandsellauth@gmail.com' && adminUser.isAdmin !== 'true')) {
+      if (!adminUser || (adminUser.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const targetUserId = req.params.userId;
@@ -11055,7 +11055,7 @@ Guidelines:
     try {
       const adminId = req.user.claims.sub;
       const adminUser = await storage.getUser(adminId);
-      if (!adminUser || (adminUser.email !== 'dropandsellauth@gmail.com' && adminUser.isAdmin !== 'true')) {
+      if (!adminUser || (adminUser.isAdmin !== 'true')) {
         return res.status(403).json({ message: 'Access denied' });
       }
       const targetUserId = req.params.userId;
@@ -12587,7 +12587,7 @@ This document is confidential and intended for compliance review purposes.</p></
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const { referrerEmail, referredEmails } = req.body;
@@ -12623,7 +12623,7 @@ This document is confidential and intended for compliance review purposes.</p></
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      const isAdmin = user?.isAdmin === 'true' || user?.email === 'dropandsellauth@gmail.com';
+      const isAdmin = user?.isAdmin === 'true';
       if (!isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
       const { manualLinks } = req.body || {};

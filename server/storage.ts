@@ -539,7 +539,7 @@ export class DatabaseStorage implements IStorage {
       try {
         const referralCode = 'DS' + crypto.randomBytes(4).toString('hex').toUpperCase();
         const uniqueUrl = await generateUniqueUrlWithRetry();
-        const isAdmin = userData.email === 'dropandsellauth@gmail.com' ? 'true' : 'false';
+        const isAdmin = 'false';
         const [user] = await db.insert(users).values({
           email: userData.email,
           password: userData.password,

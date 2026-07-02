@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "./db";
 import { users } from "@shared/schema";
 
@@ -54,6 +54,17 @@ export async function seedAdminUser() {
         })
         .where(eq(users.id, existing.id));
       console.log(`[seed-admin] Ensured admin access for "${username}"`);
+    }
+
+    // Lock down the admin portal to this single account: strip admin access
+    // from every other account so only the configured admin can get in.
+    const demoted = await db
+      .update(users)
+      .set({ isAdmin: "false", updatedAt: now })
+      .where(and(ne(users.email, username), eq(users.isAdmin, "true")))
+      .returning({ id: users.id });
+    if (demoted.length > 0) {
+      console.log(`[seed-admin] Revoked admin access from ${demoted.length} other account(s)`);
     }
   } catch (err: any) {
     console.error("[seed-admin] Failed to seed admin user:", err?.message || err);
