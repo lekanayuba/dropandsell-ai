@@ -354,7 +354,8 @@ export async function registerRoutes(
   // Helper: check if the user is a paying subscriber
   async function isSubscriber(userId: string): Promise<boolean> {
     const user = await storage.getUser(userId);
-    return user?.subscriptionStatus === 'active';
+    // All authenticated subscribers are granted full access to every feature.
+    return !!user;
   }
 
   // Track which stores are currently being synced (prevents duplicate syncs)

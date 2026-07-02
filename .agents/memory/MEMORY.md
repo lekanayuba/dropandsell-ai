@@ -4,3 +4,4 @@
 - [Backup branch](backup-branch.md) — original full app is on `gitsafe-backup/main`; rebuild may reference assets missing from current tree; restore via `git show`.
 - [Order/admin conventions](orders-conventions.md) — ownership enforced in routes via getOrder(id,userId) pre-check (pass userId to updateOrder too); admin = role==='admin' or founder email, NOT isAdmin flag.
 - [Account-deletion authz](account-deletion-authz.md) — non-admin deletes of other users must derive target server-side from re-verified proof, never a client-supplied id (IDOR).
+- [Subscriber feature access](feature-access-policy.md) — all authenticated subscribers get full access; isSubscriber returns !!user, no subscription paywall.
