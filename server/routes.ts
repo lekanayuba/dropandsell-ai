@@ -12863,9 +12863,9 @@ This document is confidential and intended for compliance review purposes.</p></
 
   app.get('/api/extension/version', (req, res) => {
     res.json({
-      version: '2.3.4',
+      version: '2.3.5',
       updateRequired: false,
-      changelog: 'New: "Keep open" button. The normal toolbar popup closes whenever you click away or switch tabs — that is how Chrome works. Tap "Keep open" (top-right of the extension) to pop it into its own window that stays open while you switch tabs to copy or check details, so you never lose your place.',
+      changelog: 'Improved: product imports now grab ALL of the supplier\'s photos, not just the main one. Many shops load their extra photos only when you hover/scroll, so previously just one image came through. Now every available photo is pulled into your listing automatically for a more professional, complete gallery.',
     });
   });
 

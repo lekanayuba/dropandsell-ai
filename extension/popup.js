@@ -1581,6 +1581,26 @@ function scrapeProductData() {
     description = description.replace(/\s+/g, ' ').replace(/\n\s*\n/g, '\n').trim();
   }
 
+  // Universal gallery booster (runs for EVERY supplier). Many product pages
+  // load their gallery thumbnails lazily (on hover/scroll), so at scrape time
+  // the DOM often exposes only the main photo — yet the FULL photo set is listed
+  // in the page's JSON-LD `image` array. The per-vendor branches above only fall
+  // back to JSON-LD when ZERO images were found, which is why listings ended up
+  // with a single image. Merge any JSON-LD photos we haven't already captured
+  // here so all of them carry through to the listing. Deduped like collectImages.
+  if (jsonLd?.image) {
+    const ldImages = (Array.isArray(jsonLd.image) ? jsonLd.image : [jsonLd.image])
+      .map(it => typeof it === 'string' ? it : (it?.url || it?.contentUrl || ''))
+      .filter(u => typeof u === 'string' && u.startsWith('http'))
+      .map(upscaleImageUrl);
+    const normKey = (u) => u.split('?')[0].replace(/_\d+x\d+/, '').replace(/\/s-l\d+/g, '/s-l0');
+    const seenKeys = new Set(images.map(normKey));
+    for (const u of ldImages) {
+      const k = normKey(u);
+      if (!seenKeys.has(k)) { seenKeys.add(k); images.push(u); }
+    }
+  }
+
   images = images.filter(src => src && !src.includes('icon') && !src.includes('logo') && !src.includes('banner') && !src.includes('sprite') && !src.includes('play-button') && !src.includes('payment') && !src.includes('badge') && !src.includes('rating') && !src.includes('star') && !src.includes('social') && !src.includes('favicon') && src.length > 10).slice(0, 12);
   if (!image && images.length > 0) image = images[0];
   

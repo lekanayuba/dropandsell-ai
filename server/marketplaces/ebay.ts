@@ -2120,11 +2120,22 @@ export const ebayProvider: MarketplaceProvider = {
         // Detect it and return a clear, actionable message instead.
         const isAccountListingLimit = realErrors.some(e => {
           const t = e.toLowerCase();
-          return t.includes('listing limit') || t.includes('selling limit') ||
-            t.includes('monthly limit') || t.includes('reached the maximum') ||
-            t.includes('maximum number of items') ||
+          // Negative guard: structural/validation "limit" errors — variation
+          // counts, picture/image counts, character caps, category or
+          // item-specific limits — are NOT account selling limits. Let those
+          // fall through to the raw eBay text so we don't mislead the user.
+          if (t.includes('variation') || t.includes('picture') || t.includes('image') ||
+              t.includes('item specific') || t.includes('character') ||
+              t.includes('category') || t.includes('title') || t.includes('description')) {
+            return false;
+          }
+          // Strong, account-cap-specific signals only.
+          return t.includes('selling limit') || t.includes('listing limit') ||
             t.includes('increase your selling limit') ||
-            t.includes('request a higher limit') || t.includes('request higher limit');
+            t.includes('higher selling limit') ||
+            t.includes('request a higher limit') || t.includes('request higher limit') ||
+            (t.includes('limit') && t.includes('items you can list')) ||
+            (t.includes('limit') && t.includes('sell more'));
         });
         if (isAccountListingLimit) {
           return {

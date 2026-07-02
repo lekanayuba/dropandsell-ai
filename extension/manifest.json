@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DropandSell Automation App - Product Importer",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "description": "One-click product importer with hourly automatic stock and price sync for your DropandSell store inventory.",
   "permissions": [
     "activeTab",
