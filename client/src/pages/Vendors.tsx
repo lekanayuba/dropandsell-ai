@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, Users, HeartPulse, Loader2, Truck, XCircle, Package, ArrowLeftRight, Timer, AlertTriangle, RefreshCw, Store, SwitchCamera, History, Search, Edit3, Download, Globe, Phone, Mail, Tag, MapPin, ChevronDown, ChevronRight, FileSpreadsheet } from "lucide-react";
@@ -117,6 +118,8 @@ function VendorForm({ vendor, onSuccess }: { vendor?: any; onSuccess: () => void
     },
   });
 
+  const [logoPreview, setLogoPreview] = useState<string | null>(vendor?.logo || null);
+
   const form = useForm<VendorFormData>({
     resolver: zodResolver(insertVendorSchema),
     defaultValues: vendor ? {
@@ -134,6 +137,7 @@ function VendorForm({ vendor, onSuccess }: { vendor?: any; onSuccess: () => void
       paymentTerms: vendor.paymentTerms || "",
       minOrderAmount: vendor.minOrderAmount || "",
       notes: vendor.notes || "",
+      logo: vendor.logo || "",
       status: vendor.status || "active",
     } : {
       name: "",
@@ -150,6 +154,7 @@ function VendorForm({ vendor, onSuccess }: { vendor?: any; onSuccess: () => void
       paymentTerms: "",
       minOrderAmount: "",
       notes: "",
+      logo: "",
       status: "active",
     }
   });
@@ -182,6 +187,61 @@ function VendorForm({ vendor, onSuccess }: { vendor?: any; onSuccess: () => void
               <FormMessage />
             </FormItem>
           )} />
+        </div>
+
+        {/* Logo */}
+        <div className="space-y-2">
+          <Label>Logo</Label>
+          <div className="flex items-center gap-3">
+            {logoPreview && (
+              <img src={logoPreview} alt="Logo preview" className="h-12 w-12 rounded-lg object-cover border" />
+            )}
+            <div className="flex-1">
+              <Input
+                placeholder="Paste image URL..."
+                value={logoPreview || ""}
+                onChange={(e) => {
+                  setLogoPreview(e.target.value);
+                  form.setValue("logo", e.target.value);
+                }}
+              />
+            </div>
+            {vendor && (
+              <>
+                <span className="text-xs text-muted-foreground">or</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="relative"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    input.onchange = async () => {
+                      const file = input.files?.[0];
+                      if (!file) return;
+                      const formData = new FormData();
+                      formData.append('logo', file);
+                      const res = await fetch(`/api/vendors/${vendor.id}/logo`, {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include',
+                      });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setLogoPreview(data.logo);
+                        form.setValue("logo", data.logo);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  Upload
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -590,16 +650,24 @@ export default function Vendors() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className={cn(
-                      "h-10 w-10 rounded-full flex items-center justify-center shrink-0",
-                      hasOos ? "bg-red-100 dark:bg-red-950/30" : "bg-primary/10"
-                    )}>
-                      {hasOos ? (
-                        <AlertTriangle className="w-5 h-5 text-red-500" />
-                      ) : (
-                        <Users className="w-5 h-5 text-primary" />
-                      )}
-                    </div>
+                    {vendor.logo ? (
+                      <img
+                        src={vendor.logo}
+                        alt={`${vendor.name} logo`}
+                        className="h-10 w-10 rounded-lg object-cover border shrink-0"
+                      />
+                    ) : (
+                      <div className={cn(
+                        "h-10 w-10 rounded-full flex items-center justify-center shrink-0",
+                        hasOos ? "bg-red-100 dark:bg-red-950/30" : "bg-primary/10"
+                      )}>
+                        {hasOos ? (
+                          <AlertTriangle className="w-5 h-5 text-red-500" />
+                        ) : (
+                          <Users className="w-5 h-5 text-primary" />
+                        )}
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <CardTitle className="text-base truncate">{vendor.name}</CardTitle>
                       <CardDescription className="text-xs truncate">{vendor.website || "No website"}</CardDescription>

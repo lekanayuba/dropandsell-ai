@@ -51,6 +51,7 @@ export const vendors = pgTable("vendors", {
   paymentTerms: text("payment_terms"), // e.g. "Net 30", "PayPal"
   minOrderAmount: decimal("min_order_amount", { precision: 10, scale: 2 }),
   notes: text("notes"),
+  logo: text("logo"), // URL to vendor logo image
   // Supplier Health Score
   healthScore: integer("health_score"), // 1–5 star rating
   averageShippingDays: text("average_shipping_days"), // e.g. "5–8 days"

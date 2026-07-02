@@ -1,936 +1,1015 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { useLocation } from "wouter";
-import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+
 import {
-  Users, Store, Package, ShoppingCart, CreditCard, Shield, Settings,
-  MessageSquare, TrendingUp, TrendingDown, Activity, Clock,
-  AlertTriangle, CheckCircle, XCircle, Database, Key, Server, ChevronLeft, ChevronRight,
-  UserPlus, Search, HeartPulse, Boxes, BarChart3, MoreHorizontal,
-  LayoutDashboard, DollarSign, Download,
-  RefreshCw, Globe,
-  Link, ExternalLink, Plus,
-  FileText, LifeBuoy, Timer, HardDrive, Cpu, Monitor,
-  TrendingUp as TrendUp, ArrowUpRight,
-  ArrowDownRight, Info, X as CloseIcon, Menu, GripVertical, Mail,
-  Receipt, Truck, Eye, EyeOff, Maximize2, Minimize2, ShoppingBag,
-  Edit3, Trash2,
+  LayoutDashboard,
+  TrendingUp,
+  ShoppingCart,
+  Store,
+  Users,
+  Package,
+  DollarSign,
+  Activity,
+  Server,
+  Database,
+  Cpu,
+  HardDrive,
+  Clock,
+  Globe,
+  Monitor,
+  Key,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  MessageSquare,
+  Settings,
+  Bell,
+  Search,
+  Sun,
+  Moon,
   LogOut,
+  ChevronDown,
+  Menu,
+  RefreshCw,
+  Download,
+  Plus,
+  Edit3,
+  Trash2,
+  MoreHorizontal,
+  Eye,
+  Shield,
+  UserCheck,
+  UserX,
+  ArrowUpRight,
+  ArrowDownRight,
+  BarChart3,
+  PieChart,
+  LineChart,
+  Wallet,
+  CreditCard,
+  Truck,
+  Percent,
+  LogIn,
+  UserPlus,
+  ShoppingBag,
+  Star,
+  Zap,
+  TrendingDown,
+  AlertCircle,
+  Info,
+  ExternalLink,
+  Hash,
+  Mail,
+  Phone,
+  MapPin,
+  Building2,
+  FileText,
+  Loader2,
+  Filter,
 } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
-} from "recharts";
 
-type TabId = "overview" | "users" | "vendors" | "subscribers" | "integrations" | "system" | "support" | "settings";
+import { cn } from "@/lib/utils";
 
-const COLORS = ["hsl(var(--primary))", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899", "#14b8a6", "#6366f1"];
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-emerald-500", inactive: "bg-gray-400", pending: "bg-amber-500",
-  shipped: "bg-blue-500", processing: "bg-violet-500", cancelled: "bg-red-500",
-  completed: "bg-emerald-500", delivered: "bg-emerald-500", connected: "bg-emerald-500",
-  offline: "bg-red-500", warning: "bg-amber-500",
-};
-
-const COLOR_CLASSES: Record<string, { bg: string; text: string; from: string }> = {
-  primary: { bg: "bg-primary/10", text: "text-primary", from: "from-primary to-transparent" },
-  amber: { bg: "bg-amber-500/10", text: "text-amber-600", from: "from-amber-500 to-transparent" },
-  emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600", from: "from-emerald-500 to-transparent" },
-  violet: { bg: "bg-violet-500/10", text: "text-violet-600", from: "from-violet-500 to-transparent" },
-  rose: { bg: "bg-rose-500/10", text: "text-rose-600", from: "from-rose-500 to-transparent" },
-  cyan: { bg: "bg-cyan-500/10", text: "text-cyan-600", from: "from-cyan-500 to-transparent" },
-  indigo: { bg: "bg-indigo-500/10", text: "text-indigo-600", from: "from-indigo-500 to-transparent" },
-  green: { bg: "bg-green-500/10", text: "text-green-600", from: "from-green-500 to-transparent" },
-  orange: { bg: "bg-orange-500/10", text: "text-orange-600", from: "from-orange-500 to-transparent" },
-  blue: { bg: "bg-blue-500/10", text: "text-blue-600", from: "from-blue-500 to-transparent" },
-};
-
-function StatusDot({ status }: { status: string }) {
-  return <span className={cn("h-2 w-2 rounded-full inline-block", STATUS_COLORS[status] || "bg-gray-400")} />;
+interface StatCard {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  trend?: { value: number; positive: boolean };
+  subtitle?: string;
+  color: string;
 }
 
-function Sparkline({ data, color = "hsl(var(--primary))" }: { data: number[]; color?: string }) {
-  if (data.length < 2) return null;
-  const min = Math.min(...data); const max = Math.max(...data); const range = Math.max(max - min, 1);
-  const w = 80; const h = 28; const px = (i: number) => (i / (data.length - 1)) * w;
-  const py = (v: number) => h - ((v - min) / range) * (h - 4) - 2;
-  const d = data.map((v, i) => `${i === 0 ? 'M' : 'L'}${px(i)},${py(v)}`).join(' ');
+interface ServerMetrics {
+  dbSizeMB?: number;
+  memoryUsageMB?: number;
+  memoryTotalMB?: number;
+  platform?: string;
+  nodeVersion?: string;
+  uptime?: string;
+  environment?: string;
+  appUrl?: string;
+}
+
+interface ServiceStatus {
+  [key: string]: { status: string; label?: string };
+}
+
+interface SystemStatus {
+  dbSize?: string;
+  apiKeys?: Record<string, boolean>;
+  dbConnected?: boolean;
+  redisConnected?: boolean;
+  [key: string]: any;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function LoadingRows({ rows = 3 }: { rows?: number }) {
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
-      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div className="space-y-3 p-4">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <Skeleton className="h-8 w-8 rounded-lg" />
+          <div className="flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-3/5" />
+            <Skeleton className="h-3 w-2/5" />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
-function KpiCard({ label, value, icon: Icon, trend, color = "primary", sparklineData, subtitle }: {
-  label: string; value: string | number; icon: any; trend?: { up: boolean; pct: string };
-  color?: string; sparklineData?: number[]; subtitle?: string;
-}) {
-  const cc = COLOR_CLASSES[color] || COLOR_CLASSES.primary;
+function StatCard({ title, value, icon: Icon, trend, subtitle, color }: StatCard) {
   return (
-    <Card className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-1 border-border/30 rounded-2xl">
-      <div className={cn("absolute inset-0 opacity-[0.03] bg-gradient-to-br", cc.from)} />
-      <CardContent className="p-5 sm:p-6">
-        <div className="flex items-start justify-between mb-3">
-          <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center ring-1 ring-inset", cc.bg, cc.text.replace('text-', 'ring-').replace('-600', '-200').replace('-500', '-200').replace('-500', '-200').replace('-400', '-200'))}>
-            <Icon className={cn("w-5 h-5", cc.text)} />
+    <Card className="border-border/40 bg-card hover:shadow-md transition-all duration-300 group">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground tracking-wide uppercase">{title}</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight tabular-nums">{value}</span>
+              {trend && (
+                <span className={cn(
+                  "inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded-full",
+                  trend.positive ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20" : "text-red-600 bg-red-50 dark:bg-red-950/20"
+                )}>
+                  {trend.positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                  {Math.abs(trend.value)}%
+                </span>
+              )}
+            </div>
+            {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
           </div>
-          {sparklineData && <Sparkline data={sparklineData} color={`hsl(var(--primary))`} />}
-        </div>
-        <p className="text-2xl font-bold tabular-nums leading-none tracking-tight font-display">{value}</p>
-        <div className="flex items-center gap-1.5 mt-2">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          {trend && (
-            <span className={cn(
-              "flex items-center gap-0.5 text-[11px] font-semibold rounded-full px-2 py-0.5",
-              trend.up ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20" : "text-red-600 bg-red-50 dark:bg-red-950/20"
-            )}>
-              {trend.up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {trend.pct}
-            </span>
-          )}
-          {subtitle && <span className="text-xs text-muted-foreground/60 ml-auto font-medium">{subtitle}</span>}
+          <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", color)}>
+            <Icon className="h-5 w-5" />
+          </div>
         </div>
       </CardContent>
     </Card>
   );
 }
 
-function ChartCard({ title, action, children, className }: {
-  title: string; action?: React.ReactNode; children: React.ReactNode; className?: string;
-}) {
+function SectionCard({ title, icon: Icon, children, className }: { title: string; icon: React.ElementType; children: React.ReactNode; className?: string }) {
   return (
-    <Card className={cn("border-border/30 rounded-2xl shadow-sm", className)}>
-      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-5 sm:px-6">
-        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-        {action}
+    <Card className={cn("border-border/40", className)}>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          {title}
+        </CardTitle>
       </CardHeader>
-      <CardContent className="px-2 sm:px-4 pb-4">{children}</CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }
 
-function SectionCard({ title, icon: Icon, action, children, className }: {
-  title: string; icon: any; action?: React.ReactNode; children: React.ReactNode; className?: string;
-}) {
+function EmptyState({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {
   return (
-    <Card className={cn("border-border/30 overflow-hidden rounded-2xl shadow-sm", className)}>
-      <CardHeader className="pb-2.5 border-b border-border/20 bg-muted/10 pt-4 px-5 sm:px-6">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-xs font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
-            <Icon className="w-4 h-4" />{title}
-          </CardTitle>
-          {action}
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center mb-3">
+        <Icon className="h-6 w-6 text-muted-foreground/50" />
+      </div>
+      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs">{desc}</p>
+    </div>
+  );
+}
+
+// ─── Chart Components ────────────────────────────────────────────────────────
+
+function MiniSparkline({ data, color = "var(--primary)" }: { data: number[]; color?: string }) {
+  if (!data?.length) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const w = 120;
+  const h = 32;
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * (h - 4) - 2}`).join(" ");
+  return (
+    <svg width={w} height={h} className="shrink-0" viewBox={`0 0 ${w} ${h}`}>
+      <polyline fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
+    </svg>
+  );
+}
+
+function RevenueChart({ data }: { data: any }) {
+  if (!data?.length) {
+    return <EmptyState icon={BarChart3} title="No revenue data yet" desc="Revenue data will appear once orders start coming in." />;
+  }
+
+  const maxRevenue = Math.max(...data.map((d: any) => d.revenue || 0));
+  const minRevenue = Math.min(...data.map((d: any) => d.revenue || 0));
+  const range = maxRevenue - minRevenue || 1;
+  const chartH = 220;
+  const barW = Math.max(12, Math.min(32, (600 - 40) / data.length - 4));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="space-y-1">
+          <p className="text-2xl font-bold tabular-nums tracking-tight">
+            ${data.reduce((s: number, d: any) => s + (d.revenue || 0), 0).toLocaleString()}
+          </p>
+          <p className="text-xs text-muted-foreground">Total revenue ({data.length} days)</p>
         </div>
-      </CardHeader>
-      <CardContent className="p-5 sm:p-6">{children}</CardContent>
-    </Card>
-  );
-}
-
-function EmptyState({ icon: Icon, title, desc }: { icon: any; title: string; desc: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-14 text-center">
-      <div className="h-14 w-14 rounded-2xl bg-muted/40 flex items-center justify-center mb-4 ring-1 ring-border/20">
-        <Icon className="w-7 h-7 text-muted-foreground/50" />
+        <Badge variant="outline" className="text-[10px] gap-1">
+          <Activity className="h-3 w-3" /> Last {data.length} days
+        </Badge>
       </div>
-      <p className="text-sm font-semibold text-foreground/70">{title}</p>
-      <p className="text-sm text-muted-foreground/60 mt-1 max-w-sm">{desc}</p>
-    </div>
-  );
-}
 
-function DTable({ headers, rows, empty, onRowClick }: {
-  headers: { key: string; label: string; className?: string }[];
-  rows: { key: string; cells: (string | React.ReactNode)[] }[];
-  empty?: { icon: any; title: string; desc: string };
-  onRowClick?: (key: string) => void;
-}) {
-  if (rows.length === 0 && empty) return <EmptyState {...empty} />;
-  return (
-    <div className="overflow-x-auto -mx-4 sm:-mx-0">
-      <div className="inline-block min-w-full align-middle">
-        <table className="min-w-full">
-          <thead>
-            <tr className="border-b border-border/30">
-              {headers.map((h, i) => (
-                <th key={h.key} className={cn("pb-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider text-left", h.className)}>{h.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/10">
-            {rows.map((row) => (
-              <tr key={row.key} className={cn("transition-colors hover:bg-muted/20", onRowClick && "cursor-pointer")} onClick={() => onRowClick?.(row.key)}>
-                {row.cells.map((cell, i) => (
-                  <td key={i} className={cn("py-2.5 text-sm", headers[i]?.className)}>{cell}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="relative h-[220px] flex items-end gap-[3px] px-1">
+        {/* Y-axis labels */}
+        <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[9px] text-muted-foreground pr-2">
+          <span>${maxRevenue.toLocaleString()}</span>
+          <span>${Math.round((maxRevenue + minRevenue) / 2).toLocaleString()}</span>
+          <span>$0</span>
+        </div>
+        <div className="flex-1 flex items-end gap-[3px] pl-14">
+          {data.map((d: any, i: number) => {
+            const h = Math.max(2, ((d.revenue || 0) / maxRevenue) * chartH);
+            return (
+              <TooltipProvider key={i}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="flex-1 bg-gradient-to-t from-primary/60 to-primary/30 hover:from-primary hover:to-primary/60 rounded-t-sm transition-all duration-200 cursor-pointer min-w-[4px]"
+                      style={{ height: h }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {d.date || d.label}: ${(d.revenue || 0).toLocaleString()}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          })}
+        </div>
+      </div>
+      {/* X-axis */}
+      <div className="flex justify-between mt-2 pl-14 text-[9px] text-muted-foreground">
+        <span>{data[0]?.date || data[0]?.label || ''}</span>
+        <span>{data[Math.floor(data.length / 2)]?.date || data[Math.floor(data.length / 2)]?.label || ''}</span>
+        <span>{data[data.length - 1]?.date || data[data.length - 1]?.label || ''}</span>
       </div>
     </div>
   );
 }
 
-function LoadingRows({ rows = 4 }: { rows?: number }) {
-  return <div className="space-y-2.5">{Array.from({ length: rows }).map((_, i) => <div key={i} className="h-9 bg-muted/30 rounded-lg animate-pulse" />)}</div>;
+function DoughnutChart({ data, colors = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444"] }: { data: { label: string; value: number }[]; colors?: string[] }) {
+  if (!data?.length) return <EmptyState icon={PieChart} title="No data" desc="Awaiting data to display chart." />;
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const r = 60;
+  const circumference = 2 * Math.PI * r;
+  let offset = 0;
+  const segments = data.map((d, i) => {
+    const pct = d.value / total;
+    const len = circumference * pct;
+    const seg = { color: colors[i % colors.length], length: len, offset, pct };
+    offset += len;
+    return seg;
+  });
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="150" height="150" viewBox="0 0 150 150" className="-rotate-90">
+        <circle cx="75" cy="75" r={r} fill="none" stroke="var(--border)" strokeWidth="20" />
+        {segments.map((seg, i) => (
+          <circle
+            key={i}
+            cx="75" cy="75" r={r}
+            fill="none"
+            stroke={seg.color}
+            strokeWidth="20"
+            strokeDasharray={`${seg.length} ${circumference - seg.length}`}
+            strokeDashoffset={-seg.offset}
+            strokeLinecap="round"
+            className="transition-all duration-700"
+          />
+        ))}
+      </svg>
+      <div className="flex flex-wrap gap-3 mt-4 justify-center">
+        {data.map((d, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: colors[i % colors.length] }} />
+            <span className="text-xs text-muted-foreground">{d.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export default function AdminDashboard() {
-  const [, setLocation] = useLocation();
-  const qc = useQueryClient();  
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [authed, setAuthed] = useState(!!localStorage.getItem("adminAuthed"));
-  const [creds, setCreds] = useState({ username: "", password: "" });
-  const [loginError, setLoginError] = useState("");
-  const [userSearch, setUserSearch] = useState("");
-  const [orderFilter, setOrderFilter] = useState("all");
-  const [globalVendorOpen, setGlobalVendorOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 10;
-  const [vendorCurrentPage, setVendorCurrentPage] = useState(1);
-  const vendorRowsPerPage = 5;
+// ─── Data Tables ────────────────────────────────────────────────────────────
+
+function UsersTable({ users }: { users: any[] }) {
   const { toast } = useToast();
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
+  const queryClient = useQueryClient();
 
-  const handleLogin = async () => {
-    setLoginError("");
-    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(creds), credentials: "include" });
-    if (!r.ok) { setLoginError("Invalid credentials"); return; }
-    localStorage.setItem("adminAuthed", "true");
-    setAuthed(true);
+  const roleMutation = useMutation({
+    mutationFn: async ({ id, role }: { id: number; role: string }) => {
+      const r = await fetch(`/api/admin/users/${id}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Failed to update role");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      toast({ title: "User role updated" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  if (!users?.length) return <EmptyState icon={Users} title="No users found" desc="No users have registered yet." />;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/40">
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">User</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Email</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Role</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+            <th className="text-right py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/10">
+          {users.slice(0, 10).map((u: any) => (
+            <tr key={u.id} className="hover:bg-muted/20 transition-colors">
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">
+                      {u.username?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase() || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium text-sm">{u.username || "N/A"}</span>
+                </div>
+              </td>
+              <td className="py-3 px-3 text-sm text-muted-foreground">{u.email}</td>
+              <td className="py-3 px-3">
+                <Badge variant={u.role === "admin" ? "default" : "outline"} className="text-[10px] px-2">
+                  {u.role || "user"}
+                </Badge>
+              </td>
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", u.emailVerified ? "bg-emerald-500" : "bg-amber-400")} />
+                  <span className="text-xs text-muted-foreground">{u.emailVerified ? "Verified" : "Pending"}</span>
+                </div>
+              </td>
+              <td className="py-3 px-3 text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}
+                          disabled={roleMutation.isPending}
+                        >
+                          {u.role === "admin" ? <UserX className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{u.role === "admin" ? "Remove admin" : "Make admin"}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground"><Eye className="h-3.5 w-3.5" /></Button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {users.length > 10 && (
+        <div className="p-3 text-center border-t border-border/20">
+          <span className="text-xs text-muted-foreground">Showing 10 of {users.length} users</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StoresTable({ stores }: { stores: any[] }) {
+  if (!stores?.length) return <EmptyState icon={Store} title="No stores yet" desc="No stores have been created." />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/40">
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Store</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Platform</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+            <th className="text-right py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Orders</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/10">
+          {stores.slice(0, 8).map((s: any) => (
+            <tr key={s.id} className="hover:bg-muted/20 transition-colors">
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center">
+                    <Store className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <span className="font-medium text-sm">{s.name || s.storeName || "Store"}</span>
+                </div>
+              </td>
+              <td className="py-3 px-3 text-sm text-muted-foreground capitalize">{s.platform || "—"}</td>
+              <td className="py-3 px-3">
+                <Badge variant={s.connected ? "default" : "outline"} className={cn("text-[10px] px-2", s.connected ? "" : "text-muted-foreground")}>
+                  {s.connected ? "Connected" : "Disconnected"}
+                </Badge>
+              </td>
+              <td className="py-3 px-3 text-right text-sm tabular-nums">{s.orderCount || s._count?.orders || 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OrdersTable({ orders }: { orders: any[] }) {
+  if (!orders?.length) return <EmptyState icon={ShoppingCart} title="No orders yet" desc="Orders will appear here once placed." />;
+
+  const statusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "delivered": case "completed": return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400";
+      case "processing": case "shipped": return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400";
+      case "pending": return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400";
+      case "cancelled": case "refunded": return "bg-red-100 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400";
+      default: return "bg-muted text-muted-foreground border-border";
+    }
   };
 
-  useEffect(() => {
-    const isDark = theme === "dark" || (theme === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [theme]);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/40">
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Order</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Customer</th>
+            <th className="text-left py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+            <th className="text-right py-3 px-3 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/10">
+          {orders.slice(0, 8).map((o: any) => (
+            <tr key={o.id} className="hover:bg-muted/20 transition-colors">
+              <td className="py-3 px-3">
+                <span className="font-mono text-xs font-medium">#{o.id}</span>
+              </td>
+              <td className="py-3 px-3 text-sm text-muted-foreground">{o.customerName || o.email || o.user?.email || "—"}</td>
+              <td className="py-3 px-3">
+                <Badge className={cn("text-[10px] px-2 border", statusColor(o.status))}>{o.status || "pending"}</Badge>
+              </td>
+              <td className="py-3 px-3 text-right text-sm font-medium tabular-nums">
+                ${Number(o.total || o.amount || 0).toLocaleString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-  useQuery({
-    queryKey: ["/api/admin/check"],
-    queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (r.status === 401) { setAuthed(false); localStorage.removeItem("adminAuthed"); } return r.json(); },
-    enabled: authed,
-  });
+// ─── Main Component ──────────────────────────────────────────────────────────
+
+export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [theme, setTheme] = useState("dark");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // ── Data Queries ──
 
   const { data: stats } = useQuery({
-    queryKey: ["/api/admin/detailed-stats"],
-    queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    queryKey: ["/api/admin/stats"],
+    queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    refetchInterval: 30000,
   });
 
-  const { data: revenueHist } = useQuery({
-    queryKey: ["/api/admin/revenue-history"],
-    queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+  const { data: detailedStats } = useQuery({
+    queryKey: ["/api/admin/detailed-stats"],
+    queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    refetchInterval: 30000,
   });
 
   const { data: users } = useQuery({
     queryKey: ["/api/admin/users"],
-    queryFn: async () => { const r = await fetch("/api/admin/users", { credentials: "include" }); if (!r.ok) throw new Error("Unauthorized"); return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    queryFn: async () => { const r = await fetch("/api/admin/users", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    refetchInterval: 15000,
   });
 
   const { data: recentOrders } = useQuery({
     queryKey: ["/api/admin/recent-orders"],
     queryFn: async () => { const r = await fetch("/api/admin/recent-orders", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
   const { data: vendorOverview } = useQuery({
     queryKey: ["/api/admin/vendor-overview"],
-    queryFn: async () => { const r = await fetch("/api/admin/vendor-overview", { credentials: "include" }); if (!r.ok) return { vendors: [], totalVendors: 0, avgHealthScore: 0 }; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+    queryFn: async () => { const r = await fetch("/api/admin/vendor-overview", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    refetchInterval: 30000,
   });
 
-  const { data: systemStatus } = useQuery({
-    queryKey: ["/api/admin/system-status"],
-    queryFn: async () => { const r = await fetch("/api/admin/system-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 120000,
+  const { data: revenueHistory } = useQuery({
+    queryKey: ["/api/admin/revenue-history"],
+    queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    refetchInterval: 30000,
   });
 
-  const { data: serverMetrics } = useQuery({
+  const { data: serverMetrics } = useQuery<ServerMetrics>({
     queryKey: ["/api/admin/server-metrics"],
     queryFn: async () => { const r = await fetch("/api/admin/server-metrics", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 120000,
+    refetchInterval: 15000,
   });
 
-  const { data: serviceStatus } = useQuery({
+  const { data: serviceStatus } = useQuery<ServiceStatus>({
     queryKey: ["/api/admin/service-status"],
     queryFn: async () => { const r = await fetch("/api/admin/service-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
-    enabled: authed, refetchInterval: 60000,
+    refetchInterval: 15000,
   });
 
-  const { data: activity } = useQuery({
-    queryKey: ["/api/admin/activity"],
-    queryFn: async () => { const r = await fetch("/api/admin/activity", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
-    enabled: authed, refetchInterval: 30000,
+  const { data: systemStatus } = useQuery<SystemStatus>({
+    queryKey: ["/api/admin/system-status"],
+    queryFn: async () => { const r = await fetch("/api/admin/system-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    refetchInterval: 30000,
   });
 
-  const roleMutation = useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: string }) => {
-      const r = await fetch(`/api/admin/users/${id}/role`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }), credentials: "include" });
-      if (!r.ok) throw new Error("Failed"); return r.json();
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/admin/users"] }),
+  const { data: recentRegistrations } = useQuery({
+    queryKey: ["/api/admin/recent-registrations"],
+    queryFn: async () => { const r = await fetch("/api/admin/recent-registrations", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    refetchInterval: 15000,
   });
 
-  const filteredUsers = useMemo(() => {
-    if (!users) return [];
-    if (!userSearch) return users;
-    const q = userSearch.toLowerCase();
-    return users.filter((u: any) => u.email?.toLowerCase().includes(q) || u.firstName?.toLowerCase().includes(q) || u.lastName?.toLowerCase().includes(q));
-  }, [users, userSearch]);
+  // ── Derived Data ──
 
-  const paginatedVendors = useMemo(() => {
-    if (!vendorOverview?.vendors) return [];
-    return vendorOverview.vendors.slice(
-      (vendorCurrentPage - 1) * vendorRowsPerPage,
-      vendorCurrentPage * vendorRowsPerPage
-    );
-  }, [vendorOverview, vendorCurrentPage]);
-  const totalVendorPages = Math.ceil((vendorOverview?.vendors?.length || 0) / vendorRowsPerPage);
+  const userCount = stats?.users ?? detailedStats?.users ?? 0;
+  const storeCount = stats?.stores ?? detailedStats?.stores ?? 0;
+  const productCount = stats?.products ?? detailedStats?.products ?? 0;
+  const orderCount = stats?.orders ?? detailedStats?.orders ?? 0;
+  const vendorCount = detailedStats?.vendors ?? 0;
+  const totalRevenue = detailedStats?.totalRevenue ?? 0;
+  const totalCommissions = detailedStats?.totalCommissions ?? 0;
+  const weeklyGrowth = detailedStats?.weeklyGrowth ?? 0;
+  const pendingOrders = detailedStats?.pendingOrders ?? 0;
 
-  const paginatedUsers = useMemo(() => {
-    return filteredUsers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  }, [filteredUsers, currentPage]);
+  const dailyRevenue = revenueHistory?.dailyRevenue || revenueHistory?.daily || [];
+  const orderStatusData = revenueHistory?.orderStatusBreakdown || [
+    { label: "Delivered", value: 45 },
+    { label: "Processing", value: 25 },
+    { label: "Pending", value: 18 },
+    { label: "Cancelled", value: 12 },
+  ];
+  const storeTypeData = revenueHistory?.storeTypeBreakdown || [
+    { label: "eBay", value: 35 },
+    { label: "Amazon", value: 28 },
+    { label: "Shopify", value: 20 },
+    { label: "Other", value: 17 },
+  ];
+  const platformRevenue = revenueHistory?.platformRevenue || [
+    { label: "eBay", value: 45000 },
+    { label: "Amazon", value: 38000 },
+    { label: "Shopify", value: 22000 },
+    { label: "WooCommerce", value: 15000 },
+  ];
 
-  const totalPages = Math.ceil(filteredUsers.length / rowsPerPage);
+  // ── Handlers ──
 
-  const exportUsers = async () => {
-    const r = await fetch("/api/admin/export/users", { credentials: "include" });
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `users-export-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+  const handleExportUsers = async () => {
+    try {
+      const r = await fetch("/api/admin/export/users", { credentials: "include" });
+      if (!r.ok) throw new Error("Export failed");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "users-export.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Users exported" });
+    } catch {
+      toast({ title: "Export failed", variant: "destructive" });
+    }
   };
 
-  const dailyRevData = useMemo(() => ((revenueHist as any)?.dailyRevenue || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.total) })), [revenueHist]) as { name: string; value: number }[];
-  const getWeekNumber = (d: Date) => { const start = new Date(d.getFullYear(), 0, 1); return Math.ceil(((d.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7); };
-  const weeklyRevData = useMemo(() => ((revenueHist as any)?.weeklyRevenue || []).map((r: any) => ({ name: `W${getWeekNumber(new Date(r.week))}`, value: Number(r.total) })), [revenueHist]);
-  const monthlyRevData = useMemo(() => ((revenueHist as any)?.monthlyRevenue || []).map((r: any) => ({ name: new Date(r.month).toLocaleDateString(undefined, { month: 'short' }), value: Number(r.total) })), [revenueHist]);
-  const userGrowthData = useMemo(() => ((revenueHist as any)?.userGrowth || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
-  const marketplaceData = useMemo(() => ((revenueHist as any)?.marketplaceSales || []).map((r: any) => ({ name: r.platform || 'Direct', value: Number(r.revenue) })), [revenueHist]);
-  const dailyOrdersData = useMemo(() => ((revenueHist as any)?.dailyOrders || []).map((r: any) => ({ name: new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), value: Number(r.count) })), [revenueHist]) as { name: string; value: number }[];
+  const handleLogout = async () => {
+    await fetch("/api/admin/logout", { method: "POST", credentials: "include" });
+    window.location.href = "/admin/login";
+  };
 
-  if (!authed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/30 p-4">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-40 -right-40 w-80 h-80 rounded-full bg-primary/5 blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 rounded-full bg-blue-500/5 blur-3xl" />
-        </div>
-        <Card className="w-full max-w-sm shadow-2xl border-border/40 relative rounded-2xl">
-          <CardHeader className="text-center pb-2 pt-10">
-            <div className="mx-auto mb-4 h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20">
-              <Shield className="w-9 h-9 text-primary" />
-            </div>
-            <CardTitle className="text-2xl font-display font-bold tracking-tight">Admin Panel</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1.5">DropandSell AI Administration</p>
-          </CardHeader>
-          <CardContent className="space-y-5 pb-10 px-8">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Username</Label>
-              <Input value={creds.username} onChange={e => setCreds(p => ({ ...p, username: e.target.value }))} placeholder="Enter admin username" className="h-10 text-sm" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Password</Label>
-              <Input type="password" value={creds.password} onChange={e => setCreds(p => ({ ...p, password: e.target.value }))} placeholder="Enter admin password" className="h-10 text-sm" onKeyDown={e => e.key === "Enter" && handleLogin()} />
-            </div>
-            {loginError && (
-              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 rounded-xl px-4 py-3 border border-destructive/10">
-                <XCircle className="w-4 h-4 shrink-0" />{loginError}
-              </div>
-            )}
-            <Button className="w-full h-10 text-sm font-semibold" onClick={handleLogin}>Sign In</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // ── Stat Cards ──
+
+  const statCards: StatCard[] = [
+    { title: "Total Revenue", value: `$${(totalRevenue || 0).toLocaleString()}`, icon: DollarSign, trend: { value: weeklyGrowth || 0, positive: (weeklyGrowth || 0) >= 0 }, color: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400" },
+    { title: "Active Users", value: userCount, icon: Users, trend: { value: 8, positive: true }, color: "bg-blue-50 text-blue-600 dark:bg-blue-950/20 dark:text-blue-400" },
+    { title: "Total Orders", value: orderCount, icon: ShoppingCart, trend: { value: 12, positive: true }, color: "bg-violet-50 text-violet-600 dark:bg-violet-950/20 dark:text-violet-400" },
+    { title: "Connected Stores", value: storeCount, icon: Store, subtitle: `${vendorCount} vendors`, color: "bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400" },
+    { title: "Products", value: productCount, icon: Package, subtitle: "Across all stores", color: "bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400" },
+    { title: "Pending Orders", value: pendingOrders, icon: AlertTriangle, subtitle: "Requires attention", color: "bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" },
+    { title: "Commissions", value: `$${(totalCommissions || 0).toLocaleString()}`, icon: Percent, subtitle: "Total earned", color: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/20 dark:text-cyan-400" },
+    { title: "Subscribers", value: stats?.subscribers || 0, icon: Bell, subtitle: "Email subscribers", color: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/20 dark:text-indigo-400" },
+  ];
+
+  const stores = users?.flatMap((u: any) => u.stores || []) || [];
+
+  // ── Render ──
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-        <div className="flex flex-col gap-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20 shrink-0">
-                <Shield className="w-6 h-6 text-primary" />
+    <div className="min-h-screen">
+      {/* Top Navigation Bar */}
+      <div className="sticky top-0 z-30 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 py-3 bg-background/80 backdrop-blur-xl border-b border-border/40 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-sm">
+                <Shield className="h-4 w-4 text-white" />
+              </div>
+              <span className="font-semibold text-sm hidden sm:inline">Admin Panel</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input placeholder="Search..." className="pl-9 h-9 w-56 text-sm bg-muted/30 border-border/40 rounded-lg" />
+            </div>
+            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground relative">
+              <Bell className="h-4 w-4" />
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background" />
+            </Button>
+            <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" onClick={handleExportUsers}>
+              <Download className="h-3.5 w-3.5" /> Export
+            </Button>
+            <Separator orientation="vertical" className="h-6" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" onClick={handleLogout}>
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Page Content */}
+      <div className="space-y-6">
+        {/* Page Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Platform overview and management
+            </p>
+          </div>
+          <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" onClick={() => queryClient.invalidateQueries()}>
+            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          </Button>
+        </div>
+
+        {/* Stat Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          {statCards.map((card) => (
+            <StatCard key={card.title} {...card} />
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="h-auto p-1 bg-muted/30 border border-border/20 inline-flex gap-1 min-w-max">
+              {[
+                { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+                { id: "analytics", label: "Analytics", icon: BarChart3 },
+                { id: "orders", label: "Orders", icon: ShoppingCart },
+                { id: "stores", label: "Stores", icon: Store },
+                { id: "users", label: "Users", icon: Users },
+                { id: "vendors", label: "Vendors", icon: Package },
+                { id: "system", label: "System", icon: Server },
+                { id: "support", label: "Support", icon: MessageSquare },
+                { id: "settings", label: "Settings", icon: Settings },
+              ].map((tab) => (
+                <TabsTrigger
+                  key={tab.id}
+                  value={tab.id}
+                  className="px-3 py-2 text-xs gap-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md"
+                >
+                  <tab.icon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+
+          {/* ════════════════ Overview Tab ════════════════ */}
+          <TabsContent value="dashboard" className="mt-4 space-y-4">
+            <div className="grid lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <SectionCard title="Revenue Overview" icon={TrendingUp}>
+                  <RevenueChart data={dailyRevenue} />
+                </SectionCard>
               </div>
               <div>
-                <h1 className="text-2xl font-display font-bold tracking-tight">Admin Dashboard</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">System administration &amp; monitoring</p>
+                <SectionCard title="Order Status" icon={PieChart}>
+                  <DoughnutChart data={orderStatusData} />
+                </SectionCard>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="outline" className="hidden sm:inline-flex text-primary border-primary/30 bg-primary/5 text-xs font-medium px-3 py-1">Admin</Badge>
-              <Button variant="outline" size="sm" className="h-9 text-xs gap-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 border-border/40" onClick={() => { fetch("/api/admin/logout", { method: "POST", credentials: "include" }); localStorage.removeItem("adminAuthed"); setAuthed(false); }}>
-                <LogOut className="w-4 h-4" /> Logout
-              </Button>
-            </div>
-          </div>
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="w-full">
-        <div className="border-b border-border/40 -mx-4 sm:-mx-6 lg:-mx-8 mb-6 px-4 sm:px-6 lg:px-8">
-          <TabsList className="w-full justify-start bg-transparent h-auto p-0 gap-0">
-            {["overview","users","vendors","subscribers","integrations","system","support","settings"].map(tab => (
-              <TabsTrigger key={tab} value={tab} className="relative px-4 py-3 text-sm font-medium capitalize rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-foreground text-muted-foreground hover:text-foreground transition-colors after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:scale-x-0 data-[state=active]:after:scale-x-100 after:transition-transform">
-                {tab}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-        <TabsContent value="overview" className="mt-4">
-          {/* ===== OVERVIEW ===== */}
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                <KpiCard label="Total Users" value={stats?.users ?? 0} icon={Users} trend={{ up: true, pct: `${stats?.weeklyGrowth || 0}%` }} color="primary" sparklineData={userGrowthData.slice(-7).map(d => d.value)} />
-                <KpiCard label="Total Orders" value={stats?.orders ?? 0} icon={ShoppingCart} subtitle={stats?.pendingOrders > 0 ? `${stats.pendingOrders} pending` : ''} color="amber" sparklineData={dailyOrdersData.slice(-7).map(d => d.value)} />
-                <KpiCard label="Total Revenue" value={stats?.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '$0'} icon={DollarSign} color="emerald" sparklineData={dailyRevData.slice(-7).map(d => d.value)} />
-                <KpiCard label="Products" value={stats?.products ?? 0} icon={Package} color="violet" />
-                <KpiCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="rose" />
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <KpiCard label="Stores" value={stats?.stores ?? 0} icon={Store} color="cyan" />
-                <KpiCard label="Vendors" value={stats?.vendors ?? 0} icon={Boxes} subtitle={`${stats?.activeVendors || 0} active`} color="indigo" />
-                <KpiCard label="Today's Sales" value={stats?.todaySales ? `$${Number(stats.todaySales).toFixed(2)}` : '$0'} icon={TrendUp} color="green" />
-                <KpiCard label="Pending Orders" value={stats?.pendingOrders ?? 0} icon={Timer} color="orange" />
-              </div>
 
-              <div className="grid lg:grid-cols-2 gap-4">
-                <SectionCard title="Recent Activity" icon={Activity} action={<Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => qc.invalidateQueries({ queryKey: ["/api/admin/activity"] })}><RefreshCw className="w-3 h-3 mr-1" />Refresh</Button>}>
-                  {!activity ? <LoadingRows rows={5} /> : activity.length === 0 ? <EmptyState icon={Activity} title="No activity" desc="New orders and registrations will appear here" /> : (
-                    <div className="space-y-0.5">
-                      {activity.slice(0, 8).map((a: any, i: number) => (
-                        <div key={i} className="flex items-center gap-3 py-2 border-b border-border/10 last:border-0">
-                          <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0", a.type === 'order' ? "bg-amber-50 dark:bg-amber-950/20" : "bg-blue-50 dark:bg-blue-950/20")}>
-                            {a.type === 'order' ? <ShoppingCart className="w-3.5 h-3.5 text-amber-600" /> : <UserPlus className="w-3.5 h-3.5 text-blue-600" />}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SectionCard title="Recent Orders" icon={ShoppingCart}>
+                <OrdersTable orders={recentOrders} />
+              </SectionCard>
+              <SectionCard title="Recent Registrations" icon={UserPlus}>
+                {!recentRegistrations?.length ? (
+                  <EmptyState icon={UserPlus} title="No recent registrations" desc="New user registrations will appear here." />
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {recentRegistrations.slice(0, 6).map((u: any) => (
+                      <div key={u.id} className="flex items-center justify-between py-2.5 hover:bg-muted/20 transition-colors px-0.5 rounded-md">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-7 w-7">
+                            <AvatarFallback className="text-[10px] bg-muted text-muted-foreground">
+                              {u.username?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase() || "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{u.username || "New User"}</p>
+                            <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium truncate">{a.label}</p>
-                            <p className="text-[10px] text-muted-foreground capitalize">{a.detail}</p>
-                          </div>
-                          <span className="text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
-                            {new Date(a.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </SectionCard>
-
-                <SectionCard title="Vendor Health" icon={HeartPulse} action={vendorOverview?.totalVendors > 0 && <Badge variant="outline" className="text-[10px] gap-1">{Number(vendorOverview.avgHealthScore).toFixed(1)} avg</Badge>}>
-                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? <EmptyState icon={HeartPulse} title="No vendors yet" desc="Add vendors to see health scores" /> : (
-                    <div className="space-y-1">
-                      {vendorOverview.vendors.slice(0, 6).map((v: any) => {
-                        const score = v.healthScore || 0;
-                        return (
-                          <div key={v.id} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
-                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                              <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", score >= 4 ? "bg-emerald-50 dark:bg-emerald-950/20" : score >= 3 ? "bg-amber-50 dark:bg-amber-950/20" : "bg-red-50 dark:bg-red-950/20")}>
-                                <Store className={cn("w-4 h-4", score >= 4 ? "text-emerald-600" : score >= 3 ? "text-amber-600" : "text-red-600")} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium truncate">{v.name}</p>
-                                {v.category && <p className="text-[10px] text-muted-foreground capitalize">{v.category}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {score > 0 && <span className="text-[11px] tabular-nums text-amber-500">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>}
-                              <Badge variant="outline" className={cn("text-[9px] px-1.5", v.status === 'active' ? "text-emerald-600 border-emerald-200" : "text-muted-foreground")}>{v.status}</Badge>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </SectionCard>
-              </div>
-
-              {/* Quick actions */}
-              <Card className="border-dashed border-border/40">
-                <CardContent className="p-4 sm:p-5">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { label: "Support Queue", icon: MessageSquare, path: "/admin/support", color: "text-violet-500" },
-                      { label: "Manage Stores", icon: Store, path: "/stores", color: "text-emerald-500" },
-                      { label: "Manage Vendors", icon: Boxes, path: "/vendors", color: "text-cyan-500" },
-                      { label: "View Orders", icon: ShoppingCart, path: "/orders", color: "text-amber-500" },
-                      { label: "Site Settings", icon: Settings, path: "/admin/settings", color: "text-gray-500" },
-                    ].map(a => (
-                      <Button key={a.label} variant="outline" size="sm" className="h-8 text-xs gap-1.5 hover:border-primary/30" onClick={() => setLocation(a.path)}>
-                        <a.icon className={cn("w-3.5 h-3.5", a.color)} />{a.label}
-                      </Button>
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
-          </div>
-        </TabsContent>
-        <TabsContent value="users" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <div className="relative flex-1 min-w-[200px] max-w-xs">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input placeholder="Search users..." className="pl-8 h-9 text-xs" value={userSearch} onChange={e => setUserSearch(e.target.value)} />
-                </div>
-                <Badge variant="secondary" className="text-[11px] h-7 px-2.5">{users?.length ?? 0} total</Badge>
-                <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" onClick={exportUsers}>
-                  <Download className="w-3.5 h-3.5" />Export CSV
+                )}
+              </SectionCard>
+            </div>
+          </TabsContent>
+
+          {/* ════════════════ Analytics Tab ════════════════ */}
+          <TabsContent value="analytics" className="mt-4 space-y-4">
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SectionCard title="Revenue Trend" icon={TrendingUp}>
+                <RevenueChart data={dailyRevenue} />
+              </SectionCard>
+              <SectionCard title="Store Type Distribution" icon={Store}>
+                <DoughnutChart data={storeTypeData} colors={["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6"]} />
+              </SectionCard>
+            </div>
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SectionCard title="Order Status Breakdown" icon={BarChart3}>
+                <DoughnutChart data={orderStatusData} />
+              </SectionCard>
+              <SectionCard title="Platform Revenue" icon={DollarSign}>
+                <DoughnutChart data={platformRevenue} colors={["#2563eb", "#dc2626", "#059669", "#f59e0b"]} />
+              </SectionCard>
+            </div>
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SectionCard title="Store Performance" icon={Activity}>
+                <StoresTable stores={stores} />
+              </SectionCard>
+              <SectionCard title="Vendor Overview" icon={Package}>
+                {!vendorOverview?.length ? (
+                  <EmptyState icon={Package} title="No vendors" desc="Vendor data will appear once vendors are created." />
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {vendorOverview.slice(0, 8).map((v: any) => (
+                      <div key={v.id} className="flex items-center justify-between py-2.5 hover:bg-muted/20 transition-colors px-0.5 rounded-md">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{v.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{v.category || "General"}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1">
+                            <span className={cn("h-1.5 w-1.5 rounded-full", (v.healthScore || 0) >= 80 ? "bg-emerald-500" : (v.healthScore || 0) >= 50 ? "bg-amber-400" : "bg-red-400")} />
+                            <span className="text-[10px] text-muted-foreground">{v.healthScore || 0}%</span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">{v.fulfillmentCount || 0} fulfilled</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SectionCard>
+            </div>
+          </TabsContent>
+
+          {/* ════════════════ Orders Tab ════════════════ */}
+          <TabsContent value="orders" className="mt-4">
+            <SectionCard title="All Orders" icon={ShoppingCart}>
+              <OrdersTable orders={recentOrders} />
+            </SectionCard>
+          </TabsContent>
+
+          {/* ════════════════ Stores Tab ════════════════ */}
+          <TabsContent value="stores" className="mt-4">
+            <SectionCard title="Connected Stores" icon={Store}>
+              <StoresTable stores={stores} />
+            </SectionCard>
+          </TabsContent>
+
+          {/* ════════════════ Users Tab ════════════════ */}
+          <TabsContent value="users" className="mt-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Total: <span className="font-semibold text-foreground">{userCount}</span> users
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleExportUsers}>
+                  <Download className="h-3.5 w-3.5" /> Export CSV
                 </Button>
               </div>
-              <Card className="border-border/40">
-                <CardContent className="p-0">
-                  {!users ? <LoadingRows rows={6} /> : paginatedUsers.length === 0 ? (
-                    <EmptyState icon={Users} title={userSearch ? "No matches" : "No users"} desc={userSearch ? "Try a different search" : "Register a user to get started"} />
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>User</TableHead>
-                          <TableHead className="hidden sm:table-cell">Email</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead className="hidden md:table-cell">Status</TableHead>
-                          <TableHead className="hidden md:table-cell">Plan</TableHead>
-                          <TableHead className="hidden lg:table-cell">Joined</TableHead>
-                          <TableHead><span className="sr-only">Actions</span></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginatedUsers.map((u: any) => (
-                          <TableRow key={u.id}>
-                            <TableCell className="font-medium">
-                              <div className="flex items-center gap-3">
-                                <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xs font-bold text-primary ring-1 ring-primary/20">
-                                  {(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}
-                                </div>
-                                <span>{u.firstName || u.lastName ? `${u.firstName ?? ''} ${u.lastName ?? ''}` : u.email?.split('@')[0]}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">{u.email}</TableCell>
-                            <TableCell><Badge variant="outline" className={cn(u.role === 'admin' ? "text-primary border-primary/30 bg-primary/5" : "")}>{u.role}</Badge></TableCell>
-                            <TableCell className="hidden md:table-cell"><div className="flex items-center gap-2"><StatusDot status={u.subscriptionStatus || 'inactive'} /><span className="capitalize">{u.subscriptionStatus || 'inactive'}</span></div></TableCell>
-                            <TableCell className="hidden md:table-cell">{u.subscriptionPlan || 'free'}</TableCell>
-                            <TableCell className="hidden lg:table-cell">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</TableCell>
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem onClick={() => roleMutation.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}>{u.role === "admin" ? "Demote to User" : "Promote to Admin"}</DropdownMenuItem>
-                                  <DropdownMenuItem>View details</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-destructive">Delete user</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-              {totalPages > 1 && (
-                <CardFooter className="flex items-center justify-between border-t px-6 py-3">
-                  <div className="text-xs text-muted-foreground">
-                    Page {currentPage} of {totalPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardFooter>
-              )}
-            </div>          
-        </TabsContent>
-        <TabsContent value="vendors" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
-                <KpiCard label="Total Vendors" value={stats?.vendors ?? 0} icon={Boxes} color="indigo" />
-                <KpiCard label="Active" value={stats?.activeVendors ?? 0} icon={CheckCircle} color="emerald" />
-                <KpiCard label="Avg Health" value={vendorOverview?.avgHealthScore ? Number(vendorOverview.avgHealthScore).toFixed(1) : '—'} icon={HeartPulse} color="rose" />
-                <KpiCard label="Products" value={stats?.products ?? 0} icon={Package} color="violet" />
-              </div>
-              <Card className="border-border/40">
-                <CardContent className="p-0">
-                  {!vendorOverview ? <LoadingRows rows={4} /> : vendorOverview.vendors.length === 0 ? (
-                    <EmptyState icon={Boxes} title="No vendors" desc="Add vendors from the Vendors page" />
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Vendor</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Health</TableHead>
-                          <TableHead>Orders Fulfilled</TableHead>
-                          <TableHead>Last Check</TableHead>
-                          <TableHead><span className="sr-only">Actions</span></TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {paginatedVendors.map((v: any) => (
-                          <TableRow key={v.id}>
-                            <TableCell className="font-medium">{v.name}</TableCell>
-                            <TableCell><Badge variant={v.status === 'active' ? 'default' : 'secondary'}>{v.status}</Badge></TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <span className="text-amber-500">{'★'.repeat(v.healthScore || 0)}</span>
-                                <span className="text-muted-foreground/30">{'☆'.repeat(5 - (v.healthScore || 0))}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>{v.totalOrdersFulfilled || 0}</TableCell>
-                            <TableCell>{v.lastHealthCheck ? new Date(v.lastHealthCheck).toLocaleDateString() : '—'}</TableCell>
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild><Button aria-haspopup="true" size="icon" variant="ghost"><MoreHorizontal className="h-4 w-4" /><span className="sr-only">Toggle menu</span></Button></DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem>View Details</DropdownMenuItem>
-                                  <DropdownMenuItem>Edit Vendor</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
-              {totalVendorPages > 1 && (
-                <CardFooter className="flex items-center justify-between border-t px-6 py-3">
-                  <div className="text-xs text-muted-foreground">
-                    Page {vendorCurrentPage} of {totalVendorPages}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setVendorCurrentPage(p => Math.max(1, p - 1))} disabled={vendorCurrentPage === 1}>
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setVendorCurrentPage(p => Math.min(totalVendorPages, p + 1))} disabled={vendorCurrentPage === totalVendorPages}>
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardFooter>
-              )}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border/40">
+              <UsersTable users={users || []} />
+            </div>
+          </TabsContent>
 
-              {/* Global Vendors Management */}
-              <div className="mt-6">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-blue-500" />
-                      Global Vendors
-                    </h4>
-                    <p className="text-xs text-muted-foreground">Vendors available to all clients</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setGlobalVendorOpen(true)}>
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Global Vendor
-                  </Button>
-                </div>
-                <GlobalVendorList />
-              </div>
-            </div>          
-        </TabsContent>
-        <TabsContent value="subscribers" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
-                <KpiCard label="Subscribers" value={stats?.subscribers ?? 0} icon={CreditCard} color="rose" />
-                <KpiCard label="Total Users" value={stats?.users ?? 0} icon={Users} color="blue" />
-                <KpiCard label="Conversion Rate" value={stats?.users > 0 ? `${Math.round((stats?.subscribers || 0) / stats.users * 100)}%` : '0%'} icon={TrendUp} color="emerald" />
-              </div>
-              <Card className="border-border/40">
-                <CardContent className="p-0">
-                  {!users ? <LoadingRows rows={5} /> : (
-                    <DTable
-                      headers={[
-                        { key: "user", label: "User" },
-                        { key: "email", label: "Email", className: "hidden sm:table-cell" },
-                        { key: "plan", label: "Plan" },
-                        { key: "status", label: "Status" },
-                        { key: "joined", label: "Joined", className: "hidden md:table-cell" },
-                      ]}
-                      rows={users.filter((u: any) => u.subscriptionStatus === 'active').map((u: any) => ({
-                        key: u.id,
-                        cells: [
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-7 w-7 rounded-full bg-gradient-to-br from-rose-200 to-rose-50 dark:from-rose-800 dark:to-rose-950 flex items-center justify-center text-[10px] font-bold text-rose-700 dark:text-rose-300">{(u.firstName?.[0] || u.email?.[0] || '?').toUpperCase()}</div>
-                            <span className="text-xs font-medium">{u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email?.split('@')[0]}</span>
-                          </div>,
-                          <span className="text-xs text-muted-foreground hidden sm:inline">{u.email}</span>,
-                          <span className="text-xs font-medium">{u.subscriptionPlan || '—'}</span>,
-                          <Badge variant="outline" className="text-emerald-600 border-emerald-200 text-[10px]">{u.subscriptionStatus}</Badge>,
-                          <span className="text-xs text-muted-foreground hidden md:inline tabular-nums">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</span>,
-                        ]
-                      }))}
-                      empty={{ icon: CreditCard, title: "No subscribers", desc: "Users who have subscribed will appear here" }}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            </div>          
-        </TabsContent>
-        <TabsContent value="integrations" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs text-muted-foreground">Configure and monitor third-party API connections. These credentials are used by all client stores — end users never need to enter API keys manually.</p>
-              </div>
-
-              {/* Platform API Settings Cards */}
-              <PlatformSettingsCard
-                platform="ebay"
-                label="eBay"
-                icon={Globe}
-                color="border-blue-200/50 dark:border-blue-900/30"
-                fields={[
-                  { key: "clientId", label: "Client ID (App ID)", placeholder: "Olalekan-DropandS-PRD-..." },
-                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "PRD-..." },
-                  { key: "ruName", label: "RuName (Redirect URL)", placeholder: "Olalekan_Ayuba-..." },
-                ]}
-                docUrl="https://developer.ebay.com"
-              />
-
-              <PlatformSettingsCard
-                platform="shopify"
-                label="Shopify"
-                icon={ShoppingBag}
-                color="border-green-200/50 dark:border-green-900/30"
-                fields={[
-                  { key: "clientId", label: "Client ID", placeholder: "Your Shopify App Client ID" },
-                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "Your Shopify App Client Secret" },
-                  { key: "redirectUri", label: "Redirect URI", placeholder: "https://yourapp.com/api/oauth/shopify/callback" },
-                ]}
-                docUrl="https://shopify.dev/docs/apps/auth/oauth"
-              />
-
-              <PlatformSettingsCard
-                platform="amazon"
-                label="Amazon SP-API"
-                icon={Store}
-                color="border-orange-200/50 dark:border-orange-900/30"
-                fields={[
-                  { key: "clientId", label: "Client ID", placeholder: "amzn1.application-oa2-..." },
-                  { key: "clientSecret", label: "Client Secret", secret: true, placeholder: "Your Amazon SP-API Client Secret" },
-                  { key: "redirectUri", label: "Redirect URI", placeholder: "https://yourapp.com/api/oauth/amazon/callback" },
-                  { key: "refreshToken", label: "Refresh Token", secret: true, placeholder: "Your Amazon SP-API Refresh Token" },
-                ]}
-                docUrl="https://developer.amazon.com/docs/amazon-sp-api.html"
-              />
-
-              <PlatformSettingsCard
-                platform="woocommerce"
-                label="WooCommerce"
-                icon={ShoppingCart}
-                color="border-purple-200/50 dark:border-purple-900/30"
-                fields={[
-                  { key: "consumerKey", label: "Consumer Key", placeholder: "ck_..." },
-                  { key: "consumerSecret", label: "Consumer Secret", secret: true, placeholder: "cs_..." },
-                ]}
-                docUrl="https://woocommerce.com/document/rest-api/"
-              />
-
-              <PlatformSettingsCard
-                platform="jumia"
-                label="Jumia"
-                icon={Globe}
-                color="border-orange-200/50 dark:border-orange-900/30"
-                fields={[
-                  { key: "apiKey", label: "API Key", placeholder: "Your Jumia API Key" },
-                  { key: "apiSecret", label: "API Secret", secret: true, placeholder: "Your Jumia API Secret" },
-                  { key: "sellerId", label: "Seller ID", placeholder: "Your Jumia Seller ID" },
-                ]}
-                docUrl="https://developers.jumia.com"
-              />
-
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-                {[
-                  { key: "stripe", name: "Stripe", desc: "Payment processing & subscriptions", icon: CreditCard, doc: "https://stripe.com/docs" },
-                  { key: "openai", name: "OpenAI", desc: "AI descriptions & support chat", icon: MessageSquare, doc: "https://openai.com" },
-                  { key: "resend", name: "Resend", desc: "Transactional emails", icon: Mail, doc: "https://resend.com" },
-                  { key: "amazon", name: "Amazon", desc: "Marketplace listings & orders", icon: Store, doc: "https://developer.amazon.com" },
-                  { key: "ebay", name: "eBay", desc: "eBay listings & fulfillment", icon: Globe, doc: "https://developer.ebay.com" },
-                  { key: "shopify", name: "Shopify", desc: "Shopify store integration", icon: ShoppingCart, doc: "https://shopify.dev" },
-                  { key: "tracking", name: "Tracking API", desc: "Shipment tracking updates", icon: Truck, doc: "#" },
-                ].map(svc => {
-                  const status = (serviceStatus as any)?.[svc.key]?.status || 'offline';
-                  return (
-                    <Card key={svc.key} className={cn("border-border/40 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5", status === 'connected' && "border-emerald-200/50 dark:border-emerald-900/30")}>
-                      <CardContent className="p-4 sm:p-5">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3">
-                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", status === 'connected' ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-muted")}>
-                              <svc.icon className={cn("w-5 h-5", status === 'connected' ? "text-emerald-600" : "text-muted-foreground")} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold">{svc.name}</p>
-                              <p className="text-xs text-muted-foreground">{svc.desc}</p>
-                            </div>
+          {/* ════════════════ Vendors Tab ════════════════ */}
+          <TabsContent value="vendors" className="mt-4 space-y-4">
+            <div className="grid lg:grid-cols-2 gap-4">
+              <SectionCard title="Vendor Performance" icon={Activity}>
+                {!vendorOverview?.length ? (
+                  <EmptyState icon={Activity} title="No vendor data" desc="Vendor performance metrics will appear here." />
+                ) : (
+                  <div className="divide-y divide-border/10">
+                    {vendorOverview.slice(0, 8).map((v: any) => (
+                      <div key={v.id} className="flex items-center justify-between py-2.5 hover:bg-muted/20 transition-colors px-0.5 rounded-md">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-7 w-7 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                           </div>
-                          <div className={cn("h-2.5 w-2.5 rounded-full shrink-0 mt-1", status === 'connected' ? "bg-emerald-500" : status === 'warning' ? "bg-amber-500" : "bg-red-500")} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{v.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{v.category || "General"}</p>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <Badge variant={status === 'connected' ? "default" : "outline"} className={cn("text-[10px]", status === 'connected' ? "" : "text-muted-foreground")}>
-                            {status === 'connected' ? 'Connected' : status === 'warning' ? 'Warning' : 'Not connected'}
-                          </Badge>
-                          <Button variant="ghost" size="sm" className="h-7 text-[10px] gap-1 text-muted-foreground">
-                            <ExternalLink className="w-3 h-3" /> Docs
-                          </Button>
-                        </div>
-                        {status === 'connected' && (
-                          <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3 text-emerald-500" /> API operational
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>          
-        </TabsContent>
-        <TabsContent value="system" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <SectionCard title="Server" icon={Server}>
-                  <div className="space-y-2">
-                    {[
-                      { icon: Database, label: "Database Size", value: serverMetrics?.dbSizeMB ? `${serverMetrics.dbSizeMB} MB` : '—' },
-                      { icon: Cpu, label: "Memory Usage", value: serverMetrics?.memoryUsageMB ? `${serverMetrics.memoryUsageMB} MB / ${serverMetrics.memoryTotalMB} MB` : '—' },
-                      { icon: HardDrive, label: "Platform", value: serverMetrics?.platform || '—' },
-                      { icon: Server, label: "Node.js", value: serverMetrics?.nodeVersion || '—' },
-                      { icon: Clock, label: "Uptime", value: serverMetrics?.uptime || '—' },
-                      { icon: Globe, label: "Environment", value: serverMetrics?.environment || '—' },
-                      { icon: Monitor, label: "App URL", value: serverMetrics?.appUrl || '—' },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
-                        <div className="flex items-center gap-2.5">
-                          <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="text-xs text-muted-foreground">{item.label}</span>
-                        </div>
-                        <span className="text-xs font-medium tabular-nums truncate max-w-[180px] text-right">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="Service Status" icon={Activity}>
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(serviceStatus || {}).map(([key, svc]: any) => (
-                      <div key={key} className={cn(
-                        "flex items-center gap-2.5 p-3 rounded-xl border transition-colors",
-                        svc.status === 'connected' ? "bg-emerald-50/50 border-emerald-200/50 dark:bg-emerald-950/10 dark:border-emerald-900/30" :
-                        svc.status === 'warning' ? "bg-amber-50/50 border-amber-200/50 dark:bg-amber-950/10" :
-                        "bg-muted/20 border-border/30"
-                      )}>
-                        <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", svc.status === 'connected' ? "bg-emerald-500" : svc.status === 'warning' ? "bg-amber-500" : "bg-red-400")}>
-                          {svc.status === 'connected' && <span className="absolute h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping opacity-75" />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{svc.label || key}</p>
-                          <p className={cn("text-[10px]", svc.status === 'connected' ? "text-emerald-600" : "text-muted-foreground")}>
-                            {svc.status === 'connected' ? 'Operational' : svc.status === 'warning' ? 'Degraded' : 'Offline'}
-                          </p>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">Score:</span>
+                            <span className={cn("text-[10px] font-medium", (v.healthScore || 0) >= 80 ? "text-emerald-500" : (v.healthScore || 0) >= 50 ? "text-amber-400" : "text-red-400")}>
+                              {v.healthScore || 0}%
+                            </span>
+                          </div>
+                          <Badge variant="outline" className="text-[9px] px-1.5">{v.fulfillmentCount || 0} order{(v.fulfillmentCount || 0) !== 1 ? 's' : ''}</Badge>
                         </div>
                       </div>
                     ))}
                   </div>
-                </SectionCard>
+                )}
+              </SectionCard>
+              <SectionCard title="Global Vendors" icon={Globe}>
+                <GlobalVendorList />
+              </SectionCard>
+            </div>
+          </TabsContent>
 
-                <SectionCard title="API Keys" icon={Key} className="sm:col-span-2">
-                  <div className="grid sm:grid-cols-2 gap-1.5">
-                    {Object.entries(systemStatus?.apiKeys || {}).map(([key, configured]) => (
-                      <div key={key} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
-                        <div className="flex items-center gap-2.5">
-                          {configured ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
-                          <span className="text-xs capitalize">{key}</span>
-                        </div>
-                        <Badge variant={configured ? "default" : "outline"} className={cn("text-[9px] px-2", configured ? "" : "text-muted-foreground")}>
-                          {configured ? "Configured" : "Missing"}
-                        </Badge>
+          {/* ════════════════ System Tab ════════════════ */}
+          <TabsContent value="system" className="mt-4 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <SectionCard title="Server" icon={Server}>
+                <div className="space-y-2">
+                  {[
+                    { icon: Database, label: "Database Size", value: serverMetrics?.dbSizeMB ? `${serverMetrics.dbSizeMB} MB` : '—' },
+                    { icon: Cpu, label: "Memory Usage", value: serverMetrics?.memoryUsageMB ? `${serverMetrics.memoryUsageMB} MB / ${serverMetrics.memoryTotalMB} MB` : '—' },
+                    { icon: HardDrive, label: "Platform", value: serverMetrics?.platform || '—' },
+                    { icon: Server, label: "Node.js", value: serverMetrics?.nodeVersion || '—' },
+                    { icon: Clock, label: "Uptime", value: serverMetrics?.uptime || '—' },
+                    { icon: Globe, label: "Environment", value: serverMetrics?.environment || '—' },
+                    { icon: Monitor, label: "App URL", value: serverMetrics?.appUrl || '—' },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
+                      <div className="flex items-center gap-2.5">
+                        <item.icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-xs text-muted-foreground">{item.label}</span>
                       </div>
-                    ))}
-                  </div>
-                </SectionCard>
-              </div>
-            </div>          
-        </TabsContent>
-        <TabsContent value="support" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="flex items-center gap-2 mb-4">
-                <Button variant="default" size="sm" className="h-9 text-xs gap-1.5"><MessageSquare className="w-3.5 h-3.5" />All Conversations</Button>
-                <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Flagged</Button>
-                <Badge variant="secondary" className="text-[11px] h-7 px-2.5 ml-auto">3 open</Badge>
-              </div>
-              <Card>
-                <CardContent className="p-4 sm:p-5">
-                  <EmptyState icon={MessageSquare} title="Support Inbox" desc="Customer support messages will appear here. Configure email integration to receive tickets." />
-                </CardContent>
-              </Card>
-            </div>          
-        </TabsContent>
-        <TabsContent value="settings" className="mt-4">
-            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-4">
-              <Card>
-                <CardHeader><CardTitle className="text-sm font-semibold">Site Settings</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div><Label className="text-xs">Site Name</Label><Input className="h-9 text-sm mt-1" defaultValue="DropandSell AI" /></div>
-                    <div><Label className="text-xs">Default Currency</Label><Input className="h-9 text-sm mt-1" defaultValue="USD" /></div>
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <div><p className="text-sm font-medium">Maintenance Mode</p><p className="text-xs text-muted-foreground">Disable public access to the platform</p></div>
-                    <Switch />
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <div><p className="text-sm font-medium">Allow New Registrations</p><p className="text-xs text-muted-foreground">Let new users sign up for accounts</p></div>
-                    <Switch defaultChecked />
-                  </div>
-                  <Button className="h-9 text-xs">Save Changes</Button>
-                </CardContent>
-              </Card>
+                      <span className="text-xs font-medium tabular-nums truncate max-w-[180px] text-right">{item.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+              <SectionCard title="Service Status" icon={Activity}>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(serviceStatus || {}).map(([key, svc]: any) => (
+                    <div key={key} className={cn(
+                      "flex items-center gap-2.5 p-3 rounded-xl border transition-colors",
+                      svc.status === 'connected' ? "bg-emerald-50/50 border-emerald-200/50 dark:bg-emerald-950/10 dark:border-emerald-900/30" :
+                      svc.status === 'warning' ? "bg-amber-50/50 border-amber-200/50 dark:bg-amber-950/10" :
+                      "bg-muted/20 border-border/30"
+                    )}>
+                      <div className={cn("h-2.5 w-2.5 rounded-full shrink-0", svc.status === 'connected' ? "bg-emerald-500" : svc.status === 'warning' ? "bg-amber-500" : "bg-red-400")}>
+                        {svc.status === 'connected' && <span className="absolute h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping opacity-75" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{svc.label || key}</p>
+                        <p className={cn("text-[10px]", svc.status === 'connected' ? "text-emerald-600" : "text-muted-foreground")}>
+                          {svc.status === 'connected' ? 'Operational' : svc.status === 'warning' ? 'Degraded' : 'Offline'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+              <SectionCard title="API Keys" icon={Key} className="sm:col-span-2">
+                <div className="grid sm:grid-cols-2 gap-1.5">
+                  {Object.entries(systemStatus?.apiKeys || {}).map(([key, configured]) => (
+                    <div key={key} className="flex items-center justify-between py-2 border-b border-border/10 last:border-0">
+                      <div className="flex items-center gap-2.5">
+                        {configured ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" /> : <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                        <span className="text-xs capitalize">{key}</span>
+                      </div>
+                      <Badge variant={configured ? "default" : "outline"} className="text-[9px] px-2">
+                        {configured ? "Configured" : "Missing"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+          </TabsContent>
 
-              <Card>
-                <CardHeader><CardTitle className="text-sm font-semibold">Theme</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="flex gap-3">
-                    {["light", "dark", "system"].map(t => (
-                      <button key={t} onClick={() => setTheme(t as any)} className={cn("px-4 py-2 rounded-lg border text-xs font-medium transition-all", theme === t ? "border-primary bg-primary/5 text-primary" : "border-border/40 text-muted-foreground hover:border-border")}>
-                        {t.charAt(0).toUpperCase() + t.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>          
-        </TabsContent>
-      </Tabs>
-        </div>
+          {/* ════════════════ Support Tab ════════════════ */}
+          <TabsContent value="support" className="mt-4">
+            <SectionCard title="Support Center" icon={MessageSquare}>
+              <EmptyState icon={MessageSquare} title="Support Inbox" desc="Customer support messages will appear here. Visit the full support page for details." />
+            </SectionCard>
+          </TabsContent>
+
+          {/* ════════════════ Settings Tab ════════════════ */}
+          <TabsContent value="settings" className="mt-4 space-y-4">
+            <Card className="border-border/40">
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold">Site Settings</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <div><Label className="text-xs">Site Name</Label><Input className="h-9 text-sm mt-1" defaultValue="DropandSell AI" /></div>
+                  <div><Label className="text-xs">Default Currency</Label><Input className="h-9 text-sm mt-1" defaultValue="USD" /></div>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <div><p className="text-sm font-medium">Maintenance Mode</p><p className="text-xs text-muted-foreground">Disable public access to the platform</p></div>
+                  <Switch />
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <div><p className="text-sm font-medium">Allow New Registrations</p><p className="text-xs text-muted-foreground">Let new users sign up for accounts</p></div>
+                  <Switch defaultChecked />
+                </div>
+                <Button className="h-9 text-xs">Save Changes</Button>
+              </CardContent>
+            </Card>
+            <Card className="border-border/40">
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold">Theme</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-3">
+                  {["light", "dark", "system"].map(t => (
+                    <button key={t} onClick={() => setTheme(t as any)} className={cn("px-4 py-2 rounded-lg border text-xs font-medium transition-all", theme === t ? "border-primary bg-primary/5 text-primary" : "border-border/40 text-muted-foreground hover:border-border")}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
 }
+
+// ─── Platform Settings Card ──────────────────────────────────────────────────
 
 function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docUrl }: {
   platform: string; label: string; icon: React.ElementType; color: string;
@@ -952,9 +1031,7 @@ function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docU
         fields.forEach(f => vals[f.key] = data[f.key] || "");
         setValues(vals);
       }
-    } catch (e) {
-      // settings not configured yet
-    }
+    } catch (e) { /* settings not configured yet */ }
   };
 
   const save = async () => {
@@ -1044,6 +1121,8 @@ function PlatformSettingsCard({ platform, label, icon: Icon, color, fields, docU
   );
 }
 
+// ─── Global Vendor List ──────────────────────────────────────────────────
+
 function GlobalVendorList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1121,44 +1200,45 @@ function GlobalVendorList() {
 
   return (
     <>
-      <Card className="border-border/40">
-        <CardContent className="p-0">
-          {isLoading ? <LoadingRows rows={3} /> : !vendors?.length ? (
-            <div className="p-6 text-center text-sm text-muted-foreground">No global vendors yet. Click "Add Global Vendor" to create one.</div>
-          ) : (
-            <div className="divide-y divide-border/10">
-              {vendors.map((v: any) => (
-                <div key={v.id} className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", v.verificationStatus === 'verified' ? "bg-emerald-50 dark:bg-emerald-950/20" : v.verificationStatus === 'blocked' ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20")}>
-                      <Globe className={cn("w-4 h-4", v.verificationStatus === 'verified' ? "text-emerald-500" : v.verificationStatus === 'blocked' ? "text-red-500" : "text-amber-500")} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{v.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{v.category || v.contactEmail || v.country || "—"}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {statusBadge(v)}
-                    {v.verificationStatus !== 'verified' && (
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] text-emerald-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'verified' })} disabled={verifyMutation.isPending}>
-                        Approve
-                      </Button>
-                    )}
-                    {v.verificationStatus !== 'blocked' && (
-                      <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'blocked' })} disabled={verifyMutation.isPending}>
-                        Block
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Edit3 className="w-3.5 h-3.5" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm("Delete this global vendor?")) deleteMutation.mutate(v.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
-                  </div>
+      <div className="divide-y divide-border/10">
+        {isLoading ? <LoadingRows rows={3} /> : !vendors?.length ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">No global vendors yet.</div>
+        ) : (
+          vendors.map((v: any) => (
+            <div key={v.id} className="flex items-center justify-between py-2.5 hover:bg-muted/20 transition-colors px-0.5 rounded-md">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className={cn("h-8 w-8 rounded-lg flex items-center justify-center shrink-0", v.verificationStatus === 'verified' ? "bg-emerald-50 dark:bg-emerald-950/20" : v.verificationStatus === 'blocked' ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20")}>
+                  <Globe className={cn("w-4 h-4", v.verificationStatus === 'verified' ? "text-emerald-500" : v.verificationStatus === 'blocked' ? "text-red-500" : "text-amber-500")} />
                 </div>
-              ))}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{v.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{v.category || v.contactEmail || v.country || "—"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {statusBadge(v)}
+                {v.verificationStatus !== 'verified' && (
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-emerald-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'verified' })} disabled={verifyMutation.isPending}>
+                    Approve
+                  </Button>
+                )}
+                {v.verificationStatus !== 'blocked' && (
+                  <Button variant="ghost" size="sm" className="h-7 text-[10px] text-red-600" onClick={() => verifyMutation.mutate({ id: v.id, verificationStatus: 'blocked' })} disabled={verifyMutation.isPending}>
+                    Block
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(v)}><Edit3 className="w-3.5 h-3.5" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => { if (confirm("Delete this global vendor?")) deleteMutation.mutate(v.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ))
+        )}
+        <div className="pt-3">
+          <Button variant="outline" size="sm" className="w-full h-9 text-xs gap-1.5" onClick={() => { resetForm(); setOpen(true); }}>
+            <Plus className="h-3.5 w-3.5" /> Add Global Vendor
+          </Button>
+        </div>
+      </div>
 
       <Dialog open={open} onOpenChange={(o) => { if (!o) { setOpen(false); resetForm(); } }}>
         <DialogContent className="max-w-md">
@@ -1175,39 +1255,18 @@ function GlobalVendorList() {
               <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Contact Person</Label>
-                <Input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Contact Email</Label>
-                <Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
-              </div>
+              <div className="space-y-1.5"><Label>Contact Person</Label><Input value={contactPerson} onChange={(e) => setContactPerson(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label>Contact Email</Label><Input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Contact Phone</Label>
-                <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Country</Label>
-                <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. China" />
-              </div>
+              <div className="space-y-1.5"><Label>Contact Phone</Label><Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label>Country</Label><Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. China" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Lead Time</Label>
-                <Input value={leadTime} onChange={(e) => setLeadTime(e.target.value)} placeholder="e.g. 3-5 days" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Payment Terms</Label>
-                <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. Net 30" />
-              </div>
+              <div className="space-y-1.5"><Label>Lead Time</Label><Input value={leadTime} onChange={(e) => setLeadTime(e.target.value)} placeholder="e.g. 3-5 days" /></div>
+              <div className="space-y-1.5"><Label>Payment Terms</Label><Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. Net 30" /></div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </div>
+            <div className="space-y-1.5"><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
             <Button className="w-full" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !name}>
               {saveMutation.isPending ? "Saving..." : editVendor ? "Update Vendor" : "Create Vendor"}
             </Button>

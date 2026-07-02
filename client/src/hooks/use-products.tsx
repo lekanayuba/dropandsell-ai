@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import type { InsertProduct } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 interface ProductFilters {
   search?: string;
@@ -66,10 +67,33 @@ export function useDeleteProduct() {
         credentials: "include" 
       });
       if (!res.ok) throw new Error("Failed to delete product");
+      return id;
     },
-    onSuccess: () => {
+    onSuccess: (id) => {
       queryClient.invalidateQueries({ queryKey: [api.products.list.path] });
-      toast({ title: "Success", description: "Product deleted" });
+      const { dismiss } = toast({
+        title: "Product deleted",
+        description: "You have 30 seconds to undo this action",
+        action: (
+          <ToastAction altText="Undo delete" onClick={async () => {
+            dismiss();
+            try {
+              const url = buildUrl(api.products.undoDelete.path, { id });
+              const res = await fetch(url, {
+                method: api.products.undoDelete.method,
+                credentials: "include",
+              });
+              if (!res.ok) throw new Error("Failed to undo delete");
+              queryClient.invalidateQueries({ queryKey: [api.products.list.path] });
+              toast({ title: "Product restored" });
+            } catch {
+              toast({ title: "Could not undo", description: "The undo window may have expired", variant: "destructive" });
+            }
+          }}>
+            Undo
+          </ToastAction>
+        ),
+      });
     },
   });
 }

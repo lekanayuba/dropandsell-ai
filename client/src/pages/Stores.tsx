@@ -61,7 +61,7 @@ export default function Stores() {
               queryClient.invalidateQueries({ queryKey: [api.stores.list.path] });
             }
           }
-        } catch {}
+        } catch { /* ignore */}
       }
     }, 10_000);
     return () => clearInterval(interval);

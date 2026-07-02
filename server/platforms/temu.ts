@@ -84,7 +84,7 @@ const GALLERY_TYPES: Array<{ type: TemuGalleryImage['type']; label: string }> = 
 export function parseTemuUrl(url: string): string {
   const clean = url.split('?')[0];
 
-  const groupMatch = clean.match(/[\/-](g\d{6,})(?:\/|\.|$)/i);
+  const groupMatch = clean.match(/[/-](g\d{6,})(?:\/|\.|$)/i);
   if (groupMatch) return groupMatch[1];
 
   const numericMatch = clean.match(/(\d{6,})(?:\.html)?$/);

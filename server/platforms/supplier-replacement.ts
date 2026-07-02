@@ -183,7 +183,7 @@ export async function batchAutoReplaceSuppliers(userId: string): Promise<{
   const userProducts = await db.select().from(products)
     .where(and(eq(products.userId, userId), eq(products.quantity, 0)));
 
-  let enabledStores: any[] = [];
+  let enabledStores: any[];
   try {
     const result = await pool.query(
       `SELECT id FROM stores WHERE user_id = $1 AND auto_switch_supplier = true LIMIT 1`,

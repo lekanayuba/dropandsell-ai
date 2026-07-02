@@ -17,18 +17,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      (function() {
-        const removeReplitWidget = () => {
-          const widget = document.querySelector('script[src*="replit-cdn.com/feedback-widget"]');
-          if (widget) widget.remove();
-        };
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', removeReplitWidget);
-        } else {
-          removeReplitWidget();
-        }
-      })();
-    </script>
+
   </body>
 </html>

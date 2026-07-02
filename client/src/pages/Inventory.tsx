@@ -82,8 +82,9 @@ export default function Inventory() {
       const activeRule = pricingRules?.find((r) => r.isActive);
       const items = selectedProducts.map((productId) => {
         const product = data?.items.find((p) => p.id === productId);
-        const costPrice = Number(product?.costPrice || 0);
-        let calculatedPrice = Number(product?.sellingPrice || costPrice);
+        const costPrice = Number(product?.costPrice) || 0;
+        const sellingPrice = Number(product?.sellingPrice);
+        let calculatedPrice = Number.isFinite(sellingPrice) ? sellingPrice : costPrice;
 
         if (activeRule) {
           const ruleValue = Number(activeRule.value);
@@ -576,8 +577,8 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
             <FormItem>
               <FormLabel>Supplier</FormLabel>
               <Select
-                onValueChange={(val) => field.onChange(val ? Number(val) : null)}
-                value={field.value?.toString() || ""}
+                onValueChange={(val) => field.onChange(val && val !== "none" ? Number(val) : null)}
+                value={field.value?.toString() || "none"}
               >
                 <FormControl>
                   <SelectTrigger>
@@ -585,7 +586,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="">No supplier</SelectItem>
+                  <SelectItem value="none">No supplier</SelectItem>
                   {vendors?.map((v: any) => (
                     <SelectItem key={v.id} value={v.id.toString()}>
                       <div className="flex items-center gap-2">

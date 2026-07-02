@@ -43,7 +43,7 @@ export function SupportChat() {
         } else {
           setMessages([]);
         }
-      } catch {}
+      } catch { /* ignore */}
     })();
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -57,7 +57,7 @@ export function SupportChat() {
         body: JSON.stringify({ title: text.slice(0, 60) }),
         credentials: "include",
       });
-    } catch {}
+    } catch { /* ignore */}
   }, []);
 
   // Create a new conversation
@@ -103,11 +103,12 @@ export function SupportChat() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
 
+        let streamDone = false;
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.done) break;
+            if (data.done) { streamDone = true; break; }
             if (data.content) {
               setMessages(prev => {
                 const next = [...prev];
@@ -118,8 +119,9 @@ export function SupportChat() {
                 return next;
               });
             }
-          } catch {}
+          } catch { /* ignore */}
         }
+        if (streamDone) break;
       }
     } catch (err: any) {
       if (err?.name === "AbortError") return;

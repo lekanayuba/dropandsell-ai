@@ -31,7 +31,6 @@ function TrackingDialog({ orderId, onClose, onSuccess }: { orderId: number | nul
   const [carrier, setCarrier] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const { toast } = useToast();
-  useEffect(() => { if (orderId) { setCarrier(""); setTrackingNumber(""); } }, [orderId]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -291,7 +290,7 @@ export default function ShippingProfiles() {
         </Card>
       )}
 
-      <TrackingDialog
+      <TrackingDialog key={trackingOrderId}
         orderId={trackingOrderId}
         onClose={() => setTrackingOrderId(null)}
         onSuccess={() => {

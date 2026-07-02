@@ -1095,7 +1095,7 @@ function VEROSection() {
                       <SelectValue placeholder="All platforms" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All platforms</SelectItem>
+                      <SelectItem value="all">All platforms</SelectItem>
                       <SelectItem value="ebay">eBay</SelectItem>
                       <SelectItem value="amazon">Amazon</SelectItem>
                       <SelectItem value="shopify">Shopify</SelectItem>

@@ -17,11 +17,12 @@ export interface IStorage {
   getStores(userId: string): Promise<typeof stores.$inferSelect[]>;
   getStore(id: number): Promise<typeof stores.$inferSelect | undefined>;
   createStore(store: InsertStore & { userId: string }): Promise<typeof stores.$inferSelect>;
-  updateStore(id: number, userId: string, updates: Partial<InsertStore>): Promise<typeof stores.$inferSelect>;
+  updateStore(id: number, userId: string, updates: Partial<InsertStore>): Promise<typeof stores.$inferSelect | undefined>;
   deleteStore(id: number, userId: string): Promise<void>;
 
   // Vendors
   getVendors(userId: string): Promise<typeof vendors.$inferSelect[]>;
+  getVendor(id: number, userId: string): Promise<typeof vendors.$inferSelect | undefined>;
   createVendor(vendor: InsertVendor & { userId: string }): Promise<typeof vendors.$inferSelect>;
   updateVendor(id: number, userId: string, updates: Partial<InsertVendor>): Promise<typeof vendors.$inferSelect>;
   deleteVendor(id: number, userId: string): Promise<void>;
@@ -34,6 +35,7 @@ export interface IStorage {
   createProduct(product: InsertProduct & { userId: string }): Promise<typeof products.$inferSelect>;
   updateProduct(id: number, userId: string, updates: Partial<InsertProduct>): Promise<typeof products.$inferSelect>;
   deleteProduct(id: number, userId: string): Promise<void>;
+  undoDeleteProduct(id: number, userId: string): Promise<typeof products.$inferSelect | undefined>;
   getProductsByExternalId(externalProductId: string, userId: string): Promise<typeof products.$inferSelect[]>;
 
   // Product Variations
@@ -127,6 +129,8 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private undoCache = new Map<number, { data: typeof products.$inferSelect; timer: NodeJS.Timeout }>();
+
   // Stores
   async getStores(userId: string) {
     const result = await pool.query(
@@ -205,6 +209,12 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
+  async getVendor(id: number, userId: string) {
+    const [vendor] = await db.select().from(vendors)
+      .where(and(eq(vendors.id, id), eq(vendors.userId, userId)));
+    return vendor;
+  }
+
   async createVendor(vendor: InsertVendor & { userId: string }) {
     const [newVendor] = await db.insert(vendors).values(vendor).returning();
     return newVendor;
@@ -275,7 +285,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProduct(id: number, userId: string) {
+    const [product] = await db.select().from(products)
+      .where(and(eq(products.id, id), eq(products.userId, userId)));
+    if (product) {
+      const timer = setTimeout(() => this.undoCache.delete(id), 30_000);
+      this.undoCache.set(id, { data: product, timer });
+    }
     await db.delete(products).where(and(eq(products.id, id), eq(products.userId, userId)));
+  }
+
+  async undoDeleteProduct(id: number, userId: string) {
+    const entry = this.undoCache.get(id);
+    if (!entry) return undefined;
+    clearTimeout(entry.timer);
+    this.undoCache.delete(id);
+    const { id: _id, ...rest } = entry.data;
+    const [restored] = await db.insert(products).values({ ...rest, userId }).returning();
+    return restored;
   }
 
   async getProductsByExternalId(externalProductId: string, userId: string) {

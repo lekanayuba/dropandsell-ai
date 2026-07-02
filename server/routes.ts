@@ -17,7 +17,7 @@ import { conversations, messages } from "@shared/models/chat";
 import { users } from "@shared/models/auth";
 import OpenAI from "openai";
 import crypto from "crypto";
-import { registerChatRoutes } from "./replit_integrations/chat";
+import { registerChatRoutes } from "./chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
 import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
@@ -1254,6 +1254,29 @@ export async function registerRoutes(
     }
   });
 
+  // Upload vendor logo
+  protectedApi.post('/vendors/:id/logo', upload.single('logo'), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const vendor = await storage.getVendor(id, userId);
+      if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+
+      if (!req.file) return res.status(400).json({ message: 'No logo file uploaded' });
+
+      const filename = `vendor-${id}-${Date.now()}${path.extname(req.file.originalname) || '.png'}`;
+      const filepath = path.join(uploadsPath, filename);
+      fs.writeFileSync(filepath, req.file.buffer);
+
+      const logoUrl = `/uploads/${filename}`;
+      await storage.updateVendor(id, userId, { logo: logoUrl });
+
+      res.json({ logo: logoUrl });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to upload logo' });
+    }
+  });
+
   // === PRODUCTS ===
   protectedApi.get('/products', async (req: any, res) => {
     const userId = req.user.claims.sub;
@@ -1352,6 +1375,18 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
+  protectedApi.post('/products/:id/undo-delete', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const id = Number(req.params.id);
+      const restored = await storage.undoDeleteProduct(id, userId);
+      if (!restored) return res.status(404).json({ message: 'Deleted product not found or undo window expired' });
+      res.status(200).json(restored);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to undo product deletion' });
+    }
+  });
+
   // Auto-replace supplier for a single out-of-stock product
   protectedApi.post('/products/:id/auto-replace-supplier', async (req: any, res) => {
     try {
@@ -1435,7 +1470,8 @@ export async function registerRoutes(
         return res.status(404).json({ message: 'Order not found' });
       }
 
-      let { trackingNumber, carrier } = req.body;
+      const { trackingNumber } = req.body;
+      let { carrier } = req.body;
       if (!trackingNumber) {
         return res.status(400).json({ message: 'Tracking number is required' });
       }
@@ -1678,8 +1714,8 @@ export async function registerRoutes(
       const userProducts = await storage.getProducts(userId);
       const temuProducts = userProducts.filter(p => p.externalProductId);
 
-      let backInStock: number[] = [];
-      let wentOutOfStock: number[] = [];
+      const backInStock: number[] = [];
+      const wentOutOfStock: number[] = [];
       let failed = 0;
 
       for (const product of temuProducts) {
@@ -2265,7 +2301,7 @@ export async function registerRoutes(
   protectedApi.post('/publish-queue/bulk', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { items } = req.body; // Array of { productId, storeId, calculatedPrice, pricingRuleId }
+      const { items } = req.body;
       
       const queueItems = items.map((item: any) => ({
         userId,
@@ -2273,6 +2309,9 @@ export async function registerRoutes(
         storeId: item.storeId,
         calculatedPrice: item.calculatedPrice?.toString() || '0',
         pricingRuleId: item.pricingRuleId,
+        quantity: item.quantity ?? 1,
+        postageType: item.postageType || 'store_default',
+        postageCost: item.postageCost?.toString(),
         status: 'pending',
       }));
       
@@ -2285,7 +2324,10 @@ export async function registerRoutes(
 
   protectedApi.put('/publish-queue/:id', async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
       const id = Number(req.params.id);
+      const existing = await storage.getPublishQueueItem(id, userId);
+      if (!existing) return res.status(404).json({ message: 'Queue item not found' });
       const updates = req.body;
       if (updates.calculatedPrice !== undefined) {
         updates.calculatedPrice = updates.calculatedPrice.toString();
@@ -3103,22 +3145,22 @@ Guidelines:
           }
 
           // Use the calculated price from the queue item (or compute from costPrice + pricing rules)
-          let sellingPrice = Number(item.calculatedPrice) || Number(product.costPrice) || 0;
-          if (!sellingPrice) {
-            sellingPrice = Number(product.sellingPrice) || 0;
-          }
+          const rawPrice = Number(item.calculatedPrice);
+          let sellingPrice = Number.isFinite(rawPrice) ? rawPrice : (Number(product.costPrice) || Number(product.sellingPrice) || 0);
+          if (sellingPrice < 0) sellingPrice = 0;
 
           let externalId: string;
           let listingUrl: string | null = null;
 
+          const listingQuantity = Number(item.quantity ?? product.quantity) || 1;
+
           if (store.platform === 'ebay') {
-            // Actually create the listing on eBay via API
             const ebayResult = await createEbayListing({
               sku: product.sku || `SKU-${product.id}`,
               title: product.title,
               description: product.description || product.title,
               price: Math.round(sellingPrice * 100) / 100,
-              quantity: Number(product.quantity) || 1,
+              quantity: listingQuantity,
               storeCredentials: (store.credentials || {}) as any,
             });
             externalId = ebayResult.ebayItemId;
@@ -3130,7 +3172,7 @@ Guidelines:
               title: product.title,
               description: product.description || product.title,
               price: Math.round(sellingPrice * 100) / 100,
-              quantity: Number(product.quantity) || 1,
+              quantity: listingQuantity,
               images: product.images || [],
               marketplaceId: (store.credentials as any)?.marketplaceId || "A1F83G8C2ARO7P",
             });
@@ -3143,7 +3185,7 @@ Guidelines:
               title: product.title,
               description: product.description || product.title,
               price: Math.round(sellingPrice * 100) / 100,
-              quantity: Number(product.quantity) || 1,
+              quantity: listingQuantity,
               images: product.images || [],
             });
             externalId = shopifyResult.externalId;
@@ -3155,7 +3197,7 @@ Guidelines:
               title: product.title,
               description: product.description || product.title,
               price: Math.round(sellingPrice * 100) / 100,
-              quantity: Number(product.quantity) || 1,
+              quantity: listingQuantity,
               images: product.images || [],
             });
             externalId = jumiaResult.externalId;
@@ -3167,7 +3209,7 @@ Guidelines:
               title: product.title,
               description: product.description || product.title,
               price: Math.round(sellingPrice * 100) / 100,
-              quantity: Number(product.quantity) || 1,
+              quantity: listingQuantity,
               images: product.images || [],
             });
             externalId = wcResult.externalId;

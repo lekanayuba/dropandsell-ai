@@ -11,8 +11,8 @@ interface BeforeInstallPromptEvent extends Event {
 
 export default function InstallApp() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => window.matchMedia('(display-mode: standalone)').matches);
+  const [isIOS, setIsIOS] = useState(() => /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -21,13 +21,6 @@ export default function InstallApp() {
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setIsInstalled(true);
-    }
-
-    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    setIsIOS(isIOSDevice);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);

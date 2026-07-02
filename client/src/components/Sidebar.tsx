@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
-import { useAuth, User as AuthUser } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
+import type { User as AuthUser } from "@shared/models/auth";
 import { 
   LayoutDashboard, 
   Store, 
@@ -83,10 +84,12 @@ const navGroups: NavGroup[] = [
 ];
 
 
-export function Sidebar() {
-  const [location] = useLocation();
-  const { user, logout } = useAuth();
-
+function NavContent({ user, logout, location, isMobile = false }: {
+  user: AuthUser | null;
+  logout: () => void;
+  location: string;
+  isMobile?: boolean;
+}) {
   const renderLink = (link: NavLink, isMobile: boolean = false) => {
     const Icon = link.icon;
     const isActive = location === link.href;
@@ -125,7 +128,7 @@ export function Sidebar() {
     );
   };
 
-  const NavContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+  return (
     <div className="flex h-full flex-col bg-card text-card-foreground">
       <div className="flex h-16 items-center border-b px-6">
         <Link href="/" className="flex items-center gap-2 font-semibold">
@@ -151,10 +154,14 @@ export function Sidebar() {
       <UserMenu user={user} onLogout={logout} />
     </div>
   );
+}
+
+export function Sidebar() {
+  const [location] = useLocation();
+  const { user, logout } = useAuth();
 
   return (
     <>
-      {/* Mobile Sidebar */}
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet>
           <SheetTrigger asChild>
@@ -164,14 +171,13 @@ export function Sidebar() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
-            <NavContent isMobile={true} />
+            <NavContent user={user} logout={logout} location={location} isMobile={true} />
           </SheetContent>
         </Sheet>
       </div>
 
-      {/* Desktop Sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-10 lg:block w-[280px] border-r bg-card">
-        <NavContent />
+        <NavContent user={user} logout={logout} location={location} />
       </div>
     </>
   );

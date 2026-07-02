@@ -357,6 +357,14 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
+    undoDelete: {
+      method: 'POST' as const,
+      path: '/api/products/:id/undo-delete',
+      responses: {
+        200: z.custom<typeof products.$inferSelect>(),
+        404: errorSchemas.notFound,
+      },
+    },
     findSimilarImages: {
       method: 'POST' as const,
       path: '/api/products/:id/find-similar-images',

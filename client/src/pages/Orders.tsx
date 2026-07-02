@@ -178,7 +178,7 @@ export default function Orders() {
         </Table>
       </div>
 
-      <TrackingDialog
+      <TrackingDialog key={trackingOrderId}
         orderId={trackingOrderId}
         onClose={() => setTrackingOrderId(null)}
         onSuccess={() => {
@@ -203,14 +203,6 @@ function TrackingDialog({
   const [trackingNumber, setTrackingNumber] = useState("");
   const [detected, setDetected] = useState<string | null>(null);
   const { toast } = useToast();
-
-  useEffect(() => {
-    if (orderId) {
-      setCarrier("");
-      setTrackingNumber("");
-      setDetected(null);
-    }
-  }, [orderId]);
 
   // Client-side carrier hint from tracking number prefix
   const updateTrackingNumber = (value: string) => {

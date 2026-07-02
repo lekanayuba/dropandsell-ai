@@ -92,7 +92,7 @@ export function useDeleteFromPublishQueue() {
 
 export function useUpdatePublishQueueItem() {
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number; quantity?: number; postageType?: string; postageCost?: string }) => {
+    mutationFn: async ({ id, ...data }: { id: number; quantity?: number; calculatedPrice?: number; postageType?: string; postageCost?: string }) => {
       const res = await apiRequest("PUT", `/api/publish-queue/${id}`, data);
       return res.json();
     },
