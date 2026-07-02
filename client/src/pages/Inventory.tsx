@@ -585,7 +585,7 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="">No supplier</SelectItem>
+                  <SelectItem value="none">No supplier</SelectItem>
                   {vendors?.map((v: any) => (
                     <SelectItem key={v.id} value={v.id.toString()}>
                       <div className="flex items-center gap-2">
