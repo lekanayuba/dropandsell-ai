@@ -10,7 +10,6 @@ import {
   ShoppingCart, 
   Wallet, 
   CreditCard,
-  Zap,
   LogOut,
   Settings,
   Menu,
@@ -18,13 +17,14 @@ import {
   Shield,
   Gift,
   Truck,
+  BarChart3,
   BookOpen,
   Lightbulb,
   User,
   List,
   Rocket,
-  Bell,
-  FileEdit,
+  DatabaseZap,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
@@ -36,90 +36,60 @@ interface NavLink {
   href: string;
   label: string;
   icon: React.ElementType;
-  featured?: boolean;
 }
 
-interface NavGroup {
-  title: string;
-  links: NavLink[];
-}
+const baseLinks: NavLink[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/getstarted", label: "Getting Started", icon: Rocket },
+  { href: "/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/shipping", label: "Fulfillment", icon: Truck },
+  { href: "/stores", label: "Stores", icon: Store },
+  { href: "/vendors", label: "Vendors", icon: Users },
+  { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/manual", label: "Manual", icon: BookOpen },
+  { href: "/wallet", label: "Wallet", icon: Wallet },
+  { href: "/referrals", label: "Referrals", icon: Gift },
+  { href: "/subscription", label: "Subscription", icon: CreditCard },
+  { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
+  { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
+  { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+  { href: "/profile", label: "Profile", icon: User },
+  { href: "/faq", label: "FAQ", icon: HelpCircle },
+  { href: "/policies", label: "Policies", icon: Shield },
+  { href: "/settings", label: "Settings", icon: Settings },
+];
 
-function buildNavGroups(): NavGroup[] {
-  const groups: NavGroup[] = [
-    {
-      title: "Store",
-      links: [
-        { href: "/", label: "Dashboard", icon: LayoutDashboard },
-        { href: "/inventory", label: "Inventory", icon: Package },
-        { href: "/bulk-edit", label: "Bulk Edit", icon: FileEdit },
-        { href: "/orders", label: "Orders", icon: ShoppingCart },
-        { href: "/shipping", label: "Fulfillment", icon: Truck },
-        { href: "/customers", label: "Customers", icon: Users },
-      ],
-    },
-    {
-      title: "Tools",
-      links: [
-        { href: "/getstarted", label: "Getting Started", icon: Rocket },
-        { href: "/stores", label: "Stores", icon: Store },
-        { href: "/vendors", label: "Vendors", icon: Users },
-        { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
-        { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
-        { href: "/automation", label: "Automation", icon: Zap },
-        { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
-      ],
-    },
-    {
-      title: "Account",
-      links: [
-        { href: "/wallet", label: "Wallet", icon: Wallet },
-        { href: "/subscription", label: "Subscription", icon: CreditCard },
-        { href: "/referrals", label: "Referrals", icon: Gift },
-        { href: "/notifications", label: "Notifications", icon: Bell },
-        { href: "/profile", label: "Profile", icon: User },
-        { href: "/settings", label: "Settings", icon: Settings },
-      ],
-    },
-    {
-      title: "Support",
-      links: [
-        { href: "/manual", label: "Manual", icon: BookOpen },
-        { href: "/faq", label: "FAQ", icon: HelpCircle },
-        { href: "/policies", label: "Policies", icon: Shield },
-      ],
-    },
-  ];
-
-  return groups;
-}
-
+const adminLinks: NavLink[] = [
+  { href: "/subscribers-db", label: "Subscribers DB", icon: DatabaseZap },
+  { href: "/global-vaso", label: "Global VeRO", icon: Shield },
+];
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const navGroups = buildNavGroups();
+  const isAdmin = user?.role === "admin";
+  const links = isAdmin ? [...baseLinks, ...adminLinks] : baseLinks;
 
   const renderLink = (link: NavLink, isMobile: boolean = false) => {
     const Icon = link.icon;
     const isActive = location === link.href;
+    const testId = `link-nav-${link.href === "/" ? "dashboard" : link.href.replace(/\//g, "-").replace(/^-/, "")}`;
     const LinkContent = (
       <a
         className={cn(
-          "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+          "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition-colors",
           isActive
-            ? "bg-primary/10 text-primary"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          link.featured && "text-primary font-semibold"
+            ? "bg-white/10 text-white"
+            : "text-slate-300 hover:bg-white/5 hover:text-white"
         )}
-        data-testid={`link-nav-${link.href === "/" ? "dashboard" : link.href.replace(/\//g, "-").replace(/^-/, "")}`}
+        data-testid={testId}
       >
-        <Icon className="h-4 w-4" />
-        <span>{link.label}</span>
-        {link.featured && !isActive && (
-          <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-primary/80">
-            Start
-          </span>
+        {isActive && (
+          <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary" />
         )}
+        <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-primary" : "text-slate-400")} />
+        <span>{link.label}</span>
       </a>
     );
 
@@ -139,9 +109,9 @@ export function Sidebar() {
   };
 
   const NavContent = ({ isMobile = false }: { isMobile?: boolean }) => (
-    <div className="flex h-full flex-col bg-card text-card-foreground">
-      <div className="flex h-16 items-center border-b px-6">
-        <Link href="/" className="flex items-center gap-2.5 font-semibold" data-testid="link-logo-home">
+    <div className="flex h-full flex-col bg-slate-900 text-slate-300">
+      <div className="flex h-16 items-center gap-2.5 border-b border-slate-800 px-5">
+        <Link href="/" className="flex items-center gap-2.5" data-testid="link-logo-home">
           <img
             src={dropandSellLogo}
             alt="DropandSell"
@@ -149,25 +119,19 @@ export function Sidebar() {
             data-testid="img-app-logo"
           />
           <div className="leading-tight">
-            <span className="block text-base font-display font-bold">DropandSell</span>
-            <span className="block text-[11px] text-muted-foreground">Automation Platform</span>
+            <span className="block text-[15px] font-display font-bold text-white">DropandSell</span>
+            <span className="block text-[11px] text-slate-400">Automation Platform</span>
           </div>
         </Link>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <nav className="grid items-start gap-4 p-4 text-sm font-medium">
-          {navGroups.map((group) => (
-            <div key={group.title} className="space-y-1">
-              <h3 className="px-3 text-xs font-semibold uppercase text-muted-foreground tracking-wider">
-                {group.title}
-              </h3>
-              {group.links.map(link => renderLink(link, isMobile))}
-            </div>
-          ))}
 
+      <div className="flex-1 overflow-y-auto py-3">
+        <nav className="grid gap-0.5 px-3">
+          {links.map(link => renderLink(link, isMobile))}
         </nav>
       </div>
-      <UserMenu user={user ?? null} onLogout={logout} />
+
+      <UserMenu user={user ?? null} onLogout={logout} isAdmin={isAdmin} />
     </div>
   );
 
@@ -182,37 +146,47 @@ export function Sidebar() {
               <span className="sr-only">Toggle navigation menu</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex flex-col p-0 w-[280px]">
+          <SheetContent side="left" className="flex flex-col p-0 w-[280px] border-slate-800">
             <NavContent isMobile={true} />
           </SheetContent>
         </Sheet>
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-10 lg:block w-[280px] border-r bg-card">
+      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-10 lg:block w-[280px] border-r border-slate-800">
         <NavContent />
       </div>
     </>
   );
 }
 
-function UserMenu({ user, onLogout }: { user: AuthUser | null, onLogout: () => void }) {
+function UserMenu({ user, onLogout, isAdmin }: { user: AuthUser | null, onLogout: () => void, isAdmin: boolean }) {
   return (
-    <div className="mt-auto border-t p-4">
-      <div className="flex items-center gap-3 mb-3">
-        <Avatar className="h-9 w-9 border">
+    <div className="mt-auto border-t border-slate-800 p-3">
+      <div className="mb-2 flex items-center gap-2.5 px-2 py-1.5">
+        <Avatar className="h-9 w-9 border border-slate-700">
           <AvatarImage src={user?.profileImageUrl ?? undefined} alt="User avatar" />
-          <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
+          <AvatarFallback className="bg-slate-800 text-slate-200">{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
         </Avatar>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate" data-testid="text-user-name">{user?.firstName} {user?.lastName}</p>
-          <p className="text-xs text-muted-foreground truncate" data-testid="text-user-email">{user?.email}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-white" data-testid="text-user-name">
+            {isAdmin ? "Admin Zone" : `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || "Account"}
+          </p>
+          <p className="truncate text-[11px] text-slate-400" data-testid="text-user-email">{user?.email}</p>
         </div>
       </div>
-      <Button variant="outline" className="w-full justify-start gap-2" onClick={onLogout} data-testid="button-logout">
+      <button
+        onClick={onLogout}
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:bg-red-500/15 hover:text-red-400"
+        data-testid="button-logout"
+      >
         <LogOut className="h-4 w-4" />
         <span>Sign Out</span>
-      </Button>
+      </button>
+      <div className="mt-1 flex items-center gap-2 px-3 py-1.5 text-[12px] text-slate-500">
+        <Globe className="h-3.5 w-3.5" />
+        <span>English</span>
+      </div>
     </div>
   );
 }
