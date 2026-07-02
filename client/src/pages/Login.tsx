@@ -283,8 +283,9 @@ export default function Login() {
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                           id="email"
-                          type="email"
-                          placeholder="you@example.com"
+                          type={isLogin ? "text" : "email"}
+                          autoComplete="username"
+                          placeholder={isLogin ? "you@example.com or username" : "you@example.com"}
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           className="pl-10"
