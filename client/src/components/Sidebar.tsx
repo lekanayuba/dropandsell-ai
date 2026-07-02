@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
-import { useAuth, User as AuthUser } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/use-auth";
+import type { User as AuthUser } from "@shared/models/auth";
 import { 
   LayoutDashboard, 
   Store, 
@@ -17,16 +18,20 @@ import {
   Shield,
   Gift,
   Truck,
-  BarChart3,
   BookOpen,
   Lightbulb,
   User,
   List,
+  Rocket,
+  Bell,
+  FileEdit,
+  DatabaseZap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import dropandSellLogo from "@assets/Drop_1.jpg_1775119096004.jpeg";
 
 interface NavLink {
   href: string;
@@ -40,52 +45,73 @@ interface NavGroup {
   links: NavLink[];
 }
 
-const navGroups: NavGroup[] = [
-  {
-    title: "Store",
-    links: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/inventory", label: "Inventory", icon: Package },
-      { href: "/orders", label: "Orders", icon: ShoppingCart },
-      { href: "/shipping", label: "Fulfillment", icon: Truck },
-      { href: "/customers", label: "Customers", icon: Users },
-    ],
-  },
-  {
-    title: "Tools",
-    links: [
-      { href: "/analytics", label: "Analytics", icon: BarChart3 },
-      { href: "/stores", label: "Stores", icon: Store },
-      { href: "/vendors", label: "Vendors", icon: Users },
-      { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
-      { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
-      { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
-    ],
-  },
-  {
-    title: "Account",
-    links: [
-      { href: "/wallet", label: "Wallet", icon: Wallet },
-      { href: "/subscription", label: "Subscription", icon: CreditCard },
-      { href: "/referrals", label: "Referrals", icon: Gift },
-      { href: "/profile", label: "Profile", icon: User },
-      { href: "/settings", label: "Settings", icon: Settings },
-    ],
-  },
-  {
-    title: "Support",
-    links: [
-      { href: "/manual", label: "Manual", icon: BookOpen },
-      { href: "/faq", label: "FAQ", icon: HelpCircle },
-      { href: "/policies", label: "Policies", icon: Shield },
-    ],
-  },
-];
+function buildNavGroups(isAdmin: boolean): NavGroup[] {
+  const groups: NavGroup[] = [
+    {
+      title: "Store",
+      links: [
+        { href: "/", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/inventory", label: "Inventory", icon: Package },
+        { href: "/bulk-edit", label: "Bulk Edit", icon: FileEdit },
+        { href: "/orders", label: "Orders", icon: ShoppingCart },
+        { href: "/shipping", label: "Fulfillment", icon: Truck },
+        { href: "/customers", label: "Customers", icon: Users },
+      ],
+    },
+    {
+      title: "Tools",
+      links: [
+        { href: "/getstarted", label: "Getting Started", icon: Rocket },
+        { href: "/stores", label: "Stores", icon: Store },
+        { href: "/vendors", label: "Vendors", icon: Users },
+        { href: "/addon-catalog", label: "Add-ons", icon: PackageOpen },
+        { href: "/drosell-auto-listing", label: "DROSEL Auto-Listing", icon: List },
+        { href: "/automation", label: "Automation", icon: Zap },
+        { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+      ],
+    },
+    {
+      title: "Account",
+      links: [
+        { href: "/wallet", label: "Wallet", icon: Wallet },
+        { href: "/subscription", label: "Subscription", icon: CreditCard },
+        { href: "/referrals", label: "Referrals", icon: Gift },
+        { href: "/notifications", label: "Notifications", icon: Bell },
+        { href: "/profile", label: "Profile", icon: User },
+        { href: "/settings", label: "Settings", icon: Settings },
+      ],
+    },
+    {
+      title: "Support",
+      links: [
+        { href: "/manual", label: "Manual", icon: BookOpen },
+        { href: "/faq", label: "FAQ", icon: HelpCircle },
+        { href: "/policies", label: "Policies", icon: Shield },
+      ],
+    },
+  ];
+
+  if (isAdmin) {
+    groups.push({
+      title: "Admin",
+      links: [
+        { href: "/admin", label: "Admin Dashboard", icon: LayoutDashboard },
+        { href: "/admin/support", label: "Support Inbox", icon: HelpCircle },
+        { href: "/subscribers-db", label: "Subscribers DB", icon: DatabaseZap },
+        { href: "/global-vaso", label: "Global VeRO", icon: Shield },
+      ],
+    });
+  }
+
+  return groups;
+}
 
 
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const navGroups = buildNavGroups(isAdmin);
 
   const renderLink = (link: NavLink, isMobile: boolean = false) => {
     const Icon = link.icon;
@@ -99,6 +125,7 @@ export function Sidebar() {
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
           link.featured && "text-primary font-semibold"
         )}
+        data-testid={`link-nav-${link.href === "/" ? "dashboard" : link.href.replace(/\//g, "-").replace(/^-/, "")}`}
       >
         <Icon className="h-4 w-4" />
         <span>{link.label}</span>
@@ -128,11 +155,17 @@ export function Sidebar() {
   const NavContent = ({ isMobile = false }: { isMobile?: boolean }) => (
     <div className="flex h-full flex-col bg-card text-card-foreground">
       <div className="flex h-16 items-center border-b px-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <PackageOpen className="h-6 w-6 text-primary" />
-          <span className="text-lg font-display font-bold">
-            DropandSell AI
-          </span>
+        <Link href="/" className="flex items-center gap-2.5 font-semibold" data-testid="link-logo-home">
+          <img
+            src={dropandSellLogo}
+            alt="DropandSell"
+            className="h-9 w-9 rounded-lg object-contain"
+            data-testid="img-app-logo"
+          />
+          <div className="leading-tight">
+            <span className="block text-base font-display font-bold">DropandSell</span>
+            <span className="block text-[11px] text-muted-foreground">Automation Platform</span>
+          </div>
         </Link>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -148,7 +181,7 @@ export function Sidebar() {
 
         </nav>
       </div>
-      <UserMenu user={user} onLogout={logout} />
+      <UserMenu user={user ?? null} onLogout={logout} />
     </div>
   );
 
@@ -158,7 +191,7 @@ export function Sidebar() {
       <div className="lg:hidden fixed top-4 left-4 z-50">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="shrink-0">
+            <Button variant="outline" size="icon" className="shrink-0" data-testid="button-open-menu">
               <Menu className="w-5 h-5" />
               <span className="sr-only">Toggle navigation menu</span>
             </Button>
@@ -186,11 +219,11 @@ function UserMenu({ user, onLogout }: { user: AuthUser | null, onLogout: () => v
           <AvatarFallback>{user?.firstName?.[0]}{user?.lastName?.[0]}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{user?.firstName} {user?.lastName}</p>
-          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+          <p className="text-sm font-medium truncate" data-testid="text-user-name">{user?.firstName} {user?.lastName}</p>
+          <p className="text-xs text-muted-foreground truncate" data-testid="text-user-email">{user?.email}</p>
         </div>
       </div>
-      <Button variant="outline" className="w-full justify-start gap-2" onClick={onLogout}>
+      <Button variant="outline" className="w-full justify-start gap-2" onClick={onLogout} data-testid="button-logout">
         <LogOut className="h-4 w-4" />
         <span>Sign Out</span>
       </Button>

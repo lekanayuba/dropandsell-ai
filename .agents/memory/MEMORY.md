@@ -1,3 +1,4 @@
 - [Schema drift fix](schema-drift.md) — this project's live code often runs ahead of its DB; add missing columns via SQL, not interactive drizzle push.
 - [Email broadcasts](email-broadcasts.md) — how mass emails to verified subscribers are sent (recipients from prod, script in app runtime).
 - [Prod data writes](prod-data-writes.md) — agent executeSql on prod is READ-ONLY; write prod data via an admin-guarded endpoint run on the deployed app.
+- [Backup branch](backup-branch.md) — original full app is on `gitsafe-backup/main`; rebuild may reference assets missing from current tree; restore via `git show`.
