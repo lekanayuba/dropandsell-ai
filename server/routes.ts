@@ -25,6 +25,7 @@ import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSet
 import { updateShopifyStock } from "./platforms/shopify";
 import { updateAmazonStock } from "./platforms/amazon";
 import { updateWooCommerceStock } from "./platforms/woocommerce";
+import { checkSupplierStock, detectSupplier, buildSourceUrl } from "./platforms/supplierMonitor";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
 import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
@@ -661,6 +662,166 @@ export async function registerRoutes(
       }
     } catch (err) {
       console.error(`[VendorStock] Error checking vendor ${vendorId}:`, err);
+    }
+  }
+
+  // Continuously monitor supplier listings for imported products and reflect
+  // out-of-stock / discontinued / removed / restock changes into the database.
+  // Marketplace listings + connected stores are then reconciled by
+  // syncOutOfStockProducts (OOS) and backgroundSyncAllStores (restock).
+  const SUPPLIER_MONITOR_BATCH = 40; // products checked per cycle (oldest first)
+  const SUPPLIER_MONITOR_CONCURRENCY = 5;
+  let supplierMonitorRunning = false;
+
+  async function monitorSupplierInventory(): Promise<void> {
+    // Single-flight: skip if the previous cycle is still running (slow suppliers).
+    if (supplierMonitorRunning) {
+      console.log("[SupplierMonitor] Previous cycle still running — skipping");
+      return;
+    }
+    supplierMonitorRunning = true;
+    try {
+      // Pick products that have a supplier source, least-recently-checked first.
+      const candidates = await db
+        .select({
+          id: products.id,
+          userId: products.userId,
+          title: products.title,
+          quantity: products.quantity,
+          attributes: products.attributes,
+          externalProductId: products.externalProductId,
+          vendorName: vendors.name,
+          vendorWebsite: vendors.website,
+        })
+        .from(products)
+        .leftJoin(vendors, eq(products.vendorId, vendors.id))
+        .where(
+          or(
+            isNotNull(products.attributes),
+            isNotNull(products.externalProductId),
+          ),
+        )
+        .orderBy(sql`${products.lastMarketplaceSync} asc nulls first`)
+        .limit(SUPPLIER_MONITOR_BATCH);
+
+      if (candidates.length === 0) return;
+
+      // Resolve each candidate to a checkable source URL.
+      const jobs = candidates
+        .map((p) => {
+          const attrs = (p.attributes || {}) as Record<string, any>;
+          const supplier = detectSupplier(
+            attrs.sourceUrl,
+            p.vendorName,
+            p.vendorWebsite,
+          );
+          const url: string | undefined =
+            attrs.sourceUrl || buildSourceUrl(supplier, p.externalProductId);
+          return url ? { product: p, url, supplier } : null;
+        })
+        .filter((j): j is NonNullable<typeof j> => j !== null);
+
+      if (jobs.length === 0) return;
+
+      let oosCount = 0;
+      let restockCount = 0;
+
+      // Simple bounded-concurrency pool so we never hammer suppliers.
+      let cursor = 0;
+      const worker = async (): Promise<void> => {
+        while (cursor < jobs.length) {
+          const job = jobs[cursor++];
+          const { product, url, supplier } = job;
+          const now = new Date();
+          try {
+            const result = await checkSupplierStock(url, supplier);
+            const unavailable =
+              result.status === "out_of_stock" ||
+              result.status === "discontinued" ||
+              result.status === "removed";
+
+            if (unavailable && Number(product.quantity) > 0) {
+              await db
+                .update(products)
+                .set({
+                  quantity: 0,
+                  marketplaceStockStatus: "out_of_stock",
+                  lastMarketplaceSync: now,
+                  updatedAt: now,
+                })
+                .where(eq(products.id, product.id));
+              oosCount++;
+              const reasonText =
+                result.status === "removed"
+                  ? "was removed by the supplier"
+                  : result.status === "discontinued"
+                    ? "was discontinued by the supplier"
+                    : "is out of stock at the supplier";
+              await storage.createNotification({
+                userId: product.userId,
+                type: "stock_alert",
+                title: "Product out of stock",
+                message: `"${product.title}" ${reasonText}. It has been marked Out of Stock and purchasing is disabled.`,
+              });
+            } else if (
+              result.status === "in_stock" &&
+              Number(product.quantity) <= 0
+            ) {
+              const restoredQty =
+                result.quantity && result.quantity > 0 ? result.quantity : 1;
+              await db
+                .update(products)
+                .set({
+                  quantity: restoredQty,
+                  marketplaceStockStatus: "in_stock",
+                  lastMarketplaceSync: now,
+                  updatedAt: now,
+                })
+                .where(eq(products.id, product.id));
+              restockCount++;
+              await storage.createNotification({
+                userId: product.userId,
+                type: "restock",
+                title: "Product back in stock",
+                message: `"${product.title}" is available again at the supplier. It has been restored to In Stock (qty ${restoredQty}).`,
+              });
+            } else {
+              // No actionable change — just record that we checked.
+              await db
+                .update(products)
+                .set({ lastMarketplaceSync: now })
+                .where(eq(products.id, product.id));
+            }
+          } catch (err: any) {
+            console.error(
+              `[SupplierMonitor] Product ${product.id} check failed:`,
+              err?.message ?? err,
+            );
+            await db
+              .update(products)
+              .set({ lastMarketplaceSync: now })
+              .where(eq(products.id, product.id))
+              .catch(() => {});
+          }
+        }
+      };
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(SUPPLIER_MONITOR_CONCURRENCY, jobs.length) },
+          () => worker(),
+        ),
+      );
+
+      if (oosCount > 0 || restockCount > 0) {
+        console.log(
+          `[SupplierMonitor] Checked ${jobs.length} listings — ${oosCount} marked OOS, ${restockCount} restocked`,
+        );
+      }
+    } catch (err) {
+      console.error("[SupplierMonitor] Error:", err);
+    } finally {
+      supplierMonitorRunning = false;
     }
   }
 
@@ -4707,13 +4868,16 @@ Guidelines:
   // === BACKGROUND STOCK SYNC JOB (runs every 2 minutes) ===
   const SYNC_INTERVAL = 2 * 60 * 1000;
   console.log(`[BackgroundSync] Starting — will sync every 2 minutes`);
-  setInterval(() => {
+  setInterval(async () => {
+    // Detect supplier-side stock changes first, then reconcile listings/stores.
+    await monitorSupplierInventory();
     backgroundSyncAllStores();
     syncOutOfStockProducts();
   }, SYNC_INTERVAL);
 
   // Also run one sync shortly after startup (after 30s to let DB warm up)
-  setTimeout(() => {
+  setTimeout(async () => {
+    await monitorSupplierInventory();
     backgroundSyncAllStores();
     syncOutOfStockProducts();
   }, 30_000);

@@ -80,7 +80,20 @@ export default function Inventory() {
 
     try {
       const activeRule = pricingRules?.find((r) => r.isActive);
-      const items = selectedProducts.map((productId) => {
+      const inStockSelected = selectedProducts.filter((productId) => {
+        const product = data?.items.find((p) => p.id === productId);
+        return Number(product?.quantity) > 0;
+      });
+
+      if (inStockSelected.length === 0) {
+        toast({ title: "Out of stock", description: "Selected products are out of stock and can't be published.", variant: "destructive" });
+        return;
+      }
+      if (inStockSelected.length < selectedProducts.length) {
+        toast({ title: "Some skipped", description: `${selectedProducts.length - inStockSelected.length} out-of-stock product(s) were skipped.` });
+      }
+
+      const items = inStockSelected.map((productId) => {
         const product = data?.items.find((p) => p.id === productId);
         const costPrice = Number(product?.costPrice || 0);
         let calculatedPrice = Number(product?.sellingPrice || costPrice);

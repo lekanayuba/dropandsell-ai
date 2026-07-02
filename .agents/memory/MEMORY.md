@@ -1,8 +1,2 @@
-- [Schema drift fix](schema-drift.md) — this project's live code often runs ahead of its DB; add missing columns via SQL, not interactive drizzle push.
-- [Email broadcasts](email-broadcasts.md) — how mass emails to verified subscribers are sent (recipients from prod, script in app runtime).
-- [Prod data writes](prod-data-writes.md) — agent executeSql on prod is READ-ONLY; write prod data via an admin-guarded endpoint run on the deployed app.
-- [Backup branch](backup-branch.md) — original full app is on `gitsafe-backup/main`; rebuild may reference assets missing from current tree; restore via `git show`.
-- [Order/admin conventions](orders-conventions.md) — ownership enforced in routes via getOrder(id,userId) pre-check (pass userId to updateOrder too); admin = role==='admin' or founder email, NOT isAdmin flag.
-- [Account-deletion authz](account-deletion-authz.md) — non-admin deletes of other users must derive target server-side from re-verified proof, never a client-supplied id (IDOR).
-- [Subscriber feature access](feature-access-policy.md) — all authenticated subscribers get full access; isSubscriber returns !!user, no subscription paywall.
-- [Drizzle nullable where](drizzle-nullable-where.md) — JS ??/|| on a column is NOT SQL COALESCE; use or(isNull(col), ...) so NULL rows aren't silently skipped.
+- [Supplier stock monitoring](supplier-stock-monitoring.md) — SSRF-safe outbound fetch + no-buy-CTA rule for auto OOS/restock detection; keep guards intact.
+- [AI chat gateway](ai-chat-gateway.md) — support chat uses AI_INTEGRATIONS_OPENAI_* gateway vars that don't appear in the visible secrets list; verify via process.env, don't assume unset.

@@ -88,6 +88,16 @@ Preferred communication style: Simple, everyday language.
 - Optional min/max price constraints to prevent under/over-pricing
 - Calculation: costPrice × (1 + markup%) or costPrice / (1 - margin%) or costPrice + fixed
 
+### Automatic Supplier Inventory Sync
+- Continuously monitors the live supplier listing for every imported product
+- Source is taken from the product's `attributes.sourceUrl` (extension imports) or reconstructed from `externalProductId` (e.g. Temu)
+- Supported suppliers: Amazon, eBay, Walmart, AliExpress, CJ Dropshipping, Temu, Costco, Best Buy, Etsy (extendable via the domain allowlist)
+- Detection is a real best-effort HTTP check (`server/platforms/supplierMonitor.ts`): if the listing shows out-of-stock / discontinued / removed, the product is set to quantity 0 and status `out_of_stock`; on restock it is restored to In Stock with the detected quantity
+- SSRF-safe: outbound fetches are restricted to an allowlist of supplier domains, raw-IP and private/loopback/link-local/metadata hosts are blocked, and redirects are re-validated on every hop
+- False-positive guard: a listing is only marked unavailable when no buy CTA ("add to cart"/"buy now") is present; ambiguous or bot-blocked pages are left unchanged (`unknown`)
+- Runs in the shared 2-minute background loop (`monitorSupplierInventory`) before store reconciliation, guarded by a single-flight lock; changes propagate to connected marketplace listings/storefronts via `syncOutOfStockProducts` (OOS) and `backgroundSyncAllStores` (restock)
+- Purchasing is disabled for out-of-stock products in the client portal (blocked from the publish queue) and pushed as out-of-stock/ended to connected stores
+
 ### CSV Import
 - Upload vendor product catalogs with automatic field detection
 - Field mapping UI allows matching CSV columns to database fields
