@@ -12,6 +12,10 @@ import { users } from "@shared/schema";
  * hash of the password) as shared config so both dev and the published app
  * seed the same admin login.
  */
+// The owner's account always keeps admin access, regardless of which
+// login the ADMIN_USERNAME config points at.
+const OWNER_EMAIL = "dropandsellauth@gmail.com";
+
 export async function seedAdminUser() {
   const username = process.env.ADMIN_USERNAME?.trim().toLowerCase();
   const passwordHash = process.env.ADMIN_PASSWORD_HASH;
@@ -56,12 +60,22 @@ export async function seedAdminUser() {
       console.log(`[seed-admin] Ensured admin access for "${username}"`);
     }
 
-    // Lock down the admin portal to this single account: strip admin access
-    // from every other account so only the configured admin can get in.
+    // Make sure the owner's account always has admin access.
+    const ownerPromoted = await db
+      .update(users)
+      .set({ isAdmin: "true", updatedAt: now })
+      .where(and(eq(users.email, OWNER_EMAIL), ne(users.isAdmin, "true")))
+      .returning({ id: users.id });
+    if (ownerPromoted.length > 0) {
+      console.log(`[seed-admin] Restored admin access for owner "${OWNER_EMAIL}"`);
+    }
+
+    // Lock down the admin portal: strip admin access from every account
+    // except the configured admin login and the owner's account.
     const demoted = await db
       .update(users)
       .set({ isAdmin: "false", updatedAt: now })
-      .where(and(ne(users.email, username), eq(users.isAdmin, "true")))
+      .where(and(ne(users.email, username), ne(users.email, OWNER_EMAIL), eq(users.isAdmin, "true")))
       .returning({ id: users.id });
     if (demoted.length > 0) {
       console.log(`[seed-admin] Revoked admin access from ${demoted.length} other account(s)`);

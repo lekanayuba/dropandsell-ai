@@ -27,7 +27,7 @@ const upload = multer({
 
 const FREE_ACCESS_EMAILS: Record<string, { isAdmin: boolean; unlimitedStores?: boolean; freeAddons?: boolean; bonusStores?: number; skipPlanOverride?: boolean }> = {
   'cyrinaudochukwu28@gmail.com': { isAdmin: false, unlimitedStores: true },
-  'dropandsellauth@gmail.com': { isAdmin: false, freeAddons: true },
+  'dropandsellauth@gmail.com': { isAdmin: true, freeAddons: true },
   'mukaila.ayuba@outlook.com': { isAdmin: false, unlimitedStores: true, freeAddons: true },
   'rtrebecca@yahoo.com': { isAdmin: false, freeAddons: true },
   'triple.u.fam@gmail.com': { isAdmin: false, bonusStores: 1, skipPlanOverride: true },
