@@ -29,15 +29,20 @@ const candidateIndexPaths = [
   path.resolve(process.cwd(), "dist", "public", "index.html"),
 ];
 
-for (const indexPath of candidateIndexPaths) {
-  try {
-    if (fs.existsSync(indexPath)) {
-      indexHtmlContent = fs.readFileSync(indexPath, "utf-8");
-      console.log("Loaded index.html from", indexPath);
-      break;
+// Only preload the built index.html in production. In development the Vite dev
+// server owns "/" and transforms index.html on the fly; serving a stale built
+// copy here would reference hashed asset files that no longer exist.
+if (process.env.NODE_ENV === "production") {
+  for (const indexPath of candidateIndexPaths) {
+    try {
+      if (fs.existsSync(indexPath)) {
+        indexHtmlContent = fs.readFileSync(indexPath, "utf-8");
+        console.log("Loaded index.html from", indexPath);
+        break;
+      }
+    } catch (e) {
+      console.log("Could not preload index.html from", indexPath, ":", e);
     }
-  } catch (e) {
-    console.log("Could not preload index.html from", indexPath, ":", e);
   }
 }
 

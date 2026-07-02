@@ -1,3 +1,4 @@
 - [/api/auth/me field allowlist](auth-me-field-allowlist.md) — new user columns must be added to the me-response object (no spread); otherwise UI reads undefined after reload.
 - [Supplier stock monitoring](supplier-stock-monitoring.md) — SSRF-safe outbound fetch + no-buy-CTA rule for auto OOS/restock detection; keep guards intact.
 - [AI chat gateway](ai-chat-gateway.md) — support chat uses AI_INTEGRATIONS_OPENAI_* gateway vars that don't appear in the visible secrets list; verify via process.env, don't assume unset.
+- [Dev index.html preload shadows Vite](dev-index-html-preload.md) — server/index.ts must gate the built-index.html preload to production or it blanks the dev preview.
