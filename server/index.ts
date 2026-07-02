@@ -253,6 +253,13 @@ httpServer.listen(
         log(`application fully initialized`);
 
         try {
+          const { seedAdminUser } = await import("./seedAdmin");
+          await seedAdminUser();
+        } catch (err: any) {
+          console.error("[seed-admin] startup hook failed:", err?.message || err);
+        }
+
+        try {
           const { storage } = await import("./storage");
           const pendingPaidEmails = ['Kafilatyakub2000@yahoo.co.uk', 'tina_ogbomo@yahoo.com', 'teejay23113@gmail.com', 'Mercya75@hotmail.com'];
           for (const email of pendingPaidEmails) {
