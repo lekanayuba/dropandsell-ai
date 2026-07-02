@@ -129,7 +129,7 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground font-body selection:bg-primary/20">
-      <Sidebar />
+      <Sidebar variant="admin" />
       <main className="flex-1 lg:ml-[260px] transition-all duration-300 overflow-y-auto">
         <ExtensionBar />
         <ListingResolvedBanner />

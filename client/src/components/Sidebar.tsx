@@ -18,6 +18,7 @@ import {
   Shield,
   Gift,
   UserCircle,
+  DatabaseZap,
   Puzzle,
   Lightbulb,
   ShoppingCart,
@@ -33,13 +34,15 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-export function Sidebar() {
+export function Sidebar({ variant = "client" }: { variant?: "client" | "admin" }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const { hasAccess: hasFulfillmentAccess } = useFeatureAccess('auto_fulfillment');
   const { hasAccess: hasDropAndSellAccess } = useFeatureAccess('drop_and_sell');
 
-  const links = [
+  const isAdminVariant = variant === "admin";
+
+  const clientLinks = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/getting-started", label: "Getting Started", icon: Rocket },
     ...(hasFulfillmentAccess
@@ -63,12 +66,16 @@ export function Sidebar() {
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
     { href: "/settings", label: "Settings", icon: Settings },
-    ...(user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com"
-      ? [
-          { href: "/admin", label: "Admin Dashboard", icon: LayoutDashboard },
-        ]
-      : []),
   ];
+
+  const adminLinks = [
+    { href: "/admin", label: "Admin Dashboard", icon: LayoutDashboard },
+    { href: "/admin/subscribers", label: "Subscribers DB", icon: DatabaseZap },
+    { href: "/admin/global-vero", label: "Global VeRO", icon: Shield },
+    { href: "/admin/paypal-payouts", label: "PayPal Payouts", icon: Wallet },
+  ];
+
+  const links = isAdminVariant ? adminLinks : clientLinks;
 
   const NavContent = () => (
     <div className="flex flex-col h-full" style={{ background: 'hsl(var(--sidebar-bg))' }}>
@@ -77,7 +84,7 @@ export function Sidebar() {
           <img src={dropandSellLogo} alt="DropandSell Automation App" className="h-10 w-10 rounded-lg object-contain" style={{ filter: 'brightness(1.1)' }} data-testid="img-app-logo" />
           <div>
             <span className="text-[15px] font-semibold tracking-tight text-white font-display">DropandSell</span>
-            <p className="text-[11px] leading-tight" style={{ color: 'hsl(var(--sidebar-muted))' }}>Automation Platform</p>
+            <p className="text-[11px] leading-tight" style={{ color: 'hsl(var(--sidebar-muted))' }}>{isAdminVariant ? 'Admin Panel' : 'Automation Platform'}</p>
           </div>
         </div>
       </div>
