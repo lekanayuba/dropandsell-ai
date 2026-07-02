@@ -331,13 +331,13 @@ export async function registerRoutes(
       }
 
       const o = result.rows[0];
+      // Public endpoint (no auth): do not expose customer-identifying info
       res.json({
         trackingNumber: o.tracking_number,
         carrier: o.carrier,
         status: o.tracking_status,
         trackingUrl: o.tracking_url,
         lastUpdated: o.tracking_updated_at,
-        customerName: o.customer_name,
         orderDate: o.created_at,
       });
     } catch (err: any) {

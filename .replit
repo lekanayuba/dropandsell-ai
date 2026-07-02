@@ -41,3 +41,8 @@ waitForPort = 5000
 
 [agent]
 integrations = []
+
+[userenv]
+
+[userenv.shared]
+TRACKING_API_KEY = "7261B35F5B194CB8FE0A3E306D2C8514"
