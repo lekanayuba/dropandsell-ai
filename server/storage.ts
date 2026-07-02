@@ -3,7 +3,7 @@ import {
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, globalVeroList, contentFilters, restrictedProducts,
   addonPurchases, trendingProducts, suggestions,
   skuMappings, fulfillmentJobs, paymentCards, returnRequests, auditLogs, featureFlags,
-  veroBrandAliases, veroAuditLog, freelancerProfiles, dropAndSellOrders,
+  veroBrandAliases, veroAuditLog, freelancerProfiles, dropAndSellOrders, changelogEntries,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
@@ -13,7 +13,8 @@ import {
   type InsertAuditLog, type AuditLog, type InsertFeatureFlag, type FeatureFlag,
   type InsertVeroAuditLog, type VeroAuditLog,
   type InsertFreelancerProfile, type FreelancerProfile,
-  type InsertDropAndSellOrder, type DropAndSellOrder
+  type InsertDropAndSellOrder, type DropAndSellOrder,
+  type InsertChangelogEntry, type ChangelogEntry
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db } from "./db";
@@ -135,6 +136,13 @@ export interface IStorage {
   getOrders(userId: string): Promise<typeof orders.$inferSelect[]>;
   getOrder(id: number): Promise<typeof orders.$inferSelect | undefined>;
   createOrder(order: InsertOrder & { userId: string }): Promise<typeof orders.$inferSelect>;
+
+  // Changelog ("What's New")
+  getChangelogEntries(includeUnpublished?: boolean): Promise<ChangelogEntry[]>;
+  getChangelogEntry(id: number): Promise<ChangelogEntry | undefined>;
+  createChangelogEntry(entry: InsertChangelogEntry): Promise<ChangelogEntry>;
+  updateChangelogEntry(id: number, updates: Partial<InsertChangelogEntry>): Promise<ChangelogEntry | undefined>;
+  deleteChangelogEntry(id: number): Promise<void>;
 
   // Wallet
   getWallet(userId: string): Promise<typeof wallet.$inferSelect | undefined>;
@@ -440,6 +448,38 @@ export class DatabaseStorage implements IStorage {
     const [order] = await db.select().from(orders)
       .where(and(eq(orders.externalOrderId, externalOrderId), eq(orders.userId, userId)));
     return order;
+  }
+
+  // Changelog ("What's New")
+  async getChangelogEntries(includeUnpublished = false): Promise<ChangelogEntry[]> {
+    const rows = includeUnpublished
+      ? await db.select().from(changelogEntries).orderBy(desc(changelogEntries.publishedAt))
+      : await db.select().from(changelogEntries)
+          .where(eq(changelogEntries.isPublished, true))
+          .orderBy(desc(changelogEntries.publishedAt));
+    return rows;
+  }
+
+  async getChangelogEntry(id: number): Promise<ChangelogEntry | undefined> {
+    const [entry] = await db.select().from(changelogEntries).where(eq(changelogEntries.id, id));
+    return entry;
+  }
+
+  async createChangelogEntry(entry: InsertChangelogEntry): Promise<ChangelogEntry> {
+    const [created] = await db.insert(changelogEntries).values(entry).returning();
+    return created;
+  }
+
+  async updateChangelogEntry(id: number, updates: Partial<InsertChangelogEntry>): Promise<ChangelogEntry | undefined> {
+    const [updated] = await db.update(changelogEntries)
+      .set(updates)
+      .where(eq(changelogEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChangelogEntry(id: number): Promise<void> {
+    await db.delete(changelogEntries).where(eq(changelogEntries.id, id));
   }
 
   async updateOrder(id: number, userId: string, data: Partial<InsertOrder>) {

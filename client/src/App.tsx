@@ -49,6 +49,7 @@ import AdminPaypalPayouts from "@/pages/AdminPaypalPayouts";
 import AdminSupport from "@/pages/AdminSupport";
 import Addons from "@/pages/Addons";
 import Suggestions from "@/pages/Suggestions";
+import WhatsNew from "@/pages/WhatsNew";
 import Orders from "@/pages/Orders";
 import Fulfillment from "@/pages/Fulfillment";
 import GettingStarted from "@/pages/GettingStarted";
@@ -278,6 +279,7 @@ function Router() {
       <Route path="/fulfillment" component={() => <FeatureGatedRoute component={Fulfillment} featureKey="auto_fulfillment" />} />
       <Route path="/drop-and-sell" component={() => <FeatureGatedRoute component={DropAndSell} featureKey="drop_and_sell" />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />
+      <Route path="/whats-new" component={() => <ProtectedRoute component={WhatsNew} />} />
       <Route path="/getting-started" component={() => <ProtectedRoute component={GettingStarted} />} />
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin" component={() => <AdminRoute component={AdminHub} />} />

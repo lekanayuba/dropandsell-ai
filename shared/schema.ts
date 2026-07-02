@@ -287,6 +287,16 @@ export const restrictedProducts = pgTable("restricted_products", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const changelogEntries = pgTable("changelog_entries", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  category: text("category").notNull().default("improvement"), // 'new' | 'improvement' | 'fix'
+  isPublished: boolean("is_published").notNull().default(true),
+  publishedAt: timestamp("published_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one, many }) => ({
   stores: many(stores),
@@ -334,6 +344,15 @@ export type Product = typeof products.$inferSelect;
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof orders.$inferSelect;
+
+// Changelog ("What's New")
+export const insertChangelogEntrySchema = createInsertSchema(changelogEntries).omit({ id: true, createdAt: true }).extend({
+  title: z.string().min(1, "Title is required").max(200),
+  body: z.string().min(1, "Details are required"),
+  category: z.enum(["new", "improvement", "fix"]).default("improvement"),
+});
+export type InsertChangelogEntry = z.infer<typeof insertChangelogEntrySchema>;
+export type ChangelogEntry = typeof changelogEntries.$inferSelect;
 
 // Wallet
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true, walletId: true, createdAt: true });

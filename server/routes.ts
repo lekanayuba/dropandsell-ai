@@ -14,7 +14,7 @@ import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } fro
 import { db } from "./db";
 import { SUBSCRIPTION_PLANS, getYearlyPrice } from "./subscriptionPlans";
 import { sql, eq, and, or, desc, ne } from "drizzle-orm";
-import { users, wallet, transactions, referrals, stores, orders, products, vendors, publishQueue, pricingRules, skuMappings, importJobs, veroList, globalVeroList, contentFilters, restrictedProducts, addonPurchases, suggestions, subscriptions, fulfillmentJobs, paymentCards, returnRequests, auditLogs, freelancerProfiles, marketplaceListings, dropAndSellOrders } from "@shared/schema";
+import { users, wallet, transactions, referrals, stores, orders, products, vendors, publishQueue, pricingRules, skuMappings, importJobs, veroList, globalVeroList, contentFilters, restrictedProducts, addonPurchases, suggestions, subscriptions, fulfillmentJobs, paymentCards, returnRequests, auditLogs, freelancerProfiles, marketplaceListings, dropAndSellOrders, insertChangelogEntrySchema } from "@shared/schema";
 import OpenAI from "openai";
 import { publishToMarketplace, testMarketplaceConnection } from "./marketplaces/index";
 import { getEbayUserIdentity, generateAIDescription, generateAITitle, generateAIItemSpecifics } from "./marketplaces/ebay";
@@ -892,6 +892,77 @@ export async function registerRoutes(
   // Protected router for API routes
   const protectedApi: Router = express.Router();
   protectedApi.use(isAuthenticated);
+
+  // === CHANGELOG ("What's New") ===
+  // Any signed-in customer can read published updates.
+  protectedApi.get('/changelog', async (req: any, res) => {
+    try {
+      const entries = await storage.getChangelogEntries(false);
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin-only management endpoints.
+  const requireChangelogAdmin = async (req: any, res: any): Promise<boolean> => {
+    const user = await storage.getUser(req.user.claims.sub);
+    if (user?.isAdmin !== 'true') {
+      res.status(403).json({ message: 'Admin access required' });
+      return false;
+    }
+    return true;
+  };
+
+  protectedApi.get('/admin/changelog', async (req: any, res) => {
+    try {
+      if (!(await requireChangelogAdmin(req, res))) return;
+      const entries = await storage.getChangelogEntries(true);
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.post('/admin/changelog', async (req: any, res) => {
+    try {
+      if (!(await requireChangelogAdmin(req, res))) return;
+      const parsed = insertChangelogEntrySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid data', errors: parsed.error.flatten() });
+      }
+      const created = await storage.createChangelogEntry(parsed.data);
+      res.status(201).json(created);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.patch('/admin/changelog/:id', async (req: any, res) => {
+    try {
+      if (!(await requireChangelogAdmin(req, res))) return;
+      const id = Number(req.params.id);
+      const parsed = insertChangelogEntrySchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid data', errors: parsed.error.flatten() });
+      }
+      const updated = await storage.updateChangelogEntry(id, parsed.data);
+      if (!updated) return res.status(404).json({ message: 'Entry not found' });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  protectedApi.delete('/admin/changelog/:id', async (req: any, res) => {
+    try {
+      if (!(await requireChangelogAdmin(req, res))) return;
+      await storage.deleteChangelogEntry(Number(req.params.id));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // === DASHBOARD ===
   protectedApi.get('/dashboard/stats', async (req: any, res) => {
@@ -2770,6 +2841,19 @@ export async function registerRoutes(
       if (lower.includes('out of stock') || lower.includes('not available')) {
         inStock = false;
       }
+    } else if (vendor === 'temu') {
+      // Temu shows "almost sold out" for LOW stock (still buyable), so we must
+      // exclude that phrase before treating "sold out" as out-of-stock.
+      const soldOut = lower.includes('sold out') && !lower.includes('almost sold out');
+      if (
+        soldOut ||
+        lower.includes('no longer available') ||
+        lower.includes('currently unavailable') ||
+        lower.includes('this item is unavailable') ||
+        lower.includes('item is not available')
+      ) {
+        inStock = false;
+      }
     } else {
       if (lower.includes('out of stock') || lower.includes('sold out') || lower.includes('currently unavailable') || lower.includes('no longer available') || lower.includes('not available')) {
         inStock = false;
@@ -2818,6 +2902,7 @@ export async function registerRoutes(
       if (host.includes('aliexpress')) return 'aliexpress';
       if (host.includes('etsy')) return 'etsy';
       if (host.includes('walmart')) return 'walmart';
+      if (host.includes('temu')) return 'temu';
       if (host.includes('tiktok')) return 'tiktok';
       if (host.includes('home.bargains')) return 'homebargains';
       if (host.includes('shein')) return 'shein';
@@ -2881,32 +2966,82 @@ export async function registerRoutes(
     return shipping;
   }
 
+  // Detects when a supplier served a bot-check / CAPTCHA / access-denied page
+  // INSTEAD of the real product page. These pages return HTTP 200 but contain
+  // none of our out-of-stock signals, so if we parsed them normally they would
+  // look "in stock" — which silently resets the failed-scrape counter and can
+  // even clear an auto-pause lock, relisting a genuinely sold-out item. That is
+  // a direct cause of eBay cancellations, so we treat these as a failed scrape
+  // (keep last known stock) rather than trusting them.
+  function looksLikeBotBlockPage(html: string): boolean {
+    if (!html || html.length < 200) return true;
+    const head = html.slice(0, 8000).toLowerCase();
+    const blockSignals = [
+      'captcha',
+      'are you a robot',
+      'robot check',
+      'unusual traffic',
+      "verify you're a human",
+      'verify you are a human',
+      'enter the characters you see below',
+      'to discuss automated access',
+      'access to this page has been denied',
+      'access denied',
+      'request blocked',
+      'pardon our interruption',
+      'px-captcha',
+      'checking your browser before',
+      'just a moment...',
+      'cf-browser-verification',
+      'please enable javascript and cookies to continue',
+      'security check to access',
+    ];
+    return blockSignals.some((s) => head.includes(s));
+  }
+
   async function fetchVendorStock(sourceUrl: string, vendor: string): Promise<{ inStock: boolean; quantity: number | null; vendorPrice?: number | null; vendorShipping?: number | null; error?: string; fetchFailed?: boolean }> {
     if (!isValidVendorUrl(sourceUrl)) {
       return { inStock: true, quantity: null, error: 'Invalid URL', fetchFailed: true };
     }
     const detectedVendor = vendor || detectVendorFromUrl(sourceUrl);
-    try {
-      const response = await fetch(sourceUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-GB,en;q=0.9',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!response.ok) {
-        return { inStock: true, quantity: null, error: `Vendor returned ${response.status}`, fetchFailed: true };
+
+    const attempt = async (): Promise<{ inStock: boolean; quantity: number | null; vendorPrice?: number | null; vendorShipping?: number | null; error?: string; fetchFailed?: boolean }> => {
+      try {
+        const response = await fetch(sourceUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-GB,en;q=0.9',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) {
+          return { inStock: true, quantity: null, error: `Vendor returned ${response.status}`, fetchFailed: true };
+        }
+        const html = await response.text();
+        if (looksLikeBotBlockPage(html)) {
+          return { inStock: true, quantity: null, error: 'Vendor served a bot-check/blocked page (kept last known value)', fetchFailed: true };
+        }
+        const stockResult = parseStockFromHtml(html, detectedVendor);
+        const vendorPrice = parsePriceFromHtml(html, detectedVendor);
+        const vendorShipping = parseShippingFromHtml(html, detectedVendor);
+        return { ...stockResult, vendorPrice, vendorShipping };
+      } catch (err: any) {
+        return { inStock: true, quantity: null, error: err.message || 'Failed to fetch vendor page', fetchFailed: true };
       }
-      const html = await response.text();
-      const stockResult = parseStockFromHtml(html, detectedVendor);
-      const vendorPrice = parsePriceFromHtml(html, detectedVendor);
-      const vendorShipping = parseShippingFromHtml(html, detectedVendor);
-      return { ...stockResult, vendorPrice, vendorShipping };
-    } catch (err: any) {
-      return { inStock: true, quantity: null, error: err.message || 'Failed to fetch vendor page', fetchFailed: true };
+    };
+
+    // One immediate retry on a transient failure (timeout, network blip, soft
+    // block). This shrinks the window where a genuinely out-of-stock item stays
+    // "In Stock" because a single flaky request counted as a failure and made
+    // us wait for the next monitor cycle to try again.
+    let result = await attempt();
+    if (result.fetchFailed) {
+      await new Promise((r) => setTimeout(r, 1500));
+      result = await attempt();
     }
+    return result;
   }
 
   // Builds the new vendorStock object after a fetch attempt.

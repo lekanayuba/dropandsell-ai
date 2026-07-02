@@ -27,6 +27,7 @@ import {
   ShoppingBag,
   ChevronRight,
   MessageSquare,
+  Sparkles,
 } from "lucide-react";
 import dropandSellLogo from "@assets/Drop_1.jpg_1775119096004.jpeg";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -63,6 +64,7 @@ export function Sidebar({ variant = "client" }: { variant?: "client" | "admin" }
     { href: "/addons", label: "Add-ons", icon: Puzzle },
     ...(hasDropAndSellAccess ? [{ href: "/drop-and-sell", label: "DROSEL Auto-Listing", icon: ShoppingBag }] : []),
     { href: "/suggestions", label: "Suggestions", icon: Lightbulb },
+    { href: "/whats-new", label: "What's New", icon: Sparkles },
     { href: "/profile", label: "Profile", icon: UserCircle },
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
