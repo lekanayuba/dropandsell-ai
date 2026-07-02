@@ -39,7 +39,7 @@ interface NavLink {
 
 const baseLinks: NavLink[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/getstarted", label: "Getting Started", icon: Rocket },
+  { href: "/getting-started", label: "Getting Started", icon: Rocket },
   { href: "/orders", label: "Orders", icon: ShoppingCart },
   { href: "/shipping", label: "Fulfillment", icon: Truck },
   { href: "/stores", label: "Stores", icon: Store },

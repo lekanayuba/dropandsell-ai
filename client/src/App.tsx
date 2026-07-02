@@ -35,6 +35,7 @@ import TemuIntegration from "@/pages/TemuIntegration";
 import AdminSupport from "@/pages/AdminSupport";
 import AdminDashboard from "@/pages/AdminDashboard";
 import Getstarted from "@/pages/Getstarted";
+import GettingStarted from "@/pages/GettingStarted";
 import BulkEdit from "@/pages/BulkEdit";
 import ShippingProfiles from "@/pages/ShippingProfiles";
 import Customers from "@/pages/Customers";
@@ -149,6 +150,7 @@ function Router() {
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/analytics" component={() => <Redirect to="/getstarted" />} />
       <Route path="/getstarted" component={() => <ProtectedRoute component={Getstarted} />} />
+      <Route path="/getting-started" component={() => <ProtectedRoute component={GettingStarted} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stores} />} />
       <Route path="/vendors" component={() => <ProtectedRoute component={Vendors} />} />
       <Route path="/customers" component={() => <ProtectedRoute component={Customers} />} />
