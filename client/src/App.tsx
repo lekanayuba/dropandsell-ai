@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Sidebar } from "@/components/Sidebar";
+import { AppHeader } from "@/components/AppHeader";
 import { SupportChat } from "@/components/SupportChat";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useAuth } from "@/hooks/use-auth";
@@ -82,9 +83,10 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return (
     <div className="min-h-screen w-full bg-muted/40 font-body text-foreground selection:bg-primary/20">
       <Sidebar />
-      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14 lg:pl-72">
+      <div className="flex min-h-screen flex-col lg:pl-72">
+        <AppHeader />
         <ErrorBoundary>
-          <main className="flex-1 p-4 sm:px-6 sm:py-0 md:p-8"><Component /></main>
+          <main className="flex-1 p-4 sm:px-6 sm:py-6 md:p-8"><Component /></main>
         </ErrorBoundary>
       </div>
     </div>
@@ -117,9 +119,10 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
   return (
     <div className="min-h-screen w-full bg-muted/40 font-body text-foreground selection:bg-primary/20">
       <Sidebar />
-      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14 lg:pl-72">
+      <div className="flex min-h-screen flex-col lg:pl-72">
+        <AppHeader />
         <ErrorBoundary>
-          <main className="flex-1 p-4 sm:px-6 sm:py-0 md:p-8"><Component /></main>
+          <main className="flex-1 p-4 sm:px-6 sm:py-6 md:p-8"><Component /></main>
         </ErrorBoundary>
       </div>
     </div>
