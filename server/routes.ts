@@ -3586,6 +3586,7 @@ export async function registerRoutes(
       console.log(`[PRICE-SYNC] Product ${product.id}: cost updated to £${newVendorPrice}, but new selling price £${newSellingPrice} is not higher than current £${oldSellingPrice} — not pushing to eBay.`);
     }
 
+    const profitMargin = newSellingPrice > 0 ? (newSellingPrice - effectiveCost) / newSellingPrice : 0;
     return {
       oldCost: oldCostPrice, newCost: effectiveCost,
       oldSelling: oldSellingPrice, newSelling: newSellingPrice,
