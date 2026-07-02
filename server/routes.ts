@@ -420,6 +420,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Username and password are required' });
       }
 
+      // Hard lock: only the single configured admin username may ever log in
+      // here, regardless of whether any other account is flagged as admin.
+      const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
+      if (!ADMIN_USERNAME || String(username).trim().toLowerCase() !== ADMIN_USERNAME) {
+        return res.status(403).json({ message: 'Invalid username or password' });
+      }
+
       let user = await storage.getUserByEmail(username);
       if (!user && typeof username === 'string') {
         user = await storage.getUserByEmail(username.trim().toLowerCase());

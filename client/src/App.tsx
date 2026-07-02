@@ -122,7 +122,7 @@ function AdminRoute({ component: Component }: { component: React.ComponentType }
     return <AdminLogin />;
   }
 
-  const isAdmin = user?.isAdmin === "true" || user?.email === "dropandsellauth@gmail.com";
+  const isAdmin = user?.isAdmin === "true";
   if (!isAdmin) {
     return <Redirect to="/" />;
   }
