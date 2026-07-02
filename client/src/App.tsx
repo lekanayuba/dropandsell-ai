@@ -91,6 +91,41 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   );
 }
 
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  const isAdmin =
+    (user as any)?.role === "admin" ||
+    (user as any)?.email === "dropandsellauth@gmail.com";
+
+  if (!isAdmin) {
+    return <Redirect to="/" />;
+  }
+
+  return (
+    <div className="min-h-screen w-full bg-muted/40 font-body text-foreground selection:bg-primary/20">
+      <Sidebar />
+      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14 lg:pl-72">
+        <ErrorBoundary>
+          <main className="flex-1 p-4 sm:px-6 sm:py-0 md:p-8"><Component /></main>
+        </ErrorBoundary>
+      </div>
+    </div>
+  );
+}
+
 function PublicPolicyRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading, user } = useAuth();
 
@@ -165,14 +200,14 @@ function Router() {
       <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
       <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
       <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />      
-      <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
-      <Route path="/admin" component={() => <AdminDashboard />} />
+      <Route path="/admin/support" component={() => <AdminRoute component={AdminSupport} />} />
+      <Route path="/admin" component={() => <AdminRoute component={AdminDashboard} />} />
       <Route path="/manual" component={() => <ProtectedRoute component={Manual} />} />
       <Route path="/drosell-auto-listing" component={() => <ProtectedRoute component={DrosellAutoListing} />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />
       <Route path="/profile" component={() => <ProtectedRoute component={ProfilePage} />} />
-      <Route path="/subscribers-db" component={() => <ProtectedRoute component={SubscribersDB} />} />
-      <Route path="/global-vaso" component={() => <ProtectedRoute component={GlobalVASO} />} />
+      <Route path="/subscribers-db" component={() => <AdminRoute component={SubscribersDB} />} />
+      <Route path="/global-vaso" component={() => <AdminRoute component={GlobalVASO} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>

@@ -22,6 +22,9 @@ import { registerChatRoutes } from "./replit_integrations/chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
 import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
+import { updateShopifyStock } from "./platforms/shopify";
+import { updateAmazonStock } from "./platforms/amazon";
+import { updateWooCommerceStock } from "./platforms/woocommerce";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
 import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
@@ -117,6 +120,18 @@ export async function registerRoutes(
     console.log("[Migration] stores auto-settings columns ready");
   } catch (e: any) {
     console.error("[Migration] stores auto-settings columns failed:", e.message);
+  }
+
+  try {
+    await db.execute(sql`
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id varchar
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS conversations_user_id_idx ON conversations (user_id)
+    `);
+    console.log("[Migration] conversations.user_id column ready");
+  } catch (e: any) {
+    console.error("[Migration] conversations.user_id column failed:", e.message);
   }
 
   // === STANDALONE EMAIL/PASSWORD AUTH ===
@@ -361,6 +376,28 @@ export async function registerRoutes(
   // Track which stores are currently being synced (prevents duplicate syncs)
   const syncingStores: Map<number, Promise<void>> = new Map();
 
+  // Push a stock quantity change to the real marketplace listing (per platform)
+  async function pushMarketplaceStock(
+    platform: string,
+    externalId: string | null | undefined,
+    sku: string | null | undefined,
+    quantity: number,
+  ): Promise<void> {
+    try {
+      if (platform === 'shopify' && externalId) {
+        await updateShopifyStock({ externalId, quantity });
+      } else if (platform === 'woocommerce' && externalId) {
+        await updateWooCommerceStock({ externalId, quantity });
+      } else if (platform === 'amazon' && sku) {
+        await updateAmazonStock({ sku, quantity });
+      } else if (platform === 'ebay' && externalId && quantity <= 0) {
+        await endEbayListing(externalId);
+      }
+    } catch (err: any) {
+      console.error(`[MarketplaceStock] ${platform} update failed for ${externalId ?? sku}:`, err?.message ?? err);
+    }
+  }
+
   // Core sync logic for a single store — updates all listings' stock from linked products
   async function syncStore(storeId: number, userId: string): Promise<{ outOfStockCount: number; inStockCount: number }> {
     // If already syncing, wait for the existing sync
@@ -394,13 +431,13 @@ export async function registerRoutes(
             .set({ stockStatus: 'out_of_stock', outOfStockAt: new Date(), lastSync: new Date() })
             .where(eq(marketplaceListings.id, listing.id));
 
+          // Push the out-of-stock status to the real marketplace listing
+          if (store.autoMarkOutOfStock || store.autoPauseListings) {
+            await pushMarketplaceStock(store.platform, listing.externalId, product.sku, 0);
+          }
+
           if (store.autoPauseListings) {
             await storage.updateMarketplaceListingStatus(listing.id, 'ended');
-
-            // Actually end the listing on the marketplace via API
-            if (store.platform === 'ebay' && listing.externalId) {
-              endEbayListing(listing.externalId);
-            }
           }
 
           if (listing.stockStatus === 'in_stock') {
@@ -443,6 +480,12 @@ export async function registerRoutes(
                 console.error(`[AutoRestock] Failed to re-list ${listing.externalId}:`, err.message);
               }
             }
+          }
+
+          // Restore stock quantity on the real marketplace listing (non-eBay) whenever
+          // we auto-manage stock, even if the listing was never paused/ended.
+          if (store.platform !== 'ebay' && (store.autoMarkOutOfStock || store.autoRestock)) {
+            await pushMarketplaceStock(store.platform, listing.externalId, product.sku, Number(product.quantity) || 0);
           }
 
           inStockCount++;
@@ -542,7 +585,9 @@ export async function registerRoutes(
         storeId: marketplaceListings.storeId,
         stockStatus: marketplaceListings.stockStatus,
         externalId: marketplaceListings.externalId,
+        sku: products.sku,
       }).from(marketplaceListings)
+        .innerJoin(products, eq(marketplaceListings.productId, products.id))
         .where(and(inArray(marketplaceListings.productId, ids), eq(marketplaceListings.stockStatus, 'in_stock')));
 
       if (oosListings.length === 0) return;
@@ -553,6 +598,7 @@ export async function registerRoutes(
         ? await db.select({
             id: stores.id, platform: stores.platform, userId: stores.userId,
             autoPauseListings: stores.autoPauseListings,
+            autoMarkOutOfStock: stores.autoMarkOutOfStock,
           }).from(stores).where(inArray(stores.id, storeIds))
         : [];
       const storeMap = new Map(storeRows.map(s => [s.id, s]));
@@ -571,11 +617,12 @@ export async function registerRoutes(
         });
 
         const store = storeMap.get(listing.storeId);
+        if (store && (store.autoMarkOutOfStock || store.autoPauseListings)) {
+          // Push the out-of-stock status to the real marketplace listing
+          await pushMarketplaceStock(store.platform, listing.externalId, listing.sku, 0);
+        }
         if (store?.autoPauseListings) {
           await storage.updateMarketplaceListingStatus(listing.id, 'ended');
-          if (store.platform === 'ebay' && listing.externalId) {
-            endEbayListing(listing.externalId);
-          }
         }
         count++;
       }

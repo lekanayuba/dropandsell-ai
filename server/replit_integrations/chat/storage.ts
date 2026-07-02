@@ -1,11 +1,11 @@
 import { db } from "../../db";
 import { conversations, messages } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IChatStorage {
-  getConversation(id: number): Promise<typeof conversations.$inferSelect | undefined>;
-  getAllConversations(): Promise<(typeof conversations.$inferSelect)[]>;
-  createConversation(title: string): Promise<typeof conversations.$inferSelect>;
+  getConversation(id: number, userId?: string): Promise<typeof conversations.$inferSelect | undefined>;
+  getAllConversations(userId: string): Promise<(typeof conversations.$inferSelect)[]>;
+  createConversation(title: string, userId: string): Promise<typeof conversations.$inferSelect>;
   updateConversationTitle(id: number, title: string): Promise<void>;
   deleteConversation(id: number): Promise<void>;
   getMessagesByConversation(conversationId: number): Promise<(typeof messages.$inferSelect)[]>;
@@ -13,17 +13,24 @@ export interface IChatStorage {
 }
 
 export const chatStorage: IChatStorage = {
-  async getConversation(id: number) {
-    const [conversation] = await db.select().from(conversations).where(eq(conversations.id, id));
+  async getConversation(id: number, userId?: string) {
+    const where = userId
+      ? and(eq(conversations.id, id), eq(conversations.userId, userId))
+      : eq(conversations.id, id);
+    const [conversation] = await db.select().from(conversations).where(where);
     return conversation;
   },
 
-  async getAllConversations() {
-    return db.select().from(conversations).orderBy(desc(conversations.createdAt));
+  async getAllConversations(userId: string) {
+    return db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.userId, userId))
+      .orderBy(desc(conversations.createdAt));
   },
 
-  async createConversation(title: string) {
-    const [conversation] = await db.insert(conversations).values({ title }).returning();
+  async createConversation(title: string, userId: string) {
+    const [conversation] = await db.insert(conversations).values({ title, userId }).returning();
     return conversation;
   },
 
@@ -45,4 +52,3 @@ export const chatStorage: IChatStorage = {
     return message;
   },
 };
-
