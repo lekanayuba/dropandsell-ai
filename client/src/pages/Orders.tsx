@@ -61,6 +61,16 @@ function detectEbayCarrier(trackingNumber: string): { carrier: string; label: st
   return null;
 }
 
+function validateTrackingClient(raw: string): { valid: boolean; reason?: string } {
+  const cleaned = (raw || '').trim().replace(/[\s\-]+/g, '');
+  if (!cleaned) return { valid: false };
+  if (cleaned.length < 6) return { valid: false, reason: 'Too short — a tracking number needs at least 6 characters.' };
+  if (cleaned.length > 40) return { valid: false, reason: 'Too long — a tracking number is at most 40 characters.' };
+  if (!/^[A-Za-z0-9]+$/.test(cleaned)) return { valid: false, reason: 'Only letters and numbers are allowed.' };
+  if (!/\d/.test(cleaned)) return { valid: false, reason: 'A valid tracking number must contain at least one number.' };
+  return { valid: true };
+}
+
 function TrackingPreview({ trackingNumber, carrier }: { trackingNumber: string; carrier: string }) {
   const detected = detectEbayCarrier(trackingNumber);
   const ebayCarrierMap: Record<string, string> = {
@@ -785,8 +795,15 @@ export default function Orders() {
               )}
             </div>
 
-            {converterTracking && (
+            {converterTracking && validateTrackingClient(converterTracking).valid && (
               <TrackingPreview trackingNumber={converterTracking} carrier={converterCarrier} />
+            )}
+
+            {converterTracking && !validateTrackingClient(converterTracking).valid && (
+              <div className="mt-2 p-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md text-xs flex items-center gap-1.5" data-testid="tracking-validation-error">
+                <XCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0" />
+                <span className="text-red-700 dark:text-red-300">{validateTrackingClient(converterTracking).reason}</span>
+              </div>
             )}
 
             <div className="flex items-center gap-3">
@@ -800,7 +817,7 @@ export default function Orders() {
                     storeId: converterStoreId && converterStoreId !== 'auto' ? converterStoreId : undefined,
                   });
                 }}
-                disabled={!converterTracking || !converterEbayOrderId || pushTrackingToEbay.isPending}
+                disabled={!converterTracking || !validateTrackingClient(converterTracking).valid || !converterEbayOrderId || pushTrackingToEbay.isPending}
                 data-testid="button-push-tracking"
               >
                 {pushTrackingToEbay.isPending ? (

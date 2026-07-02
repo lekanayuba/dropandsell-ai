@@ -6825,6 +6825,20 @@ export async function registerRoutes(
     }
   });
 
+  // Basic sanity validation for a carrier tracking number before we push it to eBay.
+  // Carrier-specific format detection is handled separately by convertToEbayTracking.
+  function validateTrackingNumber(raw: string): { valid: boolean; cleaned: string; reason?: string } {
+    // Normalize away common display separators (spaces, hyphens) so a valid number
+    // typed as "1Z 999 AA1 012 345 675" or "12-34567-89012" is accepted.
+    const cleaned = (raw || '').trim().replace(/[\s\-]+/g, '');
+    if (!cleaned) return { valid: false, cleaned, reason: 'Please enter a tracking number.' };
+    if (cleaned.length < 6) return { valid: false, cleaned, reason: 'That tracking number looks too short (needs at least 6 characters).' };
+    if (cleaned.length > 40) return { valid: false, cleaned, reason: 'That tracking number looks too long (max 40 characters).' };
+    if (!/^[A-Za-z0-9]+$/.test(cleaned)) return { valid: false, cleaned, reason: 'A tracking number can only contain letters and numbers.' };
+    if (!/\d/.test(cleaned)) return { valid: false, cleaned, reason: 'A valid tracking number must contain at least one number.' };
+    return { valid: true, cleaned };
+  }
+
   function convertToEbayTracking(rawTrackingNumber: string, selectedCarrier: string): { trackingNumber: string; shippingCarrierCode: string; autoDetected: boolean } {
     const cleaned = rawTrackingNumber.trim().replace(/\s+/g, '');
     let trackingNumber = cleaned;
@@ -7029,7 +7043,13 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'trackingNumber and ebayOrderId are required' });
       }
 
-      const converted = convertToEbayTracking(trackingNumber.trim(), (carrier || 'OTHER').trim());
+      // Validate the tracking number before doing anything with eBay.
+      const validation = validateTrackingNumber(trackingNumber);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.reason });
+      }
+
+      const converted = convertToEbayTracking(validation.cleaned, (carrier || 'OTHER').trim());
 
       let ebayStore: any = null;
       if (storeId) {
@@ -7060,12 +7080,14 @@ export async function registerRoutes(
           .map((li: any) => ({ lineItemId: li.lineItemId, quantity: li.quantity || 1 }));
       }
 
+      let ebayOrderFetchStatus: number | null = null;
       if (ebayLineItems.length === 0) {
         try {
           const orderResp = await fetch(
             `https://api.ebay.com/sell/fulfillment/v1/order/${ebayOrderId}`,
             { headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' } }
           );
+          ebayOrderFetchStatus = orderResp.status;
           if (orderResp.ok) {
             const orderData = await orderResp.json();
             ebayLineItems = (orderData.lineItems || []).map((li: any) => ({
@@ -7079,7 +7101,14 @@ export async function registerRoutes(
       }
 
       if (ebayLineItems.length === 0) {
-        return res.status(400).json({ message: 'Could not determine eBay line item IDs for this order. Please ensure the order exists and try again.' });
+        // Give the seller a precise reason so they can fix the input.
+        if (ebayOrderFetchStatus === 404) {
+          return res.status(404).json({ message: 'This order was not found in your connected eBay account. Double-check the eBay Order ID, and if you have more than one store make sure the correct one is selected.' });
+        }
+        if (ebayOrderFetchStatus === 401 || ebayOrderFetchStatus === 403) {
+          return res.status(401).json({ message: 'eBay denied access to this order. Please reconnect your eBay store in Settings and try again.' });
+        }
+        return res.status(400).json({ message: 'Could not determine eBay line item IDs for this order. Please ensure the order exists in your eBay account and try again.' });
       }
 
       const { pushOrReplaceEbayFulfillment } = await import('./marketplaces/ebay');
@@ -7108,6 +7137,48 @@ export async function registerRoutes(
           },
         });
 
+        // If this eBay order also exists locally, keep it in sync: mark it shipped,
+        // save the tracking, and start live monitoring — same as the per-order flow.
+        let localOrderSynced = false;
+        try {
+          const localOrder = await storage.getOrderByExternalId(ebayOrderId, userId);
+          if (localOrder) {
+            const statusUpdate: any = {
+              trackingNumber: converted.trackingNumber,
+              carrier: converted.shippingCarrierCode,
+            };
+            if (localOrder.status !== 'delivered' && localOrder.status !== 'cancelled') {
+              statusUpdate.status = 'shipped';
+            }
+            await storage.updateOrder(localOrder.id, userId, statusUpdate);
+            localOrderSynced = true;
+
+            try {
+              const { registerTracking } = await import('./tracking17track');
+              const num = converted.trackingNumber.trim();
+              const reg = await registerTracking([num]);
+              const rejMsg = reg.rejected[num];
+              const alreadyWatched = !!rejMsg && /exist|already/i.test(rejMsg);
+              const registered = reg.accepted.includes(num) || alreadyWatched;
+              await storage.updateOrder(localOrder.id, userId, {
+                trackingInfo: {
+                  provider: '17track',
+                  status: 'Pending',
+                  statusLabel: 'Pending',
+                  tone: 'gray',
+                  registered,
+                  registerError: registered ? null : (rejMsg || 'Could not register with tracking provider'),
+                  checkedAt: new Date().toISOString(),
+                },
+              } as any);
+            } catch (regErr: any) {
+              console.error('[Tracking] 17track register (push-to-ebay) failed:', regErr.message);
+            }
+          }
+        } catch (syncErr: any) {
+          console.error('[eBay Tracking Push] Local order sync failed:', syncErr.message);
+        }
+
         res.json({
           success: true,
           trackingNumber: converted.trackingNumber,
@@ -7118,6 +7189,7 @@ export async function registerRoutes(
           carrierTrackingUrl: live.url,
           carrierLabel: live.label,
           ebayOrderUrl,
+          localOrderSynced,
         });
       } else {
         console.error('[eBay Tracking Push] Failed:', pushResult.error);

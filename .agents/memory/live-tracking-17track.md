@@ -21,3 +21,8 @@ Orders reflect real courier status (In Transit / Out for Delivery / Delivered) b
 ## Storage
 - Order tracking status is stored in the additive `orders.tracking_info` (jsonb) column — added via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, NOT drizzle push (this repo's live DB is a superset; avoid destructive push).
 - Delivered detection auto-flips `orders.status` to `delivered` (never overriding `cancelled`).
+
+## Standalone eBay tracking push (`/tracking/push-to-ebay`)
+- Works for eBay orders NOT in the local DB: it fetches line items live from `sell/fulfillment/v1/order/{id}` using the user's token, so any order in the connected account can be shipped.
+- **Tracking-number validation must normalize separators (strip spaces AND hyphens) BEFORE validating**, then check alphanumeric + must-contain-a-digit + length 6–40. **Why:** an earlier version rejected legit numbers typed with hyphens/spaces (e.g. "1Z 999 ... 675"), failing the "accept ANY valid carrier number" requirement.
+- On success it also syncs the local order if one exists (mark shipped unless delivered/cancelled, save tracking, register with 17track) so the standalone path and the per-order path stay consistent.
