@@ -69,6 +69,7 @@ export function Sidebar({ variant = "client" }: { variant?: "client" | "admin" }
     { href: "/faq", label: "FAQ", icon: HelpCircle },
     { href: "/policies", label: "Policies", icon: Shield },
     { href: "/settings", label: "Settings", icon: Settings },
+    ...(user?.isAdmin === "true" ? [{ href: "/admin", label: "Admin Zone", icon: DatabaseZap }] : []),
   ];
 
   const adminLinks = [
