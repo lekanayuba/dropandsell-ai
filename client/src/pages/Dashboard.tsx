@@ -306,16 +306,15 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [orders]);
 
-  // Low stock / out of stock / vendor OOS products
-  const lowStockProducts = useMemo(() => {
+  // Products with vendor stock status
+  const vendorStockProducts = useMemo(() => {
     if (!products?.items) return [];
     return products.items
       .filter((p: any) => {
-        if (Number(p.quantity) <= 5) return true;
         const attrs = p.attributes || {};
-        return attrs.vendorStockStatus === 'out_of_stock';
+        return attrs.vendorStockStatus === 'in_stock' || attrs.vendorStockStatus === 'out_of_stock';
       })
-      .slice(0, 5);
+      .slice(0, 10);
   }, [products]);
 
   // Auto-restock stores
@@ -460,11 +459,11 @@ export default function Dashboard() {
             <Card className="border-border/50 shadow-sm">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Boxes className="w-4 h-4 text-violet-500" />
-                  <span className="text-xs text-muted-foreground">Low Stock</span>
+                  <Package className="w-4 h-4 text-violet-500" />
+                  <span className="text-xs text-muted-foreground">Vendor Stock</span>
                 </div>
-                <p className="text-xl font-bold">{lowStockProducts.length}</p>
-                <p className="text-[10px] text-muted-foreground">Products need restock</p>
+                <p className="text-xl font-bold">{vendorStockProducts.length}</p>
+                <p className="text-[10px] text-muted-foreground">Products with vendor status</p>
               </CardContent>
             </Card>
           </div>
@@ -546,41 +545,34 @@ export default function Dashboard() {
           <CardContent className="p-0">
             {(!products?.items || products.items.length === 0) ? (
               <div className="text-sm text-muted-foreground py-8 text-center">No products yet</div>
-            ) : lowStockProducts.length === 0 ? (
-              <div className="text-sm text-muted-foreground py-8 text-center">All products are well-stocked</div>
+            ) : vendorStockProducts.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-8 text-center">No vendor stock info yet</div>
             ) : (
               <div className="divide-y divide-border/10">
-                {lowStockProducts.map((p: any) => {
-                  const attrs = p.attributes || {};
-                  const vStatus = attrs.vendorStockStatus;
-                  const qty = Number(p.quantity);
-                  const isOOS = qty <= 0;
-                  const isRed = isOOS || vStatus === 'out_of_stock';
-                  const isGreen = vStatus === 'in_stock';
+                {vendorStockProducts.map((p: any) => {
+                  const vStatus = (p.attributes || {}).vendorStockStatus;
+                  const isInStock = vStatus === 'in_stock';
                   return (
                   <div key={p.id} className="flex items-center justify-between py-3 px-4 hover:bg-muted/20 transition-colors">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-                        isRed ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
+                        isInStock ? "bg-green-50 dark:bg-green-950/20" : "bg-red-50 dark:bg-red-950/20"
                       )}>
-                        {isRed
-                          ? <XCircle className="w-3.5 h-3.5 text-red-600" />
-                          : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+                        {isInStock
+                          ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                          : <XCircle className="w-3.5 h-3.5 text-red-600" />}
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{p.name || p.sku || `Product #${p.id}`}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          Stock: {qty}
-                          {vStatus && qty > 0 ? <span className={cn("ml-1", isGreen ? "text-green-600" : "text-red-600")}>· Vendor: {vStatus === 'in_stock' ? 'In Stock' : 'Out of Stock'}</span> : ''}
-                          {vStatus === 'out_of_stock' && qty <= 0 ? <span className="ml-1 text-red-600">· Vendor OOS</span> : ''}
+                          {isInStock ? 'In Stock' : 'Out of Stock'}
                         </p>
                       </div>
                     </div>
                     <Badge variant="outline" className={cn("text-[10px] shrink-0 gap-1",
-                      isGreen ? "text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20" :
-                      isRed ? "text-red-600 border-red-200" : "text-amber-600 border-amber-200"
+                      isInStock ? "text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20" : "text-red-600 border-red-200"
                     )}>
-                      {isGreen ? 'In Stock' : isOOS ? 'Out of Stock' : vStatus === 'out_of_stock' ? 'Out of Stock' : 'Low'}
+                      {isInStock ? 'In Stock' : 'Out of Stock'}
                     </Badge>
                   </div>
                   );
