@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Truck, Package, Clock, Search, AlertTriangle, RefreshCw } from "lucide-react";
+import { Truck, Package, Clock, Search, AlertTriangle, RefreshCw, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import { api } from "@shared/routes";
 export default function Orders() {
   const { data: orders, isLoading } = useOrders();
   const [trackingOrderId, setTrackingOrderId] = useState<number | null>(null);
+  const [ebayDialogOpen, setEbayDialogOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -77,6 +78,14 @@ export default function Orders() {
         </Card>
       </div>
 
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-sm text-muted-foreground">{orders?.length ?? 0} orders</p>
+        <Button variant="outline" size="sm" onClick={() => setEbayDialogOpen(true)}
+          className="border-blue-200 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-950/20">
+          <Globe className="w-3.5 h-3.5 mr-1.5" />
+          Push Tracking to eBay
+        </Button>
+      </div>
       <div className="rounded-xl border border-border/50 bg-card overflow-hidden shadow-sm">
         <Table>
           <TableHeader>
@@ -186,6 +195,10 @@ export default function Orders() {
           setTrackingOrderId(null);
         }}
       />
+      <PushToEbayDialog
+        open={ebayDialogOpen}
+        onClose={() => setEbayDialogOpen(false)}
+      />
     </div>
   );
 }
@@ -294,6 +307,115 @@ function TrackingDialog({
             disabled={!trackingNumber || trackingMutation.isPending}
           >
             {trackingMutation.isPending ? "Converting..." : "Convert & Notify Customer"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PushToEbayDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [ebayOrderId, setEbayOrderId] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [carrier, setCarrier] = useState("");
+  const [detected, setDetected] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const updateTrackingNumber = (value: string) => {
+    setTrackingNumber(value);
+    const t = value.trim().toUpperCase();
+    if (/^1Z[A-Z0-9]{16,18}$/.test(t)) setDetected("UPS");
+    else if (/^(FX|RF)/.test(t) || /^\d{12,15}$/.test(t)) setDetected("FedEx");
+    else if (/^(94|93|92|91|90)\d{18,20}$/.test(t)) setDetected("USPS");
+    else if (/^JD\d{18}/.test(t) || /^\d{10}$/.test(t)) setDetected("DHL");
+    else if (/^[A-Z]{2}\d{9}GB$/.test(t)) setDetected("Royal Mail");
+    else if (/^LP\d{13,16}$/.test(t) || /^CP\d{13,16}$/.test(t)) setDetected("China Post");
+    else if (/^\d{14}$/.test(t)) setDetected("DPD");
+    else if (/^\d{16}$/.test(t)) setDetected("Evri");
+    else setDetected(null);
+  };
+
+  const pushMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/ebay/push-tracking', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ebayOrderId, trackingNumber, carrier: carrier || detected }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to push tracking to eBay");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Success", description: data.message });
+      setEbayOrderId("");
+      setTrackingNumber("");
+      setCarrier("");
+      setDetected(null);
+      onClose();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = () => {
+    if (!ebayOrderId || !trackingNumber) return;
+    if (!carrier && !detected) {
+      toast({ title: "Carrier needed", description: "Enter the carrier name or check the tracking number format.", variant: "destructive" });
+      return;
+    }
+    pushMutation.mutate();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Push Tracking to eBay</DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Push a tracking number to any eBay order — even if it wasn't created through this app.
+          </p>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>eBay Order ID</Label>
+            <Input
+              placeholder="e.g. 14-05217-32435"
+              value={ebayOrderId}
+              onChange={(e) => setEbayOrderId(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Tracking Number</Label>
+            <Input
+              placeholder="Paste supplier tracking number"
+              value={trackingNumber}
+              onChange={(e) => updateTrackingNumber(e.target.value)}
+            />
+            {detected && (
+              <p className="text-xs text-emerald-600 flex items-center gap-1">
+                <RefreshCw className="w-3 h-3" /> Detected carrier: <strong>{detected}</strong>
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Carrier {detected && <span className="text-xs text-muted-foreground">(optional)</span>}</Label>
+            <Input
+              placeholder={detected || "e.g. Royal Mail, UPS, DHL"}
+              value={carrier}
+              onChange={(e) => setCarrier(e.target.value)}
+            />
+          </div>
+          <Button
+            className="w-full"
+            onClick={handleSubmit}
+            disabled={!ebayOrderId || !trackingNumber || pushMutation.isPending}
+          >
+            {pushMutation.isPending ? "Pushing..." : "Push to eBay"}
           </Button>
         </div>
       </DialogContent>

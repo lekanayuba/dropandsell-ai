@@ -1666,6 +1666,31 @@ export async function registerRoutes(
     }
   });
 
+  // Push tracking to any eBay order (even if not in our system)
+  protectedApi.post('/ebay/push-tracking', async (req: any, res) => {
+    try {
+      const { ebayOrderId, trackingNumber, carrier, storeId } = req.body;
+      if (!ebayOrderId) return res.status(400).json({ message: 'eBay Order ID is required' });
+      if (!trackingNumber) return res.status(400).json({ message: 'Tracking number is required' });
+
+      let resolvedCarrier = carrier;
+      if (!resolvedCarrier) {
+        const detected = detectCarrier(trackingNumber);
+        if (detected) {
+          resolvedCarrier = detected;
+        } else {
+          return res.status(400).json({ message: 'Carrier is required (could not auto-detect from tracking number)' });
+        }
+      }
+
+      await updateEbayOrderStatus(ebayOrderId, 'SHIPPED', trackingNumber, resolvedCarrier, storeId || undefined);
+
+      res.json({ success: true, message: `Tracking pushed to eBay order ${ebayOrderId}` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to push tracking to eBay' });
+    }
+  });
+
   // === AUTO-FULFILLMENT ===
   protectedApi.post('/orders/:id/fulfill', async (req: any, res) => {
     try {
