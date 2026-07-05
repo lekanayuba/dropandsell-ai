@@ -437,6 +437,128 @@ httpServer.listen(
             console.error('[Startup] No-plan reminder pass failed:', reminderErr?.message || reminderErr);
           }
 
+          // One-shot goodwill gesture (2026-07-05): the two most recent
+          // Drop&Sell Auto-Listing customers had their listings paused by the
+          // auto-pause safety net. Now that auto-pause is off, their listings
+          // resume. As an apology we grant each 2 months of free platform
+          // access and email them. Two per-user audit markers keep it exactly
+          // once: the GRANT marker guarantees the free time is never applied
+          // twice (money-safe), while the separate EMAIL marker lets a failed
+          // send retry on a later boot WITHOUT re-granting. In non-production
+          // environments these production user ids don't exist, so the whole
+          // block safely no-ops (no grants, no emails).
+          try {
+            const { db: gdb } = await import('./db');
+            const { users: gUsers, subscriptions: gSubs, auditLogs: gAudit } = await import('@shared/schema');
+            const gOrm = await import('drizzle-orm');
+            const { sendAutoListingResumedEmail } = await import('./email');
+
+            const GRANT_MARKER = 'autolisting_resume_2mo_grant_2026_07_05';
+            const EMAIL_MARKER = 'autolisting_resume_email_2026_07_05';
+
+            const recipients = [
+              { userId: '8fc7c02b-65f8-4096-9582-669d0c8f5d84', email: 'igwebuikeglory@gmail.com' },
+              { userId: '9a384fc2-354e-4cd0-9a92-66dd9a795de5', email: 'deski5050@gmail.com' },
+            ];
+
+            for (const r of recipients) {
+              try {
+                const [u] = await gdb.select({
+                  id: gUsers.id,
+                  email: gUsers.email,
+                  firstName: gUsers.firstName,
+                  plan: gUsers.subscriptionPlan,
+                }).from(gUsers).where(gOrm.eq(gUsers.id, r.userId)).limit(1);
+
+                // Identity guard: only act on the exact person in THIS database.
+                if (!u || (u.email || '').toLowerCase() !== r.email.toLowerCase()) {
+                  continue;
+                }
+
+                // --- Grant step (money): apply at most once ---
+                const [grantDone] = await gdb.select({ id: gAudit.id }).from(gAudit)
+                  .where(gOrm.and(gOrm.eq(gAudit.userId, u.id), gOrm.eq(gAudit.action, GRANT_MARKER)))
+                  .limit(1);
+
+                let freeUntil: Date | null = null;
+                if (!grantDone) {
+                  const [existingSub] = await gdb.select().from(gSubs)
+                    .where(gOrm.eq(gSubs.userId, u.id)).limit(1);
+
+                  // Add 2 months from now, or from the current renewal date if
+                  // it's still in the future (never shorten an existing period).
+                  const baseDate = existingSub?.currentPeriodEnd
+                    && new Date(existingSub.currentPeriodEnd).getTime() > Date.now()
+                    ? new Date(existingSub.currentPeriodEnd)
+                    : new Date();
+                  const freeUntilDate = new Date(baseDate);
+                  freeUntilDate.setMonth(freeUntilDate.getMonth() + 2);
+                  freeUntil = freeUntilDate;
+
+                  const planLabel = u.plan || existingSub?.planName || 'Starter Plan';
+
+                  await storage.updateUser(u.id, {
+                    subscriptionStatus: 'active',
+                    subscriptionPlan: planLabel,
+                  });
+                  if (existingSub) {
+                    await gdb.update(gSubs)
+                      .set({ status: 'active', planName: planLabel, currentPeriodEnd: freeUntil })
+                      .where(gOrm.eq(gSubs.userId, u.id));
+                  } else {
+                    await gdb.insert(gSubs).values({
+                      userId: u.id,
+                      planName: planLabel,
+                      status: 'active',
+                      currentPeriodEnd: freeUntil,
+                    });
+                  }
+                  await gdb.insert(gAudit).values({
+                    userId: u.id,
+                    action: GRANT_MARKER,
+                    source: 'system',
+                    details: { freeUntil: freeUntil.toISOString(), reason: 'auto-listing resume goodwill — 2 months free' },
+                  });
+                  console.log(`[Startup-Fix] Auto-listing goodwill: granted 2 months free to ${u.email} (until ${freeUntil.toISOString()}).`);
+                }
+
+                // --- Email step: send at most once; retry on a later boot if it fails ---
+                const [emailDone] = await gdb.select({ id: gAudit.id }).from(gAudit)
+                  .where(gOrm.and(gOrm.eq(gAudit.userId, u.id), gOrm.eq(gAudit.action, EMAIL_MARKER)))
+                  .limit(1);
+
+                if (!emailDone) {
+                  if (!freeUntil) {
+                    // Grant ran on an earlier boot — recover the date to show.
+                    const [existingSub] = await gdb.select().from(gSubs)
+                      .where(gOrm.eq(gSubs.userId, u.id)).limit(1);
+                    freeUntil = existingSub?.currentPeriodEnd
+                      ? new Date(existingSub.currentPeriodEnd)
+                      : (() => { const d = new Date(); d.setMonth(d.getMonth() + 2); return d; })();
+                  }
+                  const displayName = (u.firstName || '').trim() || undefined;
+                  const ok = await sendAutoListingResumedEmail(u.email!, displayName, freeUntil);
+                  if (ok) {
+                    await gdb.insert(gAudit).values({
+                      userId: u.id,
+                      action: EMAIL_MARKER,
+                      source: 'system',
+                      details: { email: u.email },
+                    });
+                    console.log(`[Startup-Fix] Auto-listing goodwill: emailed ${u.email}.`);
+                    await new Promise((res) => setTimeout(res, 250));
+                  } else {
+                    console.error(`[Startup-Fix] Auto-listing goodwill: email to ${u.email} failed — will retry next boot.`);
+                  }
+                }
+              } catch (perErr: any) {
+                console.error(`[Startup-Fix] Auto-listing goodwill failed for ${r.email}:`, perErr?.message || perErr);
+              }
+            }
+          } catch (goodwillErr: any) {
+            console.error('[Startup-Fix] Auto-listing goodwill pass failed:', goodwillErr?.message || goodwillErr);
+          }
+
           // Free-access grants — give complimentary Enterprise plan to specific users
           const freeAccessEmails = ['bigafott@gmail.com'];
           for (const grantEmail of freeAccessEmails) {

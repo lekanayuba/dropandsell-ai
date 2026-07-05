@@ -404,6 +404,85 @@ export async function sendSubscriptionCancellationEmail(
   }
 }
 
+export async function sendAutoListingResumedEmail(
+  toEmail: string,
+  userName: string | undefined,
+  freeUntil: Date,
+): Promise<boolean> {
+  try {
+    console.log(`[Email] Sending auto-listing resumed + goodwill email to ${toEmail}`);
+    const { client, fromEmail } = await getUncachableResendClient();
+
+    const freeUntilStr = new Date(freeUntil).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const result = await client.emails.send({
+      from: fromEmail || 'DropandSell Automation App <noreply@dropandsell.online>',
+      to: toEmail,
+      subject: 'Your Auto-Listing is back on — and 2 months are on us',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f4f5; margin: 0; padding: 40px 20px;">
+          <div style="max-width: 540px; margin: 0 auto; background: white; border-radius: 12px; padding: 40px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);">
+            <div style="text-align: center; margin-bottom: 28px;">
+              <div style="display: inline-block; width: 48px; height: 48px; background: #285261; border-radius: 12px; margin-bottom: 16px;"></div>
+              <h1 style="margin: 0; color: #18181b; font-size: 22px; font-weight: 700;">DropandSell Automation App</h1>
+            </div>
+            <h2 style="color: #18181b; font-size: 20px; margin-bottom: 16px;">Your Auto-Listing is back on</h2>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 14px;">
+              Hi${userName ? ' ' + userName : ' there'},
+            </p>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 14px;">
+              First of all, we're sorry for the inconvenience. Your Auto-Listing was paused, and we know that got in the way of your selling. That has now been fixed on our side.
+            </p>
+            <p style="color: #52525b; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+              <strong>Good news:</strong> your Auto-Listing has now been resumed and is running normally again — there's nothing you need to do.
+            </p>
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin-bottom: 22px;">
+              <p style="color: #166534; font-size: 15px; font-weight: 700; margin: 0 0 8px 0;">A little something to say thank you</p>
+              <p style="color: #166534; font-size: 14px; line-height: 1.7; margin: 0;">
+                To make up for the disruption, we've added <strong>2 months of free access</strong> to your account — completely on us. Your free access runs through <strong>${freeUntilStr}</strong>, with no charge during that time.
+              </p>
+            </div>
+            <div style="text-align: center; margin: 26px 0 20px 0;">
+              <a href="https://dropandsell.online" style="display: inline-block; background: #285261; color: white; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; font-size: 16px;">
+                Go to Your Dashboard
+              </a>
+            </div>
+            <p style="color: #71717a; font-size: 14px; line-height: 1.6;">
+              Thanks for sticking with us. If you have any questions, just reply to this email and we'll help right away.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 28px 0;">
+            <p style="color: #a1a1aa; font-size: 12px; text-align: center; margin: 0;">
+              &copy; 2026 DropandSell Automation App. All rights reserved.
+            </p>
+          </div>
+        </body>
+        </html>
+      `,
+    });
+
+    if (result.error) {
+      console.error(`[Email] Resend returned error for auto-listing resumed email:`, result.error);
+      return false;
+    }
+
+    console.log(`[Email] Auto-listing resumed email sent to ${toEmail}`);
+    return true;
+  } catch (error: any) {
+    console.error('[Email] Failed to send auto-listing resumed email:', error?.message || error);
+    return false;
+  }
+}
+
 export async function sendContactAgentEmail(userName: string, userEmail: string, userPhone: string, message: string, chatHistory: string): Promise<boolean> {
   try {
     console.log(`[Email] Sending contact agent email from ${userEmail}`);

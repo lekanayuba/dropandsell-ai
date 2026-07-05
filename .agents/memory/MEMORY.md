@@ -6,3 +6,4 @@
 - [Live delivery tracking (17track)](live-tracking-17track.md) — order status polled from 17track; gettrackinfo is free but register costs quota, so get-first then register-only-unregistered.
 - [Drizzle db:push interactive](drizzle-push-interactive.md) — new-table create/rename prompt can't be piped; create the table via SQL for new tables, then push sees it as existing.
 - [eBay shared App ID daily quota](ebay-shared-app-quota.md) — all sellers share ONE eBay App ID daily call budget; 518 blocks everyone; owner must raise limit via eBay Application Growth Check; conserve per-image upload calls.
+- [Prod data/email one-shots](prod-oneshot-patches.md) — prod DB is read-only from workspace; apply prod data changes + customer emails via idempotent boot-time one-shots (index.ts / dataPatches.ts); split the money-grant marker from the email marker.
