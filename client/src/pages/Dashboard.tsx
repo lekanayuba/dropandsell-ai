@@ -552,28 +552,35 @@ export default function Dashboard() {
               <div className="divide-y divide-border/10">
                 {lowStockProducts.map((p: any) => {
                   const attrs = p.attributes || {};
-                  const vendorOOS = attrs.vendorStockStatus === 'out_of_stock';
+                  const vStatus = attrs.vendorStockStatus;
                   const qty = Number(p.quantity);
                   const isOOS = qty <= 0;
+                  const isRed = isOOS || vStatus === 'out_of_stock';
+                  const isGreen = vStatus === 'in_stock';
                   return (
                   <div key={p.id} className="flex items-center justify-between py-3 px-4 hover:bg-muted/20 transition-colors">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-                        isOOS ? "bg-red-50 dark:bg-red-950/20" : vendorOOS ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
+                        isRed ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
                       )}>
-                        {isOOS || vendorOOS
+                        {isRed
                           ? <XCircle className="w-3.5 h-3.5 text-red-600" />
                           : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{p.name || p.sku || `Product #${p.id}`}</p>
-                        <p className="text-[10px] text-muted-foreground">Stock: {qty}{vendorOOS && qty > 0 ? ' — Vendor OOS' : ''}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          Stock: {qty}
+                          {vStatus && qty > 0 ? <span className={cn("ml-1", isGreen ? "text-green-600" : "text-red-600")}>· Vendor: {vStatus === 'in_stock' ? 'In Stock' : 'Out of Stock'}</span> : ''}
+                          {vStatus === 'out_of_stock' && qty <= 0 ? <span className="ml-1 text-red-600">· Vendor OOS</span> : ''}
+                        </p>
                       </div>
                     </div>
-                    <Badge variant="outline" className={cn("text-[10px] shrink-0",
-                      isOOS ? "text-red-600 border-red-200" : vendorOOS ? "text-red-600 border-red-200" : "text-amber-600 border-amber-200"
+                    <Badge variant="outline" className={cn("text-[10px] shrink-0 gap-1",
+                      isGreen ? "text-green-600 border-green-200 bg-green-50 dark:bg-green-950/20" :
+                      isRed ? "text-red-600 border-red-200" : "text-amber-600 border-amber-200"
                     )}>
-                      {isOOS ? "OUT" : vendorOOS ? "VENDOR OOS" : "LOW"}
+                      {isGreen ? 'In Stock' : isOOS ? 'Out of Stock' : vStatus === 'out_of_stock' ? 'Out of Stock' : 'Low'}
                     </Badge>
                   </div>
                   );
