@@ -1522,6 +1522,15 @@ export async function registerRoutes(
 
       const oldProduct = await storage.getProduct(id, userId);
 
+      // When quantity changes, auto-update vendorStockStatus
+      if (input.quantity !== undefined && oldProduct) {
+        const oldAttrs = (oldProduct.attributes as Record<string, any>) || {};
+        input.attributes = {
+          ...oldAttrs,
+          vendorStockStatus: Number(input.quantity) > 0 ? 'in_stock' : 'out_of_stock',
+        };
+      }
+
       const product = await storage.updateProduct(id, userId, input);
 
       // Real-time stock sync: after product is updated so sync reads fresh data
