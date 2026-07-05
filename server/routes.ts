@@ -827,8 +827,12 @@ export async function registerRoutes(
 
     const walletBalance = Number(walletData?.balance || 0);
 
-    // Count out-of-stock products (quantity <= 0)
-    const outOfStockProducts = products.filter((p: any) => Number(p.quantity) <= 0).length;
+    // Count out-of-stock products (quantity <= 0 or vendor says OOS)
+    const outOfStockProducts = products.filter((p: any) => {
+      if (Number(p.quantity) <= 0) return true;
+      const attrs = p.attributes as any;
+      return attrs?.vendorStockStatus === 'out_of_stock';
+    }).length;
 
     res.json({
       totalRevenue,

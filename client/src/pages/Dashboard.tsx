@@ -306,11 +306,15 @@ export default function Dashboard() {
       .slice(0, 5);
   }, [orders]);
 
-  // Low stock / out of stock products
+  // Low stock / out of stock / vendor OOS products
   const lowStockProducts = useMemo(() => {
     if (!products?.items) return [];
     return products.items
-      .filter((p: any) => Number(p.quantity) <= 5)
+      .filter((p: any) => {
+        if (Number(p.quantity) <= 5) return true;
+        const attrs = p.attributes || {};
+        return attrs.vendorStockStatus === 'out_of_stock';
+      })
       .slice(0, 5);
   }, [products]);
 
@@ -546,28 +550,34 @@ export default function Dashboard() {
               <div className="text-sm text-muted-foreground py-8 text-center">All products are well-stocked</div>
             ) : (
               <div className="divide-y divide-border/10">
-                {lowStockProducts.map((p: any) => (
+                {lowStockProducts.map((p: any) => {
+                  const attrs = p.attributes || {};
+                  const vendorOOS = attrs.vendorStockStatus === 'out_of_stock';
+                  const qty = Number(p.quantity);
+                  const isOOS = qty <= 0;
+                  return (
                   <div key={p.id} className="flex items-center justify-between py-3 px-4 hover:bg-muted/20 transition-colors">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className={cn("h-7 w-7 rounded-lg flex items-center justify-center shrink-0",
-                        Number(p.quantity) <= 0 ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
+                        isOOS ? "bg-red-50 dark:bg-red-950/20" : vendorOOS ? "bg-red-50 dark:bg-red-950/20" : "bg-amber-50 dark:bg-amber-950/20"
                       )}>
-                        {Number(p.quantity) <= 0
+                        {isOOS || vendorOOS
                           ? <XCircle className="w-3.5 h-3.5 text-red-600" />
                           : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-medium truncate">{p.name || p.sku || `Product #${p.id}`}</p>
-                        <p className="text-[10px] text-muted-foreground">Stock: {Number(p.quantity)}</p>
+                        <p className="text-[10px] text-muted-foreground">Stock: {qty}{vendorOOS && qty > 0 ? ' — Vendor OOS' : ''}</p>
                       </div>
                     </div>
                     <Badge variant="outline" className={cn("text-[10px] shrink-0",
-                      Number(p.quantity) <= 0 ? "text-red-600 border-red-200" : "text-amber-600 border-amber-200"
+                      isOOS ? "text-red-600 border-red-200" : vendorOOS ? "text-red-600 border-red-200" : "text-amber-600 border-amber-200"
                     )}>
-                      {Number(p.quantity) <= 0 ? "OUT" : "LOW"}
+                      {isOOS ? "OUT" : vendorOOS ? "VENDOR OOS" : "LOW"}
                     </Badge>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
