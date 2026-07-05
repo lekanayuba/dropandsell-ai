@@ -773,7 +773,7 @@ function VendorStockCell({ product }: { product: any }) {
 
   const toggleMutation = useMutation({
     mutationFn: async (newStatus: string) => {
-      const newAttrs = { ...attrs, vendorStockStatus: newStatus };
+      const newAttrs = { ...attrs, vendorStockStatus: newStatus, vendorStockManual: true };
       const res = await fetch(`/api/products/${product.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },

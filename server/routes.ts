@@ -620,10 +620,14 @@ export async function registerRoutes(
       `);
 
       if (vendorStatus === 'out_of_stock') {
-        // Mark all products from this vendor as OOS
-        await db.update(products)
-          .set({ quantity: 0 })
-          .where(and(eq(products.vendorId, vendorId), gt(products.quantity, 0)));
+        // Mark all products from this vendor as OOS — but respect manual overrides
+        await db.execute(sql`
+          UPDATE products
+          SET quantity = 0
+          WHERE vendor_id = ${vendorId}
+            AND quantity > 0
+            AND (attributes IS NULL OR (attributes->>'vendorStockManual')::boolean IS DISTINCT FROM true)
+        `);
       } else if (vendorStatus === 'in_stock') {
         // Vendor says in stock — try to extract actual quantity from response
         const quantityPath = config.quantityPath;
@@ -634,10 +638,15 @@ export async function registerRoutes(
         } else if (typeof inStock === 'number') {
           restockQty = inStock;
         }
-        // Restore stock for products from this vendor that are stuck at 0
-        await db.update(products)
-          .set({ quantity: restockQty })
-          .where(and(eq(products.vendorId, vendorId), lte(products.quantity, 0)));
+        // Restore stock for products from this vendor that are stuck at 0 —
+        // but skip products the user manually marked as OOS
+        await db.execute(sql`
+          UPDATE products
+          SET quantity = ${restockQty}
+          WHERE vendor_id = ${vendorId}
+            AND quantity <= 0
+            AND (attributes IS NULL OR (attributes->>'vendorStockManual')::boolean IS DISTINCT FROM true)
+        `);
       }
     } catch (err) {
       console.error(`[VendorStock] Error checking vendor ${vendorId}:`, err);
