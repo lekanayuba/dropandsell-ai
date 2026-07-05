@@ -20,7 +20,7 @@ import crypto from "crypto";
 import { registerChatRoutes } from "./chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
-import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings } from "./platforms/ebay";
+import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings, getAccessToken, fetchEbayStoreInventory } from "./platforms/ebay";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
 import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
@@ -612,6 +612,76 @@ export async function registerRoutes(
       }
     } catch (err) {
       console.error(`[VendorStock] Error checking vendor ${vendorId}:`, err);
+    }
+  }
+
+  // Pull eBay inventory and sync back to local products
+  async function syncEbayInventoryToLocal(): Promise<void> {
+    try {
+      const ebayStores = await db.select({
+        id: stores.id,
+        userId: stores.userId,
+        credentials: stores.credentials,
+      }).from(stores).where(eq(stores.platform, 'ebay'));
+
+      for (const store of ebayStores) {
+        try {
+          const creds = store.credentials as any;
+          const refreshToken = creds?.ebayRefreshToken;
+          if (!refreshToken) continue;
+
+          const ebayInventory = await fetchEbayStoreInventory(refreshToken);
+          if (ebayInventory.size === 0) continue;
+
+          const listings = await db.select({
+            id: marketplaceListings.id,
+            productId: marketplaceListings.productId,
+            storeId: marketplaceListings.storeId,
+          }).from(marketplaceListings)
+            .where(and(eq(marketplaceListings.storeId, store.id), eq(marketplaceListings.status, 'active')));
+
+          if (listings.length === 0) continue;
+
+          const productIds = [...new Set(listings.map(l => l.productId))];
+          const productsToUpdate = productIds.length > 0
+            ? await db.select({ id: products.id, sku: products.sku, quantity: products.quantity })
+              .from(products).where(inArray(products.id, productIds))
+            : [];
+          const productMap = new Map(productsToUpdate.map(p => [p.id, p]));
+
+          let changedCount = 0;
+          for (const listing of listings) {
+            const product = productMap.get(listing.productId);
+            if (!product || !product.sku) continue;
+
+            const ebayQty = ebayInventory.get(product.sku);
+            if (ebayQty === undefined) continue;
+
+            const localQty = Number(product.quantity);
+            if (localQty <= 0 && ebayQty > 0) {
+              await db.update(products)
+                .set({ quantity: ebayQty, updatedAt: new Date() })
+                .where(eq(products.id, product.id));
+              changedCount++;
+            } else if (localQty > 0 && ebayQty <= 0) {
+              await db.update(products)
+                .set({ quantity: 0, updatedAt: new Date() })
+                .where(eq(products.id, product.id));
+              changedCount++;
+            }
+          }
+
+          if (changedCount > 0) {
+            console.log(`[eBaySync] Synced ${changedCount} products from eBay store ${store.id}`);
+            // Trigger existing sync to propagate stock status changes
+            await syncStore(store.id, store.userId);
+          }
+        } catch (err) {
+          console.error(`[eBaySync] Store ${store.id} sync failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error('[eBaySync] Error:', err);
     }
   }
 
@@ -4633,12 +4703,14 @@ Guidelines:
   setInterval(() => {
     backgroundSyncAllStores();
     syncOutOfStockProducts();
+    syncEbayInventoryToLocal();
   }, SYNC_INTERVAL);
 
   // Also run one sync shortly after startup (after 30s to let DB warm up)
   setTimeout(() => {
     backgroundSyncAllStores();
     syncOutOfStockProducts();
+    syncEbayInventoryToLocal();
   }, 30_000);
 
   // Tracking monitor — checks shipped orders for delivery updates every 30 min

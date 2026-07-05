@@ -404,6 +404,36 @@ export async function updateEbayOrderStatus(
   }
 }
 
+export async function fetchEbayStoreInventory(refreshToken: string): Promise<Map<string, number>> {
+  const inventoryMap = new Map<string, number>();
+  const token = await getAccessToken(refreshToken);
+  let offset = 0;
+  const limit = 100;
+
+  while (true) {
+    const res = await fetchWithRetry(
+      `https://api.ebay.com/sell/inventory/v1/inventory_item?limit=${limit}&offset=${offset}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!res.ok) {
+      console.error(`[eBay] Failed to fetch inventory: ${res.status} ${await res.text()}`);
+      break;
+    }
+
+    const data = await res.json();
+    for (const item of (data.inventoryItems || [])) {
+      const qty = item.availability?.shipToLocationAvailability?.quantity ?? 0;
+      inventoryMap.set(item.sku, qty);
+    }
+
+    if (!data.next || (data.inventoryItems || []).length < limit) break;
+    offset += limit;
+  }
+
+  return inventoryMap;
+}
+
 export async function syncEbayFulfillmentTracking(storeId?: number): Promise<number> {
   let updatedCount = 0;
   try {
