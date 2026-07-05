@@ -196,6 +196,39 @@ export async function updateAmazonStock(args: {
   }
 }
 
+export async function fetchAmazonStoreInventory(storeCredentials?: Record<string, any>): Promise<Map<string, number>> {
+  const inventoryMap = new Map<string, number>();
+  const token = await getAccessToken();
+  const marketplaceId = storeCredentials?.amazonMarketplaceId || "A1F83G8C2ARO7P";
+  const endpoint = getSpApiEndpoint(marketplaceId);
+  const sellerId = process.env.AMAZON_SELLER_ID;
+  if (!sellerId) {
+    console.error('[Amazon] AMAZON_SELLER_ID not configured');
+    return inventoryMap;
+  }
+
+  const res = await fetchWithRetry(
+    `${endpoint}/listings/2021-08-01/items/${sellerId}?marketplaceIds=${marketplaceId}`,
+    { headers: { Authorization: `Bearer ${token}`, "x-amz-access-token": token, "x-amz-marketplace-id": marketplaceId } }
+  );
+
+  if (!res.ok) {
+    console.error(`[Amazon] Failed to fetch inventory: ${res.status}`);
+    return inventoryMap;
+  }
+
+  const data = await res.json();
+  for (const item of (data.items || [])) {
+    const sku = item.sku;
+    if (!sku) continue;
+    const qtyAttr = item.attributes?.quantity?.[0]?.value;
+    inventoryMap.set(sku, qtyAttr ? parseInt(qtyAttr, 10) : 0);
+  }
+
+  console.log(`[Amazon] Fetched ${inventoryMap.size} inventory items`);
+  return inventoryMap;
+}
+
 export async function updateAmazonPrice(args: {
   sku: string;
   price: number;

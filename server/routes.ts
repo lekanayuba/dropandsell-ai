@@ -21,6 +21,10 @@ import { registerChatRoutes } from "./chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
 import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings, getAccessToken, fetchEbayStoreInventory } from "./platforms/ebay";
+import { fetchShopifyStoreInventory } from "./platforms/shopify";
+import { fetchAmazonStoreInventory } from "./platforms/amazon";
+import { fetchWooCommerceStoreInventory } from "./platforms/woocommerce";
+import { fetchJumiaStoreInventory } from "./platforms/jumia";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
 import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
@@ -682,6 +686,74 @@ export async function registerRoutes(
       }
     } catch (err) {
       console.error('[eBaySync] Error:', err);
+    }
+  }
+
+  // Generic multi-platform inventory sync (works for any platform with a fetch function)
+  async function syncPlatformInventory(
+    platformName: string,
+    fetchInventory: (credentials?: Record<string, any>) => Promise<Map<string, number>>,
+  ): Promise<void> {
+    try {
+      const stores = await db.select({
+        id: stores.id,
+        userId: stores.userId,
+        credentials: stores.credentials,
+      }).from(stores).where(eq(stores.platform, platformName));
+
+      for (const store of stores) {
+        try {
+          const creds = store.credentials as Record<string, any> | undefined;
+          const inventory = await fetchInventory(creds);
+          if (inventory.size === 0) continue;
+
+          const listings = await db.select({
+            id: marketplaceListings.id,
+            productId: marketplaceListings.productId,
+          }).from(marketplaceListings)
+            .where(and(eq(marketplaceListings.storeId, store.id), eq(marketplaceListings.status, 'active')));
+
+          if (listings.length === 0) continue;
+
+          const productIds = [...new Set(listings.map(l => l.productId))];
+          const productsToUpdate = productIds.length > 0
+            ? await db.select({ id: products.id, sku: products.sku, quantity: products.quantity })
+              .from(products).where(inArray(products.id, productIds))
+            : [];
+          const productMap = new Map(productsToUpdate.map(p => [p.id, p]));
+
+          let changedCount = 0;
+          for (const listing of listings) {
+            const product = productMap.get(listing.productId);
+            if (!product || !product.sku) continue;
+
+            const platformQty = inventory.get(product.sku);
+            if (platformQty === undefined) continue;
+
+            const localQty = Number(product.quantity);
+            if (localQty <= 0 && platformQty > 0) {
+              await db.update(products)
+                .set({ quantity: platformQty, updatedAt: new Date() })
+                .where(eq(products.id, product.id));
+              changedCount++;
+            } else if (localQty > 0 && platformQty <= 0) {
+              await db.update(products)
+                .set({ quantity: 0, updatedAt: new Date() })
+                .where(eq(products.id, product.id));
+              changedCount++;
+            }
+          }
+
+          if (changedCount > 0) {
+            console.log(`[${platformName}Sync] Synced ${changedCount} products from ${platformName} store ${store.id}`);
+            await syncStore(store.id, store.userId);
+          }
+        } catch (err) {
+          console.error(`[${platformName}Sync] Store ${store.id} sync failed:`, err);
+        }
+      }
+    } catch (err) {
+      console.error(`[${platformName}Sync] Error:`, err);
     }
   }
 
@@ -4704,6 +4776,10 @@ Guidelines:
     backgroundSyncAllStores();
     syncOutOfStockProducts();
     syncEbayInventoryToLocal();
+    syncPlatformInventory('shopify', fetchShopifyStoreInventory);
+    syncPlatformInventory('amazon', fetchAmazonStoreInventory);
+    syncPlatformInventory('woocommerce', fetchWooCommerceStoreInventory);
+    syncPlatformInventory('jumia', fetchJumiaStoreInventory);
   }, SYNC_INTERVAL);
 
   // Also run one sync shortly after startup (after 30s to let DB warm up)
@@ -4711,6 +4787,10 @@ Guidelines:
     backgroundSyncAllStores();
     syncOutOfStockProducts();
     syncEbayInventoryToLocal();
+    syncPlatformInventory('shopify', fetchShopifyStoreInventory);
+    syncPlatformInventory('amazon', fetchAmazonStoreInventory);
+    syncPlatformInventory('woocommerce', fetchWooCommerceStoreInventory);
+    syncPlatformInventory('jumia', fetchJumiaStoreInventory);
   }, 30_000);
 
   // Tracking monitor — checks shipped orders for delivery updates every 30 min

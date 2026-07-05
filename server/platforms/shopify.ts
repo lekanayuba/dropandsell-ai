@@ -123,6 +123,55 @@ export async function updateShopifyStock(args: {
   }
 }
 
+export async function fetchShopifyStoreInventory(storeCredentials?: Record<string, any>): Promise<Map<string, number>> {
+  const inventoryMap = new Map<string, number>();
+  let domain: string, apiKey: string, apiSecret: string;
+
+  if (storeCredentials?.shopifyDomain) {
+    domain = storeCredentials.shopifyDomain;
+    apiKey = storeCredentials.shopifyApiKey;
+    apiSecret = storeCredentials.shopifyApiSecret;
+  } else {
+    domain = getStoreDomain();
+    apiKey = getApiKey();
+    apiSecret = getApiSecret();
+  }
+
+  const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const res = await fetchWithRetry(
+      `https://${domain}/admin/api/2024-01/products.json?limit=250&page=${page}&fields=id,variants`,
+      { headers: { Authorization: `Basic ${auth}` } }
+    );
+
+    if (!res.ok) {
+      console.error(`[Shopify] Failed to fetch inventory: ${res.status}`);
+      break;
+    }
+
+    const data = await res.json();
+    const products = data.products || [];
+    if (products.length === 0) break;
+
+    for (const product of products) {
+      for (const variant of (product.variants || [])) {
+        if (variant.sku) {
+          inventoryMap.set(variant.sku, variant.inventory_quantity ?? 0);
+        }
+      }
+    }
+
+    hasMore = products.length >= 250;
+    page++;
+  }
+
+  console.log(`[Shopify] Fetched ${inventoryMap.size} inventory items`);
+  return inventoryMap;
+}
+
 export async function updateShopifyPrice(args: {
   externalId: string;
   price: number;

@@ -59,3 +59,58 @@ export async function createJumiaListing(args: {
     listingUrl: `https://www.jumia.com.ng/${args.sku}`,
   };
 }
+
+export async function fetchJumiaStoreInventory(storeCredentials?: Record<string, any>): Promise<Map<string, number>> {
+  const inventoryMap = new Map<string, number>();
+  let apiKey: string, sellerId: string;
+
+  if (storeCredentials?.jumiaApiKey) {
+    apiKey = storeCredentials.jumiaApiKey;
+    sellerId = storeCredentials.jumiaSellerId;
+  } else {
+    apiKey = process.env.JUMIA_API_KEY?.trim() || '';
+    sellerId = process.env.JUMIA_SELLER_ID?.trim() || '';
+  }
+
+  if (!apiKey || !sellerId) {
+    console.error('[Jumia] Not configured');
+    return inventoryMap;
+  }
+
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const res = await fetch(
+      `https://api.jumia.com/v1/products?sellerId=${sellerId}&page=${page}&pageSize=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (!res.ok) {
+      console.error(`[Jumia] Failed to fetch inventory: ${res.status}`);
+      break;
+    }
+
+    const data = await res.json();
+    const products = data.products || data.data || [];
+    if (!Array.isArray(products) || products.length === 0) break;
+
+    for (const product of products) {
+      const sku = product.SKU || product.sku;
+      if (!sku) continue;
+      const qty = product.Quantity ?? product.quantity ?? product.stock ?? 0;
+      inventoryMap.set(sku, Number(qty));
+    }
+
+    hasMore = products.length >= 100;
+    page++;
+  }
+
+  console.log(`[Jumia] Fetched ${inventoryMap.size} inventory items`);
+  return inventoryMap;
+}
