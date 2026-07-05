@@ -697,14 +697,20 @@ export async function registerRoutes(
 
             const localQty = Number(product.quantity);
             if (localQty <= 0 && ebayQty > 0) {
-              await db.update(products)
-                .set({ quantity: ebayQty, updatedAt: new Date() })
-                .where(eq(products.id, product.id));
+              await db.execute(sql`
+                UPDATE products
+                SET quantity = ${ebayQty}, updated_at = NOW(),
+                    attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{vendorStockStatus}', '"in_stock"'::jsonb)
+                WHERE id = ${product.id}
+              `);
               changedCount++;
             } else if (localQty > 0 && ebayQty <= 0) {
-              await db.update(products)
-                .set({ quantity: 0, updatedAt: new Date() })
-                .where(eq(products.id, product.id));
+              await db.execute(sql`
+                UPDATE products
+                SET quantity = 0, updated_at = NOW(),
+                    attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{vendorStockStatus}', '"out_of_stock"'::jsonb)
+                WHERE id = ${product.id}
+              `);
               changedCount++;
             }
           }
@@ -773,14 +779,20 @@ export async function registerRoutes(
 
             const localQty = Number(product.quantity);
             if (localQty <= 0 && platformQty > 0) {
-              await db.update(products)
-                .set({ quantity: platformQty, updatedAt: new Date() })
-                .where(eq(products.id, product.id));
+              await db.execute(sql`
+                UPDATE products
+                SET quantity = ${platformQty}, updated_at = NOW(),
+                    attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{vendorStockStatus}', '"in_stock"'::jsonb)
+                WHERE id = ${product.id}
+              `);
               changedCount++;
             } else if (localQty > 0 && platformQty <= 0) {
-              await db.update(products)
-                .set({ quantity: 0, updatedAt: new Date() })
-                .where(eq(products.id, product.id));
+              await db.execute(sql`
+                UPDATE products
+                SET quantity = 0, updated_at = NOW(),
+                    attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{vendorStockStatus}', '"out_of_stock"'::jsonb)
+                WHERE id = ${product.id}
+              `);
               changedCount++;
             }
           }
