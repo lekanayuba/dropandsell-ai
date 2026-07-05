@@ -4798,24 +4798,27 @@ Guidelines:
   const SYNC_INTERVAL = 2 * 60 * 1000;
   console.log(`[BackgroundSync] Starting — will sync every 2 minutes`);
   setInterval(() => {
-    backgroundSyncAllStores();
-    syncOutOfStockProducts();
+    // 1. Pull real inventory from marketplaces FIRST (authoritative source)
     syncEbayInventoryToLocal();
     syncPlatformInventory('shopify', fetchShopifyStoreInventory);
     syncPlatformInventory('amazon', fetchAmazonStoreInventory);
     syncPlatformInventory('woocommerce', fetchWooCommerceStoreInventory);
     syncPlatformInventory('jumia', fetchJumiaStoreInventory);
+    // 2. Then check vendor stock for anything still OOS
+    syncOutOfStockProducts();
+    // 3. Then propagate local qty → marketplace listing statuses
+    backgroundSyncAllStores();
   }, SYNC_INTERVAL);
 
   // Also run one sync shortly after startup (after 30s to let DB warm up)
   setTimeout(() => {
-    backgroundSyncAllStores();
-    syncOutOfStockProducts();
     syncEbayInventoryToLocal();
     syncPlatformInventory('shopify', fetchShopifyStoreInventory);
     syncPlatformInventory('amazon', fetchAmazonStoreInventory);
     syncPlatformInventory('woocommerce', fetchWooCommerceStoreInventory);
     syncPlatformInventory('jumia', fetchJumiaStoreInventory);
+    syncOutOfStockProducts();
+    backgroundSyncAllStores();
   }, 30_000);
 
   // Tracking monitor — checks shipped orders for delivery updates every 30 min
