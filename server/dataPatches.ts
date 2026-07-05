@@ -101,6 +101,69 @@ async function patchFunmadel345DasStoreRouting() {
   }
 }
 
+async function patchDisableAutoPauseForAllSubscribers() {
+  // Context (2026-07-05):
+  // The platform owner asked to turn OFF the "auto-pause on failed stock"
+  // Store Rule for every existing subscriber. Production Postgres is
+  // read-only from the workspace, so we apply the one-time bulk flip at
+  // server boot.
+  //
+  // This is a deliberately ONE-TIME action, guarded by a sentinel row in
+  // feature_flags. Once the flip has run we never touch the column again,
+  // so any subscriber who later re-enables the rule from the Store Rules
+  // card keeps their choice across restarts/redeploys. (This is why we use
+  // a sentinel here even though the file's default posture is narrow,
+  // self-checking patches — an unguarded startup UPDATE would clobber
+  // future user changes on every boot.)
+  const SENTINEL_KEY = "patch_disable_autopause_all_subscribers_2026_07_05";
+
+  try {
+    // Atomicity + concurrency guarantee: do the sentinel claim and the bulk
+    // flip in ONE transaction, using the sentinel INSERT itself as the lock.
+    //   - The unique constraint on feature_key.feature_key means exactly one
+    //     caller can insert the row; a concurrent booting instance blocks on
+    //     the same key, then sees ON CONFLICT DO NOTHING (rowCount 0) and
+    //     skips — so the UPDATE runs on exactly one instance.
+    //   - Because the INSERT and UPDATE share a transaction, a failure at any
+    //     point rolls BOTH back: the sentinel is not persisted and no rows are
+    //     flipped, so a later boot can safely retry. There is no window where
+    //     the flip is applied but unrecorded (which would let a subsequent
+    //     boot re-clobber a user who re-enabled the rule in the meantime).
+    await db.transaction(async (tx) => {
+      const claim = await tx.execute(sql`
+        INSERT INTO feature_flags (feature_key, name, description, is_enabled, admin_only)
+        VALUES (
+          ${SENTINEL_KEY},
+          'One-time: disable auto-pause for all subscribers',
+          'Owner request 2026-07-05 — set auto_pause_on_failed_stock = false for all existing users. Sentinel prevents re-running so subscribers can re-enable the rule in Store Rules without it being clobbered on restart.',
+          true,
+          true
+        )
+        ON CONFLICT (feature_key) DO NOTHING
+      `);
+      const won = ((claim as any).rowCount ?? 0) > 0;
+      if (!won) {
+        // Already applied (or being applied by another instance) — leave any
+        // later per-user choices untouched.
+        return;
+      }
+
+      const upd = await tx.execute(sql`
+        UPDATE users
+        SET auto_pause_on_failed_stock = false,
+            updated_at = NOW()
+        WHERE auto_pause_on_failed_stock IS DISTINCT FROM false
+      `);
+      const changed = (upd as any).rowCount ?? 0;
+      console.log(`[dataPatches] disable-autopause-all: set auto_pause_on_failed_stock=false for ${changed} user(s); sentinel recorded so it won't run again.`);
+    });
+  } catch (err: any) {
+    // Never let a data patch take the server down. Log and move on.
+    console.error("[dataPatches] disable-autopause-all patch failed:", err?.message || err);
+  }
+}
+
 export async function runStartupDataPatches() {
   await patchFunmadel345DasStoreRouting();
+  await patchDisableAutoPauseForAllSubscribers();
 }
