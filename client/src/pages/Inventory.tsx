@@ -58,6 +58,29 @@ export default function Inventory() {
     },
   });
 
+  const queryClient = useQueryClient();
+
+  const restockMutation = useMutation({
+    mutationFn: async ({ ids, qty }: { ids: number[]; qty: number }) => {
+      const res = await fetch("/api/products/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds: ids, updates: { quantity: qty } }),
+        credentials: "include",
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Bulk restock failed"); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast({ title: "Restocked", description: `${data.updated} products set in stock` });
+      setSelectedProducts([]);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Restock Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
   const toggleProductSelection = (id: number) => {
     setSelectedProducts((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -161,6 +184,25 @@ export default function Inventory() {
           <Filter className="w-4 h-4" />
           Filters
         </Button>
+        {selectedProducts.length > 0 && data?.items && (
+          (() => {
+            const oosSelected = selectedProducts.filter(id => {
+              const p = data.items.find((x: any) => x.id === id);
+              return p && Number(p.quantity) <= 0;
+            });
+            return oosSelected.length > 0 ? (
+              <Button
+                variant="outline"
+                className="gap-2 text-green-600 border-green-200 hover:bg-green-50 dark:hover:bg-green-950/20"
+                onClick={() => restockMutation.mutate({ ids: oosSelected, qty: 1 })}
+                disabled={restockMutation.isPending}
+              >
+                <Package className="w-4 h-4" />
+                Restock {oosSelected.length} Selected
+              </Button>
+            ) : null;
+          })()
+        )}
         {selectedProducts.length > 0 && (
           <Dialog open={isPublishDialogOpen} onOpenChange={setIsPublishDialogOpen}>
             <DialogTrigger asChild>
@@ -339,6 +381,12 @@ export default function Inventory() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        {Number(product.quantity) <= 0 && (
+                          <DropdownMenuItem onClick={() => restockMutation.mutate({ ids: [product.id], qty: 1 })}>
+                            <Package className="w-4 h-4 mr-2 text-green-600" />
+                            Set In Stock (1)
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => deleteProduct.mutate(product.id)}>
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete

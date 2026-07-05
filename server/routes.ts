@@ -691,7 +691,14 @@ export async function registerRoutes(
 
           if (changedCount > 0) {
             console.log(`[eBaySync] Synced ${changedCount} products from eBay store ${store.id}`);
-            // Trigger existing sync to propagate stock status changes
+            // Notify user about auto-restocked products
+            try {
+              const title = `eBay sync restocked ${changedCount} product${changedCount > 1 ? 's' : ''}`;
+              await db.insert(notifications).values({
+                userId: store.userId, type: 'stock_alert', title,
+                message: 'eBay inventory had stock for products that were showing 0 locally — quantities have been restored.',
+              }).onConflictDoNothing();
+            } catch (_) {}
             await syncStore(store.id, store.userId);
           }
         } catch (err) {
@@ -760,6 +767,13 @@ export async function registerRoutes(
 
           if (changedCount > 0) {
             console.log(`[${platformName}Sync] Synced ${changedCount} products from ${platformName} store ${store.id}`);
+            try {
+              const title = `${platformName} sync restocked ${changedCount} product${changedCount > 1 ? 's' : ''}`;
+              await db.insert(notifications).values({
+                userId: store.userId, type: 'stock_alert', title,
+                message: `${platformName} inventory had stock for products that were showing 0 locally — quantities have been restored.`,
+              }).onConflictDoNothing();
+            } catch (_) {}
             await syncStore(store.id, store.userId);
           }
         } catch (err) {
