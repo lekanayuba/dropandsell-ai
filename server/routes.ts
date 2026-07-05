@@ -3746,6 +3746,12 @@ Guidelines:
           <button onclick="navigator.clipboard.writeText('${refreshToken}')" style="padding: 0.5rem 1rem; background: #065f46; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem;">Copy to Clipboard</button>`}
           <p style="margin-top: 2rem; color: #666;">Access token received at: ${new Date().toLocaleString()}</p>
           <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('ebay-oauth-success', '*');
+              setTimeout(function() { window.close(); }, 1500);
+            }
+          </script>
         </body></html>
       `);
     } catch (err: any) {
@@ -3833,6 +3839,12 @@ Guidelines:
           <p>Your Shopify store "${shopDomain}" has been connected.</p>
           <p style="margin-top: 2rem; color: #666;">Access token received at: ${new Date().toLocaleString()}</p>
           <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('shopify-oauth-success', '*');
+              setTimeout(function() { window.close(); }, 1500);
+            }
+          </script>
         </body></html>
       `);
     } catch (err: any) { res.status(500).send(`Shopify OAuth error: ${err.message}`); }
@@ -3889,6 +3901,12 @@ Guidelines:
           <h1>Amazon SP-API — Success</h1>
           <p>Your Amazon seller account has been connected.</p>
           <p><a href="/stores" style="color: #065f46;">Return to Stores</a></p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage('amazon-oauth-success', '*');
+              setTimeout(function() { window.close(); }, 1500);
+            }
+          </script>
         </body></html>
       `);
     } catch (err: any) { res.status(500).send(`Amazon callback error: ${err.message}`); }

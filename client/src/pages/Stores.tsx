@@ -47,6 +47,18 @@ export default function Stores() {
 
   const isSubscriber = user?.subscriptionStatus === 'active';
 
+  // Listen for OAuth popup success → refresh stores data and close popup
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data === 'ebay-oauth-success' || e.data === 'shopify-oauth-success' || e.data === 'amazon-oauth-success') {
+        queryClient.invalidateQueries({ queryKey: [api.stores.list.path] });
+        toast({ title: "Authorization successful", description: "Store credentials updated." });
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [queryClient, toast]);
+
   // Poll sync status every 10s for stores that might be syncing
   useEffect(() => {
     if (syncingStoreIds.size === 0) return;
