@@ -48,3 +48,6 @@ integrations = []
 TRACKING_API_KEY = "7261B35F5B194CB8FE0A3E306D2C8514"
 ADMIN_USERNAME = "dropandsell"
 ADMIN_PASSWORD_HASH = "$2b$10$V7fxdiMXQBhWnY7/ozdsCuX5htKan8HqbCX8IUojC9gh5V3sYwfWu"
+
+[userenv.production]
+ALLOWED_EXTENSION_IDS = "cmhenhnoglkmfimnoidoaofnhkjnhdnk"
