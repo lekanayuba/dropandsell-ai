@@ -1522,12 +1522,13 @@ export async function registerRoutes(
 
       const oldProduct = await storage.getProduct(id, userId);
 
-      // When quantity changes, auto-update vendorStockStatus
+      // When quantity changes, auto-update vendorStockStatus and mark as manual
       if (input.quantity !== undefined && oldProduct) {
         const oldAttrs = (oldProduct.attributes as Record<string, any>) || {};
         input.attributes = {
           ...oldAttrs,
           vendorStockStatus: Number(input.quantity) > 0 ? 'in_stock' : 'out_of_stock',
+          vendorStockManual: true,
         };
       }
 
@@ -4865,7 +4866,15 @@ Guidelines:
         const updateData: Record<string, any> = {};
         if (updates.sellingPrice !== undefined) updateData.sellingPrice = updates.sellingPrice.toString();
         if (updates.costPrice !== undefined) updateData.costPrice = updates.costPrice.toString();
-        if (updates.quantity !== undefined) updateData.quantity = updates.quantity;
+        if (updates.quantity !== undefined) {
+          updateData.quantity = updates.quantity;
+          const oldAttrs = (product.attributes as Record<string, any>) || {};
+          updateData.attributes = {
+            ...oldAttrs,
+            vendorStockStatus: Number(updates.quantity) > 0 ? 'in_stock' : 'out_of_stock',
+            vendorStockManual: true,
+          };
+        }
         if (updates.vendorId !== undefined) updateData.vendorId = updates.vendorId;
         if (updates.deliveryType !== undefined) updateData.deliveryType = updates.deliveryType;
         if (updates.deliveryCost !== undefined) updateData.deliveryCost = updates.deliveryCost.toString();
