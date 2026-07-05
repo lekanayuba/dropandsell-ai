@@ -613,6 +613,20 @@ export async function registerRoutes(
         await db.update(products)
           .set({ quantity: 0 })
           .where(and(eq(products.vendorId, vendorId), gt(products.quantity, 0)));
+      } else if (inStock === true || inStock === 1 || inStock === 'in_stock') {
+        // Vendor says in stock — try to extract actual quantity from response
+        const quantityPath = config.quantityPath;
+        let restockQty = 1; // default fallback
+        if (quantityPath) {
+          const qty = quantityPath.split('.').reduce((o: any, k: string) => o?.[k], data);
+          if (typeof qty === 'number' && qty > 0) restockQty = qty;
+        } else if (typeof inStock === 'number') {
+          restockQty = inStock;
+        }
+        // Restore stock for products from this vendor that are stuck at 0
+        await db.update(products)
+          .set({ quantity: restockQty })
+          .where(and(eq(products.vendorId, vendorId), lte(products.quantity, 0)));
       }
     } catch (err) {
       console.error(`[VendorStock] Error checking vendor ${vendorId}:`, err);
@@ -4491,7 +4505,7 @@ Guidelines:
         sku: sku || 'DS-' + Date.now().toString(36).toUpperCase(),
         costPrice: costPrice || '0',
         sellingPrice: sellingPrice || '0',
-        quantity: stockQuantity || 0,
+        quantity: stockQuantity != null ? stockQuantity : 1,
         images: imageUrl ? [imageUrl] : [],
         attributes: sourceUrl ? { sourceUrl } : null,
         deliveryType: deliveryType || 'buyer_pays',
