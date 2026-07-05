@@ -608,12 +608,23 @@ export async function registerRoutes(
       // Extract stock status from response — configurable via stockPath (e.g. "data.inStock")
       const stockPath = config.stockPath || 'inStock';
       const inStock = stockPath.split('.').reduce((o: any, k: string) => o?.[k], data);
-      if (inStock === false || inStock === 0 || inStock === 'out_of_stock') {
+      const vendorStatus = (inStock === false || inStock === 0 || inStock === 'out_of_stock') ? 'out_of_stock'
+        : (inStock === true || inStock === 1 || inStock === 'in_stock') ? 'in_stock'
+        : 'unknown';
+
+      // Update attributes.vendorStockStatus for all products from this vendor
+      await db.execute(sql`
+        UPDATE products
+        SET attributes = jsonb_set(COALESCE(attributes, '{}'::jsonb), '{vendorStockStatus}', to_jsonb(${vendorStatus}::text))
+        WHERE vendor_id = ${vendorId}
+      `);
+
+      if (vendorStatus === 'out_of_stock') {
         // Mark all products from this vendor as OOS
         await db.update(products)
           .set({ quantity: 0 })
           .where(and(eq(products.vendorId, vendorId), gt(products.quantity, 0)));
-      } else if (inStock === true || inStock === 1 || inStock === 'in_stock') {
+      } else if (vendorStatus === 'in_stock') {
         // Vendor says in stock — try to extract actual quantity from response
         const quantityPath = config.quantityPath;
         let restockQty = 1; // default fallback

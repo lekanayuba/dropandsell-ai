@@ -267,6 +267,7 @@ export default function Inventory() {
               <TableHead>Images</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Stock</TableHead>
+              <TableHead>Vendor</TableHead>
               <TableHead>Cost</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Profit</TableHead>
@@ -278,11 +279,11 @@ export default function Inventory() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
+                <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Loading products...</TableCell>
               </TableRow>
             ) : data?.items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-12">
+                <TableCell colSpan={12} className="text-center py-12">
                   <p className="text-lg font-medium text-muted-foreground">No products found</p>
                 </TableCell>
               </TableRow>
@@ -343,6 +344,7 @@ export default function Inventory() {
                     </div>
                   </TableCell>
                   <EditableStockCell product={product} />
+                  <VendorStockCell product={product} />
                   <TableCell className="font-mono text-xs">{product.sku}</TableCell>
                   <TableCell>£{Number(product.costPrice).toFixed(2)}</TableCell>
                   <TableCell>£{Number(product.sellingPrice).toFixed(2)}</TableCell>
@@ -749,13 +751,93 @@ function EditableStockCell({ product }: { product: any }) {
                 Out of Stock
               </Badge>
             )}
-            {Number(product.quantity) <= 0 && sourceUrl && (
+            {sourceUrl && (
               <a href={sourceUrl} target="_blank" rel="noopener noreferrer" title="Check source stock" className="text-blue-500 hover:text-blue-700">
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}
           </>
         )}
+      </div>
+    </TableCell>
+  );
+}
+
+function VendorStockCell({ product }: { product: any }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const attrs = product.attributes || {};
+  const vendorStatus = attrs.vendorStockStatus || 'unknown';
+  const sourceUrl = attrs.sourceUrl;
+  const hasVendor = !!product.vendorId;
+
+  const toggleMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      const newAttrs = { ...attrs, vendorStockStatus: newStatus };
+      const res = await fetch(`/api/products/${product.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attributes: newAttrs }),
+        credentials: "include",
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Failed to update"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (!hasVendor && vendorStatus === 'unknown') {
+    return (
+      <TableCell>
+        <span className="text-xs text-muted-foreground">—</span>
+      </TableCell>
+    );
+  }
+
+  const isInStock = vendorStatus === 'in_stock';
+  const isOOS = vendorStatus === 'out_of_stock';
+
+  return (
+    <TableCell>
+      <div className="flex items-center gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Badge
+              variant="outline"
+              className={cn(
+                "gap-1 cursor-pointer select-none",
+                isInStock && "bg-green-500/10 text-green-600 border-green-200 hover:bg-green-500/20",
+                isOOS && "bg-red-500/10 text-red-600 border-red-200 hover:bg-red-500/20",
+                vendorStatus === 'unknown' && "bg-muted text-muted-foreground border-border/50"
+              )}
+            >
+              {isInStock && <Package className="w-3 h-3" />}
+              {isOOS && <AlertTriangle className="w-3 h-3" />}
+              {isInStock ? 'Vendor: In Stock' : isOOS ? 'Vendor: OOS' : 'Unknown'}
+            </Badge>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => toggleMutation.mutate('in_stock')} disabled={toggleMutation.isPending}>
+              <Package className="w-4 h-4 mr-2 text-green-600" />
+              Mark In Stock
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => toggleMutation.mutate('out_of_stock')} disabled={toggleMutation.isPending}>
+              <AlertTriangle className="w-4 h-4 mr-2 text-red-600" />
+              Mark Out of Stock
+            </DropdownMenuItem>
+            {sourceUrl && (
+              <DropdownMenuItem onClick={() => window.open(sourceUrl, '_blank')}>
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Check Source
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </TableCell>
   );
