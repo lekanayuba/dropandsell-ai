@@ -7,6 +7,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
+import { resolveInventoryOwnerId } from "./sharedInventory";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
@@ -2295,7 +2296,7 @@ export async function registerRoutes(
   }
 
   protectedApi.get('/products', async (req: any, res) => {
-    const userId = req.user.claims.sub;
+    const userId = await resolveInventoryOwnerId(req.user.claims.sub);
     try {
       let productsList = await storage.getProducts(userId);
 
@@ -2318,7 +2319,7 @@ export async function registerRoutes(
   });
 
   protectedApi.get('/products/:id', async (req: any, res) => {
-    const userId = req.user.claims.sub;
+    const userId = await resolveInventoryOwnerId(req.user.claims.sub);
     const id = Number(req.params.id);
     const product = await storage.getProduct(id, userId);
     if (!product) {
@@ -2370,7 +2371,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const body = { ...req.body };
       delete body.veroOverride; delete body.veroOverrideBy; delete body.veroOverrideReason;
       if (body.costPrice !== undefined) body.costPrice = String(body.costPrice);
@@ -2524,7 +2525,7 @@ export async function registerRoutes(
   // returns a clean semantic-HTML body suitable for the eBay <Description>.
   protectedApi.post('/products/:id/ai-optimize-description', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: 'Invalid product id' });
       const product = await storage.getProduct(id, userId);
@@ -2586,7 +2587,7 @@ export async function registerRoutes(
   // new title to the product so it flows into the next publish/sync.
   protectedApi.post('/products/:id/ai-optimize-title', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: 'Invalid product id' });
       const product = await storage.getProduct(id, userId);
@@ -2627,7 +2628,7 @@ export async function registerRoutes(
 
   protectedApi.put('/products/:id', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const body = { ...req.body };
       delete body.veroOverride; delete body.veroOverrideBy; delete body.veroOverrideReason;
@@ -2694,7 +2695,7 @@ export async function registerRoutes(
   });
 
   protectedApi.delete('/products/:id', async (req: any, res) => {
-    const userId = req.user.claims.sub;
+    const userId = await resolveInventoryOwnerId(req.user.claims.sub);
     const id = Number(req.params.id);
     await storage.deleteProduct(id, userId);
     res.status(204).send();
@@ -2702,7 +2703,7 @@ export async function registerRoutes(
 
   protectedApi.get('/products/:id/vendor-stock', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const product = await storage.getProduct(id);
       if (!product || product.userId !== userId) {
@@ -2727,7 +2728,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products/:id/vendor-stock', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const product = await storage.getProduct(id);
       if (!product || product.userId !== userId) {
@@ -3598,7 +3599,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products/:id/check-vendor-stock', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const product = await storage.getProduct(id);
       if (!product || product.userId !== userId) {
@@ -3647,7 +3648,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products/check-all-vendor-stock', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const products = await storage.getProducts(userId);
       const results: { productId: number; title: string; vendorStock: any; priceUpdate?: any; error?: string }[] = [];
 
@@ -3701,7 +3702,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products/auto-sync-on-login', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const products = await storage.getProducts(userId);
       const productsWithUrls = products.filter(p => {
         const attrs = (p.attributes || {}) as Record<string, any>;
@@ -3780,7 +3781,7 @@ export async function registerRoutes(
 
   protectedApi.post('/products/:id/sync-ebay-listing', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const product = await storage.getProduct(id);
       if (!product || product.userId !== userId) {
@@ -8425,14 +8426,14 @@ export async function registerRoutes(
 
   // === AUTOMATION: PUBLISH QUEUE ===
   protectedApi.get('/publish-queue', async (req: any, res) => {
-    const userId = req.user.claims.sub;
+    const userId = await resolveInventoryOwnerId(req.user.claims.sub);
     const queue = await storage.getPublishQueue(userId);
     res.json(queue);
   });
 
   protectedApi.post('/publish-queue', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const { productId, storeId, calculatedPrice, pricingRuleId, quantity, postageType, postageCost } = req.body;
       
       const product = await storage.getProduct(productId, userId);
@@ -8478,7 +8479,7 @@ export async function registerRoutes(
 
   protectedApi.post('/publish-queue/bulk', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const { items } = req.body;
       
       console.log('[PUBLISH-QUEUE DEBUG] Received items from frontend:', JSON.stringify(items?.map((i: any) => ({ productId: i.productId, storeId: i.storeId }))));
@@ -8544,7 +8545,7 @@ export async function registerRoutes(
 
   protectedApi.put('/publish-queue/:id', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = await resolveInventoryOwnerId(req.user.claims.sub);
       const id = Number(req.params.id);
       const updates = req.body;
       if (updates.calculatedPrice !== undefined) {
@@ -8561,7 +8562,7 @@ export async function registerRoutes(
   });
 
   protectedApi.delete('/publish-queue/:id', async (req: any, res) => {
-    const userId = req.user.claims.sub;
+    const userId = await resolveInventoryOwnerId(req.user.claims.sub);
     const id = Number(req.params.id);
     await storage.deletePublishQueueItem(id, userId);
     res.status(204).send();
