@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2, Store, HeartPulse, MapPin } from "lucide-react";
-import { useState } from "react";
+import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2, Store, HeartPulse, MapPin, ExternalLink, Check, X } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProductSchema, type InsertProduct } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -300,21 +300,7 @@ export default function Inventory() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {Number(product.quantity) > 0 ? (
-                        <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200 gap-1">
-                          <Package className="w-3 h-3" />
-                          {Number(product.quantity)}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-200 gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Out of Stock
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
+                  <EditableStockCell product={product} />
                   <TableCell className="font-mono text-xs">{product.sku}</TableCell>
                   <TableCell>£{Number(product.costPrice).toFixed(2)}</TableCell>
                   <TableCell>£{Number(product.sellingPrice).toFixed(2)}</TableCell>
@@ -615,5 +601,114 @@ function ProductForm({ onSuccess }: { onSuccess: () => void }) {
         </Button>
       </form>
     </Form>
+  );
+}
+
+function EditableStockCell({ product }: { product: any }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(Number(product.quantity)));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (newQty: number) => {
+      const res = await fetch(`/api/products/${product.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity: newQty }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to update quantity");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setEditing(false);
+      toast({ title: "Stock updated", description: `Quantity set to ${value}` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setValue(String(Number(product.quantity)));
+    },
+  });
+
+  const handleSave = () => {
+    const newQty = parseInt(value, 10);
+    if (isNaN(newQty) || newQty < 0) {
+      toast({ title: "Invalid quantity", description: "Enter a valid number", variant: "destructive" });
+      setValue(String(Number(product.quantity)));
+      return;
+    }
+    if (newQty === Number(product.quantity)) {
+      setEditing(false);
+      return;
+    }
+    updateMutation.mutate(newQty);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSave();
+    if (e.key === "Escape") {
+      setValue(String(Number(product.quantity)));
+      setEditing(false);
+    }
+  };
+
+  const sourceUrl = product.attributes?.sourceUrl;
+
+  return (
+    <TableCell>
+      <div className="flex items-center gap-2">
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <Input
+              ref={inputRef}
+              type="number"
+              min="0"
+              className="w-20 h-8 text-sm"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" onClick={handleSave} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => { setValue(String(Number(product.quantity))); setEditing(false); }}>
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+        ) : (
+          <>
+            {Number(product.quantity) > 0 ? (
+              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-200 gap-1 cursor-pointer hover:bg-green-500/20" onClick={() => setEditing(true)}>
+                <Package className="w-3 h-3" />
+                {Number(product.quantity)}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-200 gap-1 cursor-pointer hover:bg-red-500/20" onClick={() => setEditing(true)}>
+                <AlertTriangle className="w-3 h-3" />
+                Out of Stock
+              </Badge>
+            )}
+            {Number(product.quantity) <= 0 && sourceUrl && (
+              <a href={sourceUrl} target="_blank" rel="noopener noreferrer" title="Check source stock" className="text-blue-500 hover:text-blue-700">
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </>
+        )}
+      </div>
+    </TableCell>
   );
 }
