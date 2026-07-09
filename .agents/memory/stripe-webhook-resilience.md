@@ -38,3 +38,16 @@ webhooks broke together). Webhook acknowledgment must survive that.
   checkout/billing-portal route fails with "Stripe credentials not available";
   customers can't pay. Fix = reconnect via proposeIntegration, then re-enable
   the disabled endpoint in the Stripe dashboard and replay missed events.
+
+**Basil API shape changes (verified live 2026-07):**
+- Invoice payloads: `invoice.subscription` is gone — read
+  `invoice.parent?.subscription_details?.subscription` (keep `||` fallback).
+- `subscriptions.retrieve`: top-level `current_period_end` is gone — read
+  `items.data[0].current_period_end` (keep `??` fallback).
+- Symptom of missing these: webhook returns 200 but DB rows silently don't
+  update (enrichment is inside try/catch). Always verify DB state after
+  replaying events, never trust the 200 alone.
+- Replaying missed events without dashboard access: fetch full event JSON via
+  `stripe.events.list`, POST to the live webhook signed with
+  `STRIPE_WEBHOOK_SECRET` (HMAC-SHA256 of `t.payload`, header
+  `Stripe-Signature: t=...,v1=...`). Handler is idempotent.
