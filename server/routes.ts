@@ -8199,7 +8199,8 @@ export async function registerRoutes(
           if (session.subscription) {
             try {
               const stripeSub: any = await stripe.subscriptions.retrieve(session.subscription as string);
-              const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+              const periodEndTs = stripeSub.current_period_end ?? stripeSub.items?.data?.[0]?.current_period_end;
+              const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
               const existingSub = await storage.getSubscription(userId);
               if (existingSub) {
                 await db.update(subscriptions).set({
@@ -14327,7 +14328,8 @@ Return only the description text, no additional formatting.`;
             try {
               const stripe = await getUncachableStripeClient();
               const stripeSub: any = await stripe.subscriptions.retrieve(session.subscription as string);
-              const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+              const periodEndTs = stripeSub.current_period_end ?? stripeSub.items?.data?.[0]?.current_period_end;
+              const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
               const existingSub = await storage.getSubscription(userId);
               if (existingSub) {
                 await db.update(subscriptions).set({
@@ -14395,12 +14397,16 @@ Return only the description text, no additional formatting.`;
               console.log(`[Webhook] Activated subscription for ${user.email} on invoice.paid`);
             }
 
-            const invoiceSubscriptionId = invoice.subscription as string;
+            // Newer Stripe API versions moved the subscription reference from
+            // invoice.subscription to invoice.parent.subscription_details.subscription
+            const invoiceSubscriptionId = (invoice.subscription
+              || invoice.parent?.subscription_details?.subscription) as string;
             if (invoiceSubscriptionId) {
               try {
                 const stripe = await getUncachableStripeClient();
                 const stripeSub: any = await stripe.subscriptions.retrieve(invoiceSubscriptionId);
-                const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+                const periodEndTs = stripeSub.current_period_end ?? stripeSub.items?.data?.[0]?.current_period_end;
+                const periodEnd = periodEndTs ? new Date(periodEndTs * 1000) : null;
                 if (periodEnd) {
                   const existingSub = await storage.getSubscription(user.id);
                   if (existingSub) {
@@ -14409,6 +14415,15 @@ Return only the description text, no additional formatting.`;
                       currentPeriodEnd: periodEnd,
                     }).where(eq(subscriptions.userId, user.id));
                     console.log(`[Webhook] Updated renewal date to ${periodEnd.toISOString()} for ${user.email}`);
+                  } else {
+                    await db.insert(subscriptions).values({
+                      userId: user.id,
+                      planName: user.subscriptionPlan || 'Starter Plan',
+                      status: 'active',
+                      stripeSubscriptionId: invoiceSubscriptionId,
+                      currentPeriodEnd: periodEnd,
+                    });
+                    console.log(`[Webhook] Created subscription record (renewal ${periodEnd.toISOString()}) for ${user.email}`);
                   }
                 }
               } catch (subErr: any) {
