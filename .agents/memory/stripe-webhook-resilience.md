@@ -24,6 +24,16 @@ webhooks broke together). Webhook acknowledgment must survive that.
 - `STRIPE_WEBHOOK_SECRET` exists ONLY in the production deployment secrets,
   not in the workspace/dev env — dev accepts unsigned webhooks (dev-only branch,
   compile-time excluded from prod build).
+- The Stripe connector only ever got a DEVELOPMENT (test-mode) connection; the
+  publish flow never offered a production setup. Live keys therefore come from
+  a production-gated env fallback in `getCredentials()`: `STRIPE_SECRET_KEY`
+  (global secret, live key) + `STRIPE_PUBLISHABLE_KEY` (production env var).
+  Fallback only activates when `REPLIT_DEPLOYMENT === '1'` so dev can never
+  silently use live keys — keep that gate. Connector wins if it ever gets
+  production credentials.
+- CAUTION: `STRIPE_SECRET_KEY` is a global secret, so it IS visible in the dev
+  workspace env. Never read `process.env.STRIPE_SECRET_KEY` directly in new
+  code or scripts — always go through `getUncachableStripeClient()`.
 - If the connector is gone, `listConnections('stripe')` returns [] and every
   checkout/billing-portal route fails with "Stripe credentials not available";
   customers can't pay. Fix = reconnect via proposeIntegration, then re-enable
