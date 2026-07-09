@@ -51,3 +51,4 @@ ADMIN_PASSWORD_HASH = "$2b$10$V7fxdiMXQBhWnY7/ozdsCuX5htKan8HqbCX8IUojC9gh5V3sYw
 
 [userenv.production]
 ALLOWED_EXTENSION_IDS = "cmhenhnoglkmfimnoidoaofnhkjnhdnk"
+STRIPE_PUBLISHABLE_KEY = "pk_live_51SvTmyASTLP2mhN5sOUlC5iy6XWxXhpT5gdlPNutyFOv1fIvnuk5igZZjbISZ1HWp32UccwvZU61U2hDH4cetSQh00dcmwVgwR"
