@@ -7,3 +7,4 @@
 - [Drizzle db:push interactive](drizzle-push-interactive.md) — new-table create/rename prompt can't be piped; create the table via SQL for new tables, then push sees it as existing.
 - [eBay shared App ID daily quota](ebay-shared-app-quota.md) — all sellers share ONE eBay App ID daily call budget; 518 blocks everyone; owner must raise limit via eBay Application Growth Check; conserve per-image upload calls.
 - [Prod data/email one-shots](prod-oneshot-patches.md) — prod DB is read-only from workspace; apply prod data changes + customer emails via idempotent boot-time one-shots (index.ts / dataPatches.ts); split the money-grant marker from the email marker.
+- [Stripe webhook resilience](stripe-webhook-resilience.md) — webhook signature check must never depend on the Stripe connector (it once vanished → 9 days of 400s → Stripe disabled the endpoint); whsec lives only in deployment secrets.

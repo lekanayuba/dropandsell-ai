@@ -66,6 +66,16 @@ export async function getUncachableStripeClient() {
   });
 }
 
+// Webhook signature verification requires ONLY the signing secret — never the
+// Stripe API credentials. Keep this independent of the Stripe connection so
+// webhook delivery keeps working (and Stripe never auto-disables the endpoint)
+// even if the connection is removed or temporarily unavailable.
+const webhookVerifier = new Stripe('sk_webhook_signature_verification_only');
+
+export function constructVerifiedWebhookEvent(rawBody: string | Buffer, signature: string, webhookSecret: string) {
+  return webhookVerifier.webhooks.constructEvent(rawBody, signature, webhookSecret);
+}
+
 // Use getStripePublishableKey() for client-side operations
 export async function getStripePublishableKey() {
   const credentials = await getCredentials();

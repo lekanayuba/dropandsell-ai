@@ -11,7 +11,7 @@ import { resolveInventoryOwnerId } from "./sharedInventory";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
-import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
+import { getUncachableStripeClient, getStripePublishableKey, getStripeSync, constructVerifiedWebhookEvent } from "./stripeClient";
 import { db } from "./db";
 import { SUBSCRIPTION_PLANS, getYearlyPrice } from "./subscriptionPlans";
 import { sql, eq, and, or, desc, ne } from "drizzle-orm";
@@ -14283,15 +14283,19 @@ Return only the description text, no additional formatting.`;
   app.use('/api/extension', extensionApi);
 
   app.post('/api/stripe/webhook', async (req: any, res) => {
+    // Step 1 — verify the event. Signature verification needs ONLY the webhook
+    // signing secret, never the Stripe API connection. This must not depend on
+    // getUncachableStripeClient(): when the Stripe connection was unavailable,
+    // every webhook returned 400 and Stripe eventually disabled the endpoint,
+    // silently dropping real customer payment events.
+    let event: any;
     try {
-      const stripe = await getUncachableStripeClient();
       const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-      let event;
 
       if (webhookSecret) {
         const sig = req.headers['stripe-signature'] as string;
         const rawBody = req.rawBody || req.body;
-        event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+        event = constructVerifiedWebhookEvent(rawBody, sig, webhookSecret);
       } else if (process.env.NODE_ENV === 'production') {
         console.error('[Webhook] STRIPE_WEBHOOK_SECRET is not configured in production — rejecting unsigned webhook');
         return res.status(400).json({ message: 'Webhook signature verification required' });
@@ -14299,6 +14303,14 @@ Return only the description text, no additional formatting.`;
         console.warn('[Webhook] No STRIPE_WEBHOOK_SECRET — accepting unsigned webhook in development mode');
         event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       }
+    } catch (sigErr: any) {
+      console.error('[Stripe Webhook] Signature verification failed:', sigErr.message);
+      return res.status(400).json({ error: sigErr.message });
+    }
+
+    // Step 2 — process the verified event. Internal failures return 500 so
+    // Stripe retries; only signature problems above ever return 400.
+    try {
 
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
@@ -14313,6 +14325,7 @@ Return only the description text, no additional formatting.`;
 
           if (session.subscription) {
             try {
+              const stripe = await getUncachableStripeClient();
               const stripeSub: any = await stripe.subscriptions.retrieve(session.subscription as string);
               const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
               const existingSub = await storage.getSubscription(userId);
@@ -14385,6 +14398,7 @@ Return only the description text, no additional formatting.`;
             const invoiceSubscriptionId = invoice.subscription as string;
             if (invoiceSubscriptionId) {
               try {
+                const stripe = await getUncachableStripeClient();
                 const stripeSub: any = await stripe.subscriptions.retrieve(invoiceSubscriptionId);
                 const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
                 if (periodEnd) {
@@ -14442,8 +14456,11 @@ Return only the description text, no additional formatting.`;
 
       res.json({ received: true });
     } catch (err: any) {
-      console.error('[Stripe Webhook] Error:', err.message);
-      res.status(400).json({ error: err.message });
+      // Internal error on a VERIFIED event: return 500 so Stripe retries with
+      // backoff. Never 400 here — persistent 4xx responses get the endpoint
+      // permanently disabled by Stripe.
+      console.error('[Stripe Webhook] Processing error:', err.message);
+      res.status(500).json({ error: 'Internal webhook processing error' });
     }
   });
 
