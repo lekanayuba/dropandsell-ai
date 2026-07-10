@@ -7,6 +7,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
+import { OWNER_EMAIL } from "./seedAdmin";
 import { resolveInventoryOwnerId } from "./sharedInventory";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -421,10 +422,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: 'Username and password are required' });
       }
 
-      // Hard lock: only the single configured admin username may ever log in
-      // here, regardless of whether any other account is flagged as admin.
+      // Hard lock: only the configured admin username OR the owner's email may
+      // ever log in here, regardless of whether any other account is flagged as
+      // admin. The owner email is always allowed to match seedAdmin, which
+      // guarantees that account keeps admin access permanently.
       const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
-      if (!ADMIN_USERNAME || String(username).trim().toLowerCase() !== ADMIN_USERNAME) {
+      const typedUsername = String(username).trim().toLowerCase();
+      const allowedAdminLogins = [ADMIN_USERNAME, OWNER_EMAIL.toLowerCase()].filter(Boolean);
+      if (!allowedAdminLogins.includes(typedUsername)) {
         return res.status(403).json({ message: 'Invalid username or password' });
       }
 

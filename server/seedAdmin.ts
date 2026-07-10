@@ -14,7 +14,7 @@ import { users } from "@shared/schema";
  */
 // The owner's account always keeps admin access, regardless of which
 // login the ADMIN_USERNAME config points at.
-const OWNER_EMAIL = "dropandsellauth@gmail.com";
+export const OWNER_EMAIL = "dropandsellauth@gmail.com";
 
 export async function seedAdminUser() {
   const username = process.env.ADMIN_USERNAME?.trim().toLowerCase();
