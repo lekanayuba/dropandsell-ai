@@ -1278,24 +1278,38 @@ function PublishSection() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={
-                            item.status === "published"
-                              ? "default"
-                              : item.status === "failed"
-                              ? "destructive"
-                              : item.status === "publishing"
-                              ? "secondary"
-                              : "outline"
-                          }
-                          className="gap-1"
-                        >
-                          {item.status === "pending" && <Clock className="w-3 h-3" />}
-                          {item.status === "publishing" && <RefreshCw className="w-3 h-3 animate-spin" />}
-                          {item.status === "published" && <CheckCircle2 className="w-3 h-3" />}
-                          {item.status === "failed" && <XCircle className="w-3 h-3" />}
-                          {item.status}
-                        </Badge>
+                        <div className="flex flex-col gap-1 max-w-[260px]">
+                          <Badge
+                            variant={
+                              item.status === "published"
+                                ? "default"
+                                : item.status === "failed"
+                                ? "destructive"
+                                : item.status === "publishing"
+                                ? "secondary"
+                                : "outline"
+                            }
+                            className="gap-1 w-fit"
+                          >
+                            {item.status === "pending" && <Clock className="w-3 h-3" />}
+                            {item.status === "publishing" && <RefreshCw className="w-3 h-3 animate-spin" />}
+                            {item.status === "published" && <CheckCircle2 className="w-3 h-3" />}
+                            {item.status === "failed" && <XCircle className="w-3 h-3" />}
+                            {item.status}
+                          </Badge>
+                          {item.status === "failed" && (
+                            <div
+                              className="flex items-start gap-1 text-xs text-red-600 dark:text-red-400"
+                              data-testid={`text-publish-error-${item.id}`}
+                            >
+                              <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                              <span>
+                                Failed on <span className="font-medium">{store?.name || "store"}</span>
+                                {item.errorMessage ? `: ${item.errorMessage}` : ". Please try again."}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
@@ -1371,6 +1385,7 @@ function PublishSection() {
             {publishResults.map((result: any, idx: number) => {
               const queueItem = queue?.find(q => q.id === result.id);
               const product = queueItem ? products?.items.find(p => p.id === queueItem.productId) : null;
+              const resultStore = queueItem ? stores?.find(s => s.id === queueItem.storeId) : null;
               return (
                 <div
                   key={idx}
@@ -1426,6 +1441,11 @@ function PublishSection() {
                       }
                       return null;
                     })()}
+                    {(result.status === "skipped" || result.status === "failed") && resultStore?.name && (
+                      <p className="text-xs text-muted-foreground mt-0.5" data-testid={`text-result-store-${idx}`}>
+                        Store: {resultStore.name}
+                      </p>
+                    )}
                     {result.status === "skipped" && (
                       <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">{result.message}</p>
                     )}

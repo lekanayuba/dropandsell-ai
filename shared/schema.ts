@@ -636,6 +636,25 @@ export const dropAndSellOrdersRelations = relations(dropAndSellOrders, ({ one })
   freelancer: one(freelancerProfiles, { fields: [dropAndSellOrders.freelancerId], references: [freelancerProfiles.id] }),
 }));
 
+// A snapshot log of failed lister publish attempts. The list-product flow
+// rolls back (deletes) the product + SKU mapping on failure, so nothing else
+// can persist the error for the lister. Each row is one failed product and
+// records only the customer store NAME/@username (never email or tokens) so
+// the lister can see which store the attempt was for and why it failed.
+export const dropAndSellListingFailures = pgTable("drop_and_sell_listing_failures", {
+  id: serial("id").primaryKey(),
+  freelancerId: integer("freelancer_id").notNull().references(() => freelancerProfiles.id),
+  orderId: integer("order_id").references(() => dropAndSellOrders.id),
+  customerUserId: varchar("customer_user_id"),
+  customerName: text("customer_name"),
+  storeName: text("store_name"),
+  productTitle: text("product_title"),
+  sku: text("sku"),
+  errorMessage: text("error_message").notNull(),
+  resolved: boolean("resolved").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === FULFILLMENT ZOD SCHEMAS ===
 
 export const insertSkuMappingSchema = createInsertSchema(skuMappings).omit({ id: true, userId: true, createdAt: true });
@@ -669,6 +688,10 @@ export type FreelancerProfile = typeof freelancerProfiles.$inferSelect;
 export const insertDropAndSellOrderSchema = createInsertSchema(dropAndSellOrders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
 export type InsertDropAndSellOrder = z.infer<typeof insertDropAndSellOrderSchema>;
 export type DropAndSellOrder = typeof dropAndSellOrders.$inferSelect;
+
+export const insertDropAndSellListingFailureSchema = createInsertSchema(dropAndSellListingFailures).omit({ id: true, resolved: true, createdAt: true });
+export type InsertDropAndSellListingFailure = z.infer<typeof insertDropAndSellListingFailureSchema>;
+export type DropAndSellListingFailure = typeof dropAndSellListingFailures.$inferSelect;
 
 // === FULFILLMENT RELATIONS ===
 export const fulfillmentJobsRelations = relations(fulfillmentJobs, ({ one }) => ({

@@ -160,6 +160,85 @@ export default function DropAndSell() {
     enabled: !isAdmin && isApprovedLister,
   });
 
+  // Unresolved failed publish attempts for this lister. Because a failed
+  // publish deletes the product, this is the only record the lister has that
+  // an attempt failed, which store it was for, and why.
+  const { data: myListingFailures } = useQuery<any[]>({
+    queryKey: ['/api/drop-and-sell/my-listing-failures'],
+    enabled: !isAdmin && isApprovedLister,
+  });
+
+  const dismissFailureMutation = useMutation({
+    mutationFn: async (failureId: number) => {
+      const res = await apiRequest('POST', `/api/drop-and-sell/my-listing-failures/${failureId}/dismiss`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/drop-and-sell/my-listing-failures'] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Couldn't dismiss", description: err.message || 'Try again.', variant: 'destructive' });
+    },
+  });
+
+  // Persistent red notice listing each failed publish attempt (store name +
+  // reason). Shown at the top of both lister tabs so a failure can't be
+  // missed. Rows stay until the lister dismisses them.
+  const renderFailuresCard = () => {
+    if (!myListingFailures?.length) return null;
+    return (
+      <Card className="mb-4 border-red-300 dark:border-red-800 bg-red-50/60 dark:bg-red-950/20" data-testid="card-listing-failures">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-red-700 dark:text-red-400 text-base">
+            <AlertTriangle className="w-5 h-5" />
+            Failed listing attempts ({myListingFailures.length})
+          </CardTitle>
+          <CardDescription>
+            These products didn't publish, so nothing was listed. Fix the issue shown, try again, then dismiss the notice.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {myListingFailures.map((f: any) => (
+            <div
+              key={f.id}
+              className="flex items-start justify-between gap-3 p-3 rounded-md border border-red-200 dark:border-red-900 bg-white dark:bg-red-950/30"
+              data-testid={`row-listing-failure-${f.id}`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap text-sm font-medium">
+                  <span className="truncate" data-testid={`text-failure-product-${f.id}`}>{f.productTitle || 'Product'}</span>
+                  {f.storeName && (
+                    <Badge variant="outline" className="border-red-300 text-red-700 dark:text-red-400" data-testid={`badge-failure-store-${f.id}`}>
+                      {f.storeName}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-red-700 dark:text-red-400 mt-1" data-testid={`text-failure-error-${f.id}`}>
+                  {f.errorMessage}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {f.customerName ? `Customer: ${f.customerName}` : ''}
+                  {f.customerName && f.createdAt ? ' · ' : ''}
+                  {f.createdAt ? new Date(f.createdAt).toLocaleString() : ''}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-red-700 hover:text-red-800 flex-shrink-0"
+                onClick={() => dismissFailureMutation.mutate(f.id)}
+                disabled={dismissFailureMutation.isPending}
+                data-testid={`button-dismiss-failure-${f.id}`}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  };
+
   // === Customer-catalog dialog (lister can browse ALL of a customer's
   // products and edit selling prices that push to eBay) ===
   const [catalogCustomerId, setCatalogCustomerId] = useState<string | null>(null);
@@ -1178,6 +1257,7 @@ export default function DropAndSell() {
 
         {!isAdmin && isApprovedLister && (
           <TabsContent value="assignments">
+            {renderFailuresCard()}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1383,6 +1463,7 @@ export default function DropAndSell() {
 
         {!isAdmin && isApprovedLister && (
           <TabsContent value="my-listings">
+            {renderFailuresCard()}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

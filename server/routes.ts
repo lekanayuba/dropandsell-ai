@@ -5165,6 +5165,47 @@ export async function registerRoutes(
     | { ok: true; productId: number; externalId: string; listingUrl: string | null; progress: number; total: number; complete: boolean }
     | { ok: false; status: number; message: string };
 
+  // Best-effort snapshot log of a FAILED lister publish attempt. Because the
+  // list-product flow rolls back (deletes) the product on failure, this is the
+  // only durable trace a lister has that an attempt failed and why. Records
+  // only the customer store NAME/@username — never the customer's email or any
+  // token — so a lister can see which store the attempt was for. Never throws:
+  // logging a failure must not turn a handled failure into a 500.
+  async function recordListerListingFailure(params: {
+    freelancerId: number;
+    order: { id: number; userId: string };
+    ebayStore: { name?: string | null; credentials?: any } | null | undefined;
+    productTitle?: string | null;
+    sku?: string | null;
+    errorMessage: string;
+  }) {
+    try {
+      const username = (params.ebayStore?.credentials as any)?.ebayUsername || undefined;
+      const baseName = params.ebayStore?.name || 'eBay store';
+      const storeName = username ? `${baseName} (@${username})` : baseName;
+      let customerName: string | null = null;
+      try {
+        const customer = await storage.getUser(params.order.userId);
+        if (customer) {
+          const full = [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim();
+          customerName = full || customer.email || null;
+        }
+      } catch { /* name is a nice-to-have; skip on lookup failure */ }
+      await storage.createDropAndSellListingFailure({
+        freelancerId: params.freelancerId,
+        orderId: params.order.id,
+        customerUserId: params.order.userId,
+        customerName,
+        storeName,
+        productTitle: params.productTitle || null,
+        sku: params.sku || null,
+        errorMessage: params.errorMessage,
+      } as any);
+    } catch (logErr: any) {
+      console.error(`[DropAndSell] Failed to record listing failure for order ${params.order?.id}: ${logErr?.message}`);
+    }
+  }
+
   async function performListProductIntoCustomerEbay(
     callerProfile: { id: number; name: string },
     order: { id: number; userId: string; listingCount: number; progressCount: number | null; status: string | null; paymentStatus: string | null; freelancerId: number | null },
@@ -5369,7 +5410,9 @@ export async function registerRoutes(
       console.error(`[DropAndSell helper] SKU mapping NOT created for product ${product.id} sku ${input.sku} — refusing to publish`);
       try { await storage.deleteProduct(product.id, order.userId); } catch {}
       await releaseSlot();
-      return { ok: false, status: 500, message: 'Could not create the SKU-to-vendor mapping needed for fulfillment. The listing was not published.' };
+      const mapFailMsg = 'Could not create the SKU-to-vendor mapping needed for fulfillment. The listing was not published.';
+      await recordListerListingFailure({ freelancerId: callerProfile.id, order, ebayStore, productTitle: input.title, sku: input.sku, errorMessage: mapFailMsg });
+      return { ok: false, status: 500, message: mapFailMsg };
     }
     const mappingCreatedNow = preExistingMappingId === null || activeMapping.id !== preExistingMappingId;
 
@@ -5383,6 +5426,7 @@ export async function registerRoutes(
         console.error(`[DropAndSell helper] Failed to clean up orphan product ${product.id}: ${delErr.message}`);
       }
       await releaseSlot();
+      await recordListerListingFailure({ freelancerId: callerProfile.id, order, ebayStore, productTitle: input.title, sku: input.sku, errorMessage: message });
       return { ok: false, status, message };
     };
 
@@ -5625,6 +5669,14 @@ export async function registerRoutes(
         try { await storage.releaseDropAndSellListingSlot(orderId); } catch (releaseErr: any) {
           console.error(`[DropAndSell] Failed to release slot for order ${orderId}: ${releaseErr.message}`);
         }
+        await recordListerListingFailure({
+          freelancerId: callerProfile.id,
+          order,
+          ebayStore,
+          productTitle: input.title,
+          sku: input.sku,
+          errorMessage: typeof body?.message === 'string' ? body.message : 'The listing failed.',
+        });
         return res.status(status).json(body);
       };
 
@@ -5927,6 +5979,58 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error('[DropAndSell] lister-customer-stores error:', err);
       res.status(500).json({ message: err.message || 'Failed to load customer stores' });
+    }
+  });
+
+  // Lister-only: the caller's own unresolved listing failures. Because a
+  // failed publish rolls back (deletes) the product, this is the only place
+  // the lister can see that an attempt failed, which customer store it was
+  // for, and the reason — so they can retry or flag it. Scoped to the
+  // caller's freelancer profile; never exposes another lister's failures.
+  protectedApi.get('/drop-and-sell/my-listing-failures', requireDropAndSellAccess, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user?.email) return res.json([]);
+
+      const freelancers = await storage.getFreelancerProfiles();
+      const profile = freelancers.find(
+        f => f.email.toLowerCase() === user.email!.toLowerCase() && f.applicationStatus === 'approved'
+      );
+      if (!profile) return res.json([]);
+
+      const failures = await storage.getDropAndSellListingFailuresByFreelancer(profile.id);
+      res.json(failures);
+    } catch (err: any) {
+      console.error('[DropAndSell] my-listing-failures error:', err);
+      res.status(500).json({ message: err.message || 'Failed to load listing failures' });
+    }
+  });
+
+  // Lister-only: dismiss (resolve) one of the caller's own failure rows. The
+  // storage layer includes freelancerId in the WHERE clause so a lister can
+  // only ever dismiss a row that belongs to them (IDOR guard).
+  protectedApi.post('/drop-and-sell/my-listing-failures/:id/dismiss', requireDropAndSellAccess, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      if (!user?.email) return res.status(403).json({ message: 'You must be signed in.' });
+
+      const freelancers = await storage.getFreelancerProfiles();
+      const profile = freelancers.find(
+        f => f.email.toLowerCase() === user.email!.toLowerCase() && f.applicationStatus === 'approved'
+      );
+      if (!profile) return res.status(403).json({ message: 'You are not an approved lister.' });
+
+      const failureId = Number(req.params.id);
+      if (!Number.isFinite(failureId)) return res.status(400).json({ message: 'Invalid id' });
+
+      const dismissed = await storage.resolveDropAndSellListingFailure(failureId, profile.id);
+      if (!dismissed) return res.status(404).json({ message: 'Failure not found' });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('[DropAndSell] dismiss listing-failure error:', err);
+      res.status(500).json({ message: err.message || 'Failed to dismiss' });
     }
   });
 

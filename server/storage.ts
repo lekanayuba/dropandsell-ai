@@ -3,7 +3,7 @@ import {
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, globalVeroList, contentFilters, restrictedProducts,
   addonPurchases, trendingProducts, suggestions,
   skuMappings, fulfillmentJobs, paymentCards, returnRequests, auditLogs, featureFlags,
-  veroBrandAliases, veroAuditLog, freelancerProfiles, dropAndSellOrders, changelogEntries,
+  veroBrandAliases, veroAuditLog, freelancerProfiles, dropAndSellOrders, dropAndSellListingFailures, changelogEntries,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
@@ -14,6 +14,7 @@ import {
   type InsertVeroAuditLog, type VeroAuditLog,
   type InsertFreelancerProfile, type FreelancerProfile,
   type InsertDropAndSellOrder, type DropAndSellOrder,
+  type InsertDropAndSellListingFailure, type DropAndSellListingFailure,
   type InsertChangelogEntry, type ChangelogEntry
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
@@ -1757,6 +1758,36 @@ export class DatabaseStorage implements IStorage {
       .where(eq(dropAndSellOrders.id, id))
       .returning();
     return updated;
+  }
+
+  // Drop-and-Sell listing failures — a lister-facing snapshot log. The
+  // list-product flow rolls back (deletes) the product on failure, so this
+  // is the only durable record a lister has that an attempt failed and why.
+  async createDropAndSellListingFailure(data: InsertDropAndSellListingFailure) {
+    const [row] = await db.insert(dropAndSellListingFailures).values(data as any).returning();
+    return row;
+  }
+
+  async getDropAndSellListingFailuresByFreelancer(freelancerId: number, includeResolved = false) {
+    const conditions = [eq(dropAndSellListingFailures.freelancerId, freelancerId)];
+    if (!includeResolved) conditions.push(eq(dropAndSellListingFailures.resolved, false));
+    return db.select().from(dropAndSellListingFailures)
+      .where(and(...conditions))
+      .orderBy(desc(dropAndSellListingFailures.createdAt));
+  }
+
+  // Dismiss (resolve) a single failure. The freelancerId is part of the WHERE
+  // clause so a lister can only ever dismiss their OWN failure rows — this is
+  // the IDOR guard, enforced in SQL rather than a pre-read.
+  async resolveDropAndSellListingFailure(id: number, freelancerId: number) {
+    const result = await db.update(dropAndSellListingFailures)
+      .set({ resolved: true })
+      .where(and(
+        eq(dropAndSellListingFailures.id, id),
+        eq(dropAndSellListingFailures.freelancerId, freelancerId),
+      ))
+      .returning();
+    return result.length > 0;
   }
 }
 
