@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, notInArray } from "drizzle-orm";
 import { db } from "./db";
 import { users } from "@shared/schema";
 
@@ -15,6 +15,11 @@ import { users } from "@shared/schema";
 // The owner's account always keeps admin access, regardless of which
 // login the ADMIN_USERNAME config points at.
 export const OWNER_EMAIL = "dropandsellauth@gmail.com";
+
+// Additional accounts that are always granted full admin access (including
+// the admin portal and the subscribers database). They are promoted at boot
+// and protected from the demotion sweep below.
+export const ADDITIONAL_ADMIN_EMAILS = ["abmoses2000@gmail.com"];
 
 export async function seedAdminUser() {
   const username = process.env.ADMIN_USERNAME?.trim().toLowerCase();
@@ -70,12 +75,26 @@ export async function seedAdminUser() {
       console.log(`[seed-admin] Restored admin access for owner "${OWNER_EMAIL}"`);
     }
 
+    // Promote every additional admin account (no-op until they sign up).
+    for (const adminEmail of ADDITIONAL_ADMIN_EMAILS) {
+      const promoted = await db
+        .update(users)
+        .set({ isAdmin: "true", updatedAt: now })
+        .where(and(eq(users.email, adminEmail), ne(users.isAdmin, "true")))
+        .returning({ id: users.id });
+      if (promoted.length > 0) {
+        console.log(`[seed-admin] Granted admin access to "${adminEmail}"`);
+      }
+    }
+
     // Lock down the admin portal: strip admin access from every account
-    // except the configured admin login and the owner's account.
+    // except the configured admin login, the owner's account, and the
+    // additional admin allowlist.
+    const protectedAdminEmails = [username, OWNER_EMAIL, ...ADDITIONAL_ADMIN_EMAILS];
     const demoted = await db
       .update(users)
       .set({ isAdmin: "false", updatedAt: now })
-      .where(and(ne(users.email, username), ne(users.email, OWNER_EMAIL), eq(users.isAdmin, "true")))
+      .where(and(notInArray(users.email, protectedAdminEmails), eq(users.isAdmin, "true")))
       .returning({ id: users.id });
     if (demoted.length > 0) {
       console.log(`[seed-admin] Revoked admin access from ${demoted.length} other account(s)`);

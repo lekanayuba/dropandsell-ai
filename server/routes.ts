@@ -7,7 +7,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { OWNER_EMAIL } from "./seedAdmin";
+import { OWNER_EMAIL, ADDITIONAL_ADMIN_EMAILS } from "./seedAdmin";
 import { resolveInventoryOwnerId } from "./sharedInventory";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -28,6 +28,7 @@ const upload = multer({
 });
 
 const FREE_ACCESS_EMAILS: Record<string, { isAdmin: boolean; unlimitedStores?: boolean; freeAddons?: boolean; bonusStores?: number; skipPlanOverride?: boolean }> = {
+  'abmoses2000@gmail.com': { isAdmin: true },
   'cyrinaudochukwu28@gmail.com': { isAdmin: false, unlimitedStores: true },
   'dropandsellauth@gmail.com': { isAdmin: true, freeAddons: true },
   'mukaila.ayuba@outlook.com': { isAdmin: false, unlimitedStores: true, freeAddons: true },
@@ -428,7 +429,11 @@ export async function registerRoutes(
       // guarantees that account keeps admin access permanently.
       const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim().toLowerCase();
       const typedUsername = String(username).trim().toLowerCase();
-      const allowedAdminLogins = [ADMIN_USERNAME, OWNER_EMAIL.toLowerCase()].filter(Boolean);
+      const allowedAdminLogins = [
+        ADMIN_USERNAME,
+        OWNER_EMAIL.toLowerCase(),
+        ...ADDITIONAL_ADMIN_EMAILS.map(e => e.toLowerCase()),
+      ].filter(Boolean);
       if (!allowedAdminLogins.includes(typedUsername)) {
         return res.status(403).json({ message: 'Invalid username or password' });
       }
