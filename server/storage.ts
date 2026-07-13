@@ -1,16 +1,21 @@
 import { 
   stores, vendors, products, productVariations, orders, wallet, transactions, subscriptions, referrals, notifications,
-  addonCatalog, catalogRefreshLog, shippingProfiles,
+  referralWithdrawals, addonCatalog, catalogRefreshLog, shippingProfiles,
   pricingRules, importJobs, publishQueue, marketplaceListings, veroList, contentFilters, restrictedProducts,
   type InsertStore, type InsertVendor, type InsertProduct, type InsertProductVariation, type InsertOrder, 
   type InsertTransaction, type InsertPricingRule, type InsertImportJob, 
   type InsertPublishQueue, type InsertMarketplaceListing, type InsertVeroItem, type InsertContentFilter, type InsertRestrictedProduct,
-  type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile,
+  type InsertNotification, type InsertAddonCatalog, type InsertShippingProfile, type InsertReferralWithdrawal,
 } from "@shared/schema";
 import { users, type User } from "@shared/models/auth";
 import { db, pool, STORE_COLUMNS, STORE_INSERT_COLUMNS } from "./db";
 import { notifyUser } from "./websocket";
 import { eq, desc, and, or, ilike, sql, inArray } from "drizzle-orm";
+
+export type ReferralBankDetailsInput = Pick<
+  InsertReferralWithdrawal,
+  "accountHolderName" | "bankName" | "bankCountry" | "accountNumberLast4" | "sortCodeLast2" | "bankDetails"
+>;
 
 export interface IStorage {
   // Stores
@@ -123,7 +128,12 @@ export interface IStorage {
 
   // Points & Referral Wallet
   addReferralBonus(userId: string, amount: number): Promise<void>;
-  withdrawReferralBalance(userId: string, amount: number): Promise<typeof transactions.$inferSelect>;
+  withdrawReferralBalance(
+    userId: string,
+    amount: number,
+    bankDetails: ReferralBankDetailsInput,
+  ): Promise<{ transaction: typeof transactions.$inferSelect; withdrawal: typeof referralWithdrawals.$inferSelect }>;
+  getReferralWithdrawals(userId: string): Promise<typeof referralWithdrawals.$inferSelect[]>;
   addPoints(userId: string, spentAmount: number): Promise<void>;
   convertPointsToFunds(userId: string, points: number): Promise<typeof transactions.$inferSelect>;
 }
@@ -389,7 +399,7 @@ export class DatabaseStorage implements IStorage {
   async createNotification(notification: InsertNotification) {
     const [newNotification] = await db.insert(notifications).values(notification).returning();
     try {
-      notifyUser(Number(notification.userId), 'notification_new', { notification: newNotification });
+      notifyUser(notification.userId, 'notification_new', { notification: newNotification });
     } catch { /* ws not ready */ }
     return newNotification;
   }
@@ -967,7 +977,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async withdrawReferralBalance(userId: string, amount: number) {
+  async withdrawReferralBalance(userId: string, amount: number, bankDetails: ReferralBankDetailsInput) {
     const userWallet = await this.getWallet(userId);
     if (!userWallet) {
       throw new Error('Wallet not found');
@@ -978,22 +988,46 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Insufficient referral balance');
     }
 
-    await db.update(wallet)
-      .set({ 
-        referralBalance: String(currentReferralBalance - amount),
-        updatedAt: new Date()
-      })
-      .where(eq(wallet.userId, userId));
+    return await db.transaction(async (tx) => {
+      const [updatedWallet] = await tx.update(wallet)
+        .set({
+          referralBalance: sql`${wallet.referralBalance} - ${amount}`,
+          updatedAt: new Date()
+        })
+        .where(and(eq(wallet.userId, userId), sql`${wallet.referralBalance} >= ${amount}`))
+        .returning();
 
-    const [transaction] = await db.insert(transactions).values({
-      walletId: userWallet.id,
-      type: 'referral_withdrawal',
-      amount: String(-amount),
-      description: 'Referral balance withdrawal to bank',
-      status: 'pending' // Will be processed by admin
-    }).returning();
+      if (!updatedWallet) {
+        throw new Error('Insufficient referral balance');
+      }
 
-    return transaction;
+      const [transaction] = await tx.insert(transactions).values({
+        walletId: userWallet.id,
+        type: 'referral_withdrawal',
+        amount: String(-amount),
+        description: `Referral withdrawal to ${bankDetails.bankName} ending ${bankDetails.accountNumberLast4}`,
+        status: 'pending'
+      }).returning();
+
+      const [withdrawal] = await tx.insert(referralWithdrawals).values({
+        userId,
+        walletId: userWallet.id,
+        transactionId: transaction.id,
+        amount: String(amount),
+        currency: userWallet.currency || 'GBP',
+        ...bankDetails,
+        status: 'pending',
+      }).returning();
+
+      return { transaction, withdrawal };
+    });
+  }
+
+  async getReferralWithdrawals(userId: string) {
+    return await db.select()
+      .from(referralWithdrawals)
+      .where(eq(referralWithdrawals.userId, userId))
+      .orderBy(desc(referralWithdrawals.createdAt));
   }
 
   async addPoints(userId: string, spentAmount: number) {

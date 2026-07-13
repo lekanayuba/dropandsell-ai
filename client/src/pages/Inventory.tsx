@@ -10,10 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2, Store, HeartPulse, MapPin, ExternalLink, Check, X } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Search, Plus, Filter, MoreHorizontal, Trash2, Send, AlertTriangle, Package, Image, Sparkles, Loader2, Store, HeartPulse, MapPin, ExternalLink, Check, X, SlidersHorizontal, RotateCcw } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProductSchema, type InsertProduct } from "@shared/schema";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -29,6 +30,7 @@ export default function Inventory() {
   const { data, isLoading } = useProducts({ search });
   const { data: stores } = useStores();
   const { data: pricingRules } = usePricingRules();
+  const { data: vendors } = useVendors();
   const deleteProduct = useDeleteProduct();
   const bulkAddToQueue = useBulkAddToPublishQueue();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -37,6 +39,7 @@ export default function Inventory() {
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [similarImageProduct, setSimilarImageProduct] = useState<any | null>(null);
   const [similarImageResults, setSimilarImageResults] = useState<any | null>(null);
+  const [stockSettingsProduct, setStockSettingsProduct] = useState<any | null>(null);
 
   const findSimilarMutation = useMutation({
     mutationFn: async (productId: number) => {
@@ -265,9 +268,9 @@ export default function Inventory() {
               </TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Images</TableHead>
-              <TableHead>SKU</TableHead>
               <TableHead>Stock</TableHead>
               <TableHead>Vendor</TableHead>
+              <TableHead>SKU</TableHead>
               <TableHead>Cost</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Profit</TableHead>
@@ -389,6 +392,10 @@ export default function Inventory() {
                             Set In Stock (1)
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuItem onClick={() => setStockSettingsProduct(product)}>
+                          <SlidersHorizontal className="w-4 h-4 mr-2" />
+                          Stock Rules
+                        </DropdownMenuItem>
                         <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => deleteProduct.mutate(product.id)}>
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete
@@ -462,7 +469,521 @@ export default function Inventory() {
           </ScrollArea>
         </DialogContent>
       </Dialog>
+
+      <StockAutomationDialog
+        product={stockSettingsProduct}
+        vendors={vendors}
+        open={!!stockSettingsProduct}
+        onOpenChange={(open) => {
+          if (!open) setStockSettingsProduct(null);
+        }}
+      />
     </>
+  );
+}
+
+async function readApiJson(res: Response) {
+  if (!res.ok) {
+    let message = "Request failed";
+    try {
+      const body = await res.json();
+      message = body.message || message;
+    } catch {
+      message = res.statusText || message;
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+function StockAutomationDialog({
+  product,
+  vendors,
+  open,
+  onOpenChange,
+}: {
+  product: any | null;
+  vendors?: any[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const productId = product?.id;
+  const sourcesKey = [`/api/products/${productId}/stock-sources`];
+  const ruleKey = [`/api/products/${productId}/stock-rule`];
+  const evaluationKey = [`/api/products/${productId}/stock-evaluation`];
+  const eventsKey = [`/api/products/${productId}/stock-events`];
+
+  const sourcesQuery = useQuery({
+    queryKey: sourcesKey,
+    enabled: open && !!productId,
+    queryFn: async () => readApiJson(await fetch(`/api/products/${productId}/stock-sources`, { credentials: "include" })),
+  });
+
+  const ruleQuery = useQuery({
+    queryKey: ruleKey,
+    enabled: open && !!productId,
+    queryFn: async () => readApiJson(await fetch(`/api/products/${productId}/stock-rule`, { credentials: "include" })),
+  });
+
+  const evaluationQuery = useQuery({
+    queryKey: evaluationKey,
+    enabled: open && !!productId,
+    queryFn: async () => readApiJson(await fetch(`/api/products/${productId}/stock-evaluation`, { credentials: "include" })),
+  });
+
+  const eventsQuery = useQuery({
+    queryKey: eventsKey,
+    enabled: open && !!productId,
+    queryFn: async () => readApiJson(await fetch(`/api/products/${productId}/stock-events`, { credentials: "include" })),
+  });
+
+  const invalidateStockData = () => {
+    queryClient.invalidateQueries({ queryKey: sourcesKey });
+    queryClient.invalidateQueries({ queryKey: ruleKey });
+    queryClient.invalidateQueries({ queryKey: evaluationKey });
+    queryClient.invalidateQueries({ queryKey: eventsKey });
+    queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["products"] });
+  };
+
+  const sources = sourcesQuery.data || [];
+  const evaluation = evaluationQuery.data;
+  const events = eventsQuery.data || [];
+  const isLoading = sourcesQuery.isLoading || ruleQuery.isLoading || evaluationQuery.isLoading;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle>Stock Rules</DialogTitle>
+          {product && (
+            <p className="text-sm text-muted-foreground truncate">
+              {product.title} · {product.sku}
+            </p>
+          )}
+        </DialogHeader>
+        <ScrollArea className="max-h-[72vh] pr-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-14">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-[1fr_1.25fr] gap-6">
+              <section className="space-y-4">
+                <StockRulePanel
+                  key={`${productId}-${ruleQuery.data?.updatedAt || "default"}`}
+                  productId={productId}
+                  rule={ruleQuery.data}
+                  sources={sources}
+                  vendors={vendors}
+                  onSaved={invalidateStockData}
+                />
+
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium">Evaluation</span>
+                    <Badge variant={evaluation?.shouldMarkOutOfStock ? "destructive" : "outline"}>
+                      {evaluation?.stockStatus || "unknown"}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <Metric label="Effective Stock" value={evaluation?.effectiveQuantity ?? Number(product?.quantity || 0)} />
+                    <Metric label="Active Sources" value={evaluation?.activeSourceCount ?? 0} />
+                    <Metric label="OOS Action" value={evaluation?.shouldMarkOutOfStock ? "Yes" : "No"} />
+                    <Metric label="Restock Need" value={evaluation?.shouldRestock ? "Yes" : "No"} />
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <AddStockSourceForm
+                  key={productId}
+                  product={product}
+                  vendors={vendors}
+                  onSaved={invalidateStockData}
+                />
+
+                <div className="space-y-3">
+                  {sources.length === 0 ? (
+                    <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                      No vendor sources yet.
+                    </div>
+                  ) : (
+                    sources.map((source: any) => (
+                      <StockSourceRow
+                        key={`${source.id}-${source.updatedAt || ""}-${source.stockQuantity}-${source.stockStatus}-${source.isEnabled}-${source.isPrimary}`}
+                        source={source}
+                        vendorName={vendors?.find((v: any) => v.id === source.vendorId)?.name || `Supplier #${source.vendorId}`}
+                        productId={productId}
+                        onSaved={invalidateStockData}
+                      />
+                    ))
+                  )}
+                </div>
+
+                {events.length > 0 && (
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <span className="text-sm font-medium">Recent Events</span>
+                    <div className="space-y-2">
+                      {events.slice(0, 4).map((event: any) => (
+                        <div key={event.id} className="flex items-center justify-between gap-3 text-xs">
+                          <span className="truncate">{event.action.replaceAll("_", " ")}</span>
+                          <Badge variant="outline" className="text-[10px]">
+                            {event.newStatus || event.newQuantity || "logged"}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StockRulePanel({
+  productId,
+  rule,
+  sources,
+  vendors,
+  onSaved,
+}: {
+  productId: number;
+  rule: any;
+  sources: any[];
+  vendors?: any[];
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [oosThreshold, setOosThreshold] = useState(String(rule?.oosThreshold ?? 0));
+  const [oosAutomationEnabled, setOosAutomationEnabled] = useState(rule?.oosAutomationEnabled !== false);
+  const [autoSwitchSupplier, setAutoSwitchSupplier] = useState(Boolean(rule?.autoSwitchSupplier));
+  const [restockAutomationEnabled, setRestockAutomationEnabled] = useState(Boolean(rule?.restockAutomationEnabled));
+  const [restockThreshold, setRestockThreshold] = useState(String(rule?.restockThreshold ?? 1));
+  const [restockQuantity, setRestockQuantity] = useState(String(rule?.restockQuantity ?? 1));
+  const [restockMode, setRestockMode] = useState(rule?.restockMode || "fixed");
+  const [pinnedVendorSourceId, setPinnedVendorSourceId] = useState(rule?.pinnedVendorSourceId ? String(rule.pinnedVendorSourceId) : "none");
+
+  const saveRuleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/products/${productId}/stock-rule`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          oosThreshold: Number(oosThreshold),
+          oosAutomationEnabled,
+          autoSwitchSupplier,
+          restockAutomationEnabled,
+          restockThreshold: Number(restockThreshold),
+          restockQuantity: Number(restockQuantity),
+          restockMode,
+          pinnedVendorSourceId: pinnedVendorSourceId === "none" ? null : Number(pinnedVendorSourceId),
+        }),
+      });
+      return readApiJson(res);
+    },
+    onSuccess: () => {
+      onSaved();
+      toast({ title: "Stock rules saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not save stock rules", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="rounded-lg border p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>OOS Automation</Label>
+          <p className="text-xs text-muted-foreground">Mark listings OOS when stock reaches threshold.</p>
+        </div>
+        <Switch checked={oosAutomationEnabled} onCheckedChange={setOosAutomationEnabled} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="oos-threshold">OOS Threshold</Label>
+          <Input id="oos-threshold" type="number" min="0" value={oosThreshold} onChange={(e) => setOosThreshold(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="restock-threshold">Restock Threshold</Label>
+          <Input id="restock-threshold" type="number" min="0" value={restockThreshold} onChange={(e) => setRestockThreshold(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Auto-Restock</Label>
+          <p className="text-xs text-muted-foreground">Evaluate restock need without placing vendor orders yet.</p>
+        </div>
+        <Switch checked={restockAutomationEnabled} onCheckedChange={setRestockAutomationEnabled} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="restock-quantity">Restock Qty</Label>
+          <Input id="restock-quantity" type="number" min="1" value={restockQuantity} onChange={(e) => setRestockQuantity(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Restock Mode</Label>
+          <Select value={restockMode} onValueChange={setRestockMode}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed">Fixed Qty</SelectItem>
+              <SelectItem value="top_up_to">Top Up To</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Label>Auto-Switch Supplier</Label>
+          <p className="text-xs text-muted-foreground">Allow alternate sources before marking OOS.</p>
+        </div>
+        <Switch checked={autoSwitchSupplier} onCheckedChange={setAutoSwitchSupplier} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Pinned Source</Label>
+        <Select value={pinnedVendorSourceId} onValueChange={setPinnedVendorSourceId}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Use enabled sources</SelectItem>
+            {sources.map((source: any) => (
+              <SelectItem key={source.id} value={String(source.id)}>
+                {vendors?.find((v: any) => v.id === source.vendorId)?.name || `Supplier #${source.vendorId}`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Button className="w-full gap-2" onClick={() => saveRuleMutation.mutate()} disabled={saveRuleMutation.isPending}>
+        {saveRuleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+        Save Rules
+      </Button>
+    </div>
+  );
+}
+
+function AddStockSourceForm({
+  product,
+  vendors,
+  onSaved,
+}: {
+  product: any;
+  vendors?: any[];
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [sourceVendorId, setSourceVendorId] = useState(product?.vendorId ? String(product.vendorId) : "");
+  const [sourceSku, setSourceSku] = useState(product?.sku || "");
+  const [sourceUrl, setSourceUrl] = useState(product?.attributes?.sourceUrl || "");
+  const [sourceQuantity, setSourceQuantity] = useState(String(Math.max(0, Number(product?.quantity || 0))));
+  const [sourceStatus, setSourceStatus] = useState(Number(product?.quantity || 0) > 0 ? "in_stock" : "unknown");
+  const [sourceIsPrimary, setSourceIsPrimary] = useState(false);
+
+  const addSourceMutation = useMutation({
+    mutationFn: async () => {
+      if (!sourceVendorId) throw new Error("Choose a supplier");
+      const res = await fetch(`/api/products/${product.id}/stock-sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          vendorId: Number(sourceVendorId),
+          vendorSku: sourceSku.trim() || null,
+          sourceUrl: sourceUrl.trim() || null,
+          isPrimary: sourceIsPrimary,
+          isEnabled: true,
+          stockQuantity: Number(sourceQuantity),
+          stockStatus: sourceStatus,
+        }),
+      });
+      return readApiJson(res);
+    },
+    onSuccess: () => {
+      onSaved();
+      setSourceIsPrimary(false);
+      toast({ title: "Stock source saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not save source", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="rounded-lg border p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <Label>Add Vendor Source</Label>
+        {sourceIsPrimary && <Badge variant="outline">Primary</Badge>}
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Supplier</Label>
+          <Select value={sourceVendorId} onValueChange={setSourceVendorId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose supplier" />
+            </SelectTrigger>
+            <SelectContent>
+              {vendors?.map((vendor: any) => (
+                <SelectItem key={vendor.id} value={String(vendor.id)}>
+                  {vendor.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="source-sku">Vendor SKU</Label>
+          <Input id="source-sku" value={sourceSku} onChange={(e) => setSourceSku(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="source-quantity">Stock Qty</Label>
+          <Input id="source-quantity" type="number" min="0" value={sourceQuantity} onChange={(e) => setSourceQuantity(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Stock Status</Label>
+          <Select value={sourceStatus} onValueChange={setSourceStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="in_stock">In Stock</SelectItem>
+              <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+              <SelectItem value="unknown">Unknown</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="source-url">Source URL</Label>
+        <Input id="source-url" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://supplier.example/product" />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Checkbox checked={sourceIsPrimary} onCheckedChange={(checked) => setSourceIsPrimary(Boolean(checked))} />
+          <Label>Primary source</Label>
+        </div>
+        <Button className="gap-2" onClick={() => addSourceMutation.mutate()} disabled={addSourceMutation.isPending || !sourceVendorId}>
+          {addSourceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          Save Source
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md bg-muted/40 px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="font-medium">{value}</div>
+    </div>
+  );
+}
+
+function StockSourceRow({
+  source,
+  vendorName,
+  productId,
+  onSaved,
+}: {
+  source: any;
+  vendorName: string;
+  productId: number;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [quantity, setQuantity] = useState(String(Number(source.stockQuantity || 0)));
+  const [status, setStatus] = useState(source.stockStatus || "unknown");
+  const [enabled, setEnabled] = useState(source.isEnabled !== false);
+  const [primary, setPrimary] = useState(Boolean(source.isPrimary));
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/products/${productId}/stock-sources/${source.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          stockQuantity: Number(quantity),
+          stockStatus: status,
+          isEnabled: enabled,
+          isPrimary: primary,
+        }),
+      });
+      return readApiJson(res);
+    },
+    onSuccess: () => {
+      onSaved();
+      toast({ title: "Source updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not update source", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="rounded-lg border p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-medium truncate">{vendorName}</div>
+          <div className="text-xs text-muted-foreground truncate">{source.vendorSku || "No vendor SKU"}</div>
+        </div>
+        <Badge variant={status === "out_of_stock" ? "destructive" : "outline"}>{status}</Badge>
+      </div>
+      <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+        <div className="space-y-1.5">
+          <Label>Qty</Label>
+          <Input type="number" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Status</Label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="in_stock">In Stock</SelectItem>
+              <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+              <SelectItem value="unknown">Unknown</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button size="icon" variant="outline" onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending} title="Save source">
+          {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+        </Button>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={enabled} onCheckedChange={(checked) => setEnabled(Boolean(checked))} />
+          Enabled
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={primary} onCheckedChange={(checked) => setPrimary(Boolean(checked))} />
+          Primary
+        </label>
+        {source.sourceUrl && (
+          <a href={source.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm inline-flex items-center gap-1">
+            <ExternalLink className="w-3.5 h-3.5" />
+            Source
+          </a>
+        )}
+      </div>
+    </div>
   );
 }
 

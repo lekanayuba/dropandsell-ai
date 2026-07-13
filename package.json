@@ -14,7 +14,10 @@
     "format:fix": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify": "npm run check && npm test && npm run lint -- --quiet",
     "db:push": "drizzle-kit push",
+    "db:setup": "drizzle-kit push",
+    "admin:promote": "tsx script/promote-admin.ts",
     "migrate:shipping": "tsx script/migrate-shipping.ts"
   },
   "dependencies": {

@@ -6,8 +6,12 @@ import {
   stores,
   vendors,
   products,
+  productStockRules,
+  productVendorSources,
+  stockSyncEvents,
   orders,
   transactions,
+  referralWithdrawals,
   wallet,
   subscriptions,
   notifications,
@@ -340,6 +344,116 @@ export const api = {
         404: errorSchemas.notFound,
       },
     },
+    stockSources: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/products/:id/stock-sources',
+        responses: {
+          200: z.array(z.custom<typeof productVendorSources.$inferSelect>()),
+        },
+      },
+      create: {
+        method: 'POST' as const,
+        path: '/api/products/:id/stock-sources',
+        input: z.object({
+          vendorId: z.coerce.number(),
+          vendorSku: z.string().optional().nullable(),
+          sourceUrl: z.string().optional().nullable(),
+          isPrimary: z.boolean().optional(),
+          isEnabled: z.boolean().optional(),
+          priority: z.coerce.number().optional(),
+          stockQuantity: z.coerce.number().optional(),
+          stockStatus: z.enum(['in_stock', 'out_of_stock', 'unknown']).optional(),
+          metadata: z.record(z.unknown()).optional().nullable(),
+        }),
+        responses: {
+          201: z.object({
+            source: z.custom<typeof productVendorSources.$inferSelect>(),
+            evaluation: z.any(),
+            productStockUpdated: z.boolean(),
+          }),
+        },
+      },
+      update: {
+        method: 'PUT' as const,
+        path: '/api/products/:id/stock-sources/:sourceId',
+        input: z.object({
+          vendorSku: z.string().optional().nullable(),
+          sourceUrl: z.string().optional().nullable(),
+          isPrimary: z.boolean().optional(),
+          isEnabled: z.boolean().optional(),
+          priority: z.coerce.number().optional(),
+          stockQuantity: z.coerce.number().optional(),
+          stockStatus: z.enum(['in_stock', 'out_of_stock', 'unknown']).optional(),
+          metadata: z.record(z.unknown()).optional().nullable(),
+        }),
+        responses: {
+          200: z.object({
+            source: z.custom<typeof productVendorSources.$inferSelect>(),
+            evaluation: z.any(),
+            productStockUpdated: z.boolean(),
+          }),
+        },
+      },
+    },
+    stockRule: {
+      get: {
+        method: 'GET' as const,
+        path: '/api/products/:id/stock-rule',
+        responses: {
+          200: z.custom<typeof productStockRules.$inferSelect>().or(z.any()),
+        },
+      },
+      update: {
+        method: 'PUT' as const,
+        path: '/api/products/:id/stock-rule',
+        input: z.object({
+          oosThreshold: z.coerce.number().optional(),
+          oosAutomationEnabled: z.boolean().optional(),
+          autoSwitchSupplier: z.boolean().optional(),
+          restockAutomationEnabled: z.boolean().optional(),
+          restockThreshold: z.coerce.number().optional(),
+          restockQuantity: z.coerce.number().optional(),
+          restockMode: z.enum(['fixed', 'top_up_to']).optional(),
+          pinnedVendorSourceId: z.coerce.number().optional().nullable(),
+        }),
+        responses: {
+          200: z.object({
+            rule: z.custom<typeof productStockRules.$inferSelect>(),
+            evaluation: z.any(),
+            productStockUpdated: z.boolean(),
+          }),
+        },
+      },
+    },
+    stockEvaluation: {
+      method: 'GET' as const,
+      path: '/api/products/:id/stock-evaluation',
+      responses: {
+        200: z.object({
+          productId: z.number(),
+          userId: z.string(),
+          effectiveQuantity: z.number(),
+          stockStatus: z.enum(['in_stock', 'out_of_stock', 'unknown']),
+          rawOutOfStock: z.boolean(),
+          shouldMarkOutOfStock: z.boolean(),
+          shouldRestock: z.boolean(),
+          oosThreshold: z.number(),
+          restockThreshold: z.number(),
+          restockQuantity: z.number(),
+          sourceCount: z.number(),
+          activeSourceCount: z.number(),
+          reason: z.string(),
+        }),
+      },
+    },
+    stockEvents: {
+      method: 'GET' as const,
+      path: '/api/products/:id/stock-events',
+      responses: {
+        200: z.array(z.custom<typeof stockSyncEvents.$inferSelect>()),
+      },
+    },
     update: {
       method: 'PUT' as const,
       path: '/api/products/:id',
@@ -496,6 +610,47 @@ export const api = {
         200: z.object({
           success: z.boolean(),
           newBalance: z.number(),
+        }),
+      },
+    },
+    full: {
+      method: 'GET' as const,
+      path: '/api/wallet/full',
+      responses: {
+        200: z.object({
+          balance: z.number(),
+          referralBalance: z.number(),
+          points: z.number(),
+          currency: z.string(),
+        }),
+      },
+    },
+    referralWithdrawals: {
+      method: 'GET' as const,
+      path: '/api/wallet/referral-withdrawals',
+      responses: {
+        200: z.array(z.custom<Omit<typeof referralWithdrawals.$inferSelect, 'bankDetails'>>()),
+      },
+    },
+    withdrawReferral: {
+      method: 'POST' as const,
+      path: '/api/wallet/withdraw-referral',
+      input: z.object({
+        amount: z.number().positive(),
+        accountHolderName: z.string().min(2),
+        bankName: z.string().min(2),
+        bankCountry: z.string().min(2),
+        accountNumber: z.string().min(4),
+        sortCode: z.string().optional(),
+        iban: z.string().optional(),
+        swift: z.string().optional(),
+        payoutNotes: z.string().optional(),
+      }),
+      responses: {
+        200: z.object({
+          success: z.boolean(),
+          transaction: z.custom<typeof transactions.$inferSelect>(),
+          withdrawal: z.custom<Omit<typeof referralWithdrawals.$inferSelect, 'bankDetails'>>(),
         }),
       },
     },

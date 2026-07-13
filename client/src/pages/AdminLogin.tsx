@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,14 +8,18 @@ import { useToast } from "@/hooks/use-toast";
 import { USER_QUERY_KEY } from "@/hooks/use-auth";
 import { queryClient } from "@/lib/queryClient";
 
+const particles = Array.from({ length: 20 }, (_, i) => ({
+  top: `${(i * 37 + 11) % 100}%`,
+  left: `${(i * 53 + 23) % 100}%`,
+  animation: `float ${5 + ((i * 29) % 10)}s ease-in-out infinite`,
+  animationDelay: `${(i * 19) % 5}s`,
+}));
+
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const { toast } = useToast();
-
-  useEffect(() => { setMounted(true); }, []);
 
   const authMutation = useMutation({
     mutationFn: async () => {
@@ -62,21 +66,16 @@ export default function AdminLogin() {
       <div className="absolute top-[40%] right-[30%] w-[300px] h-[300px] rounded-full bg-amber-400/5 blur-[100px] animate-pulse" style={{ animationDuration: '12s' }} />
 
       {/* Floating particles */}
-      {Array.from({ length: 20 }).map((_, i) => (
+      {particles.map((particle, i) => (
         <div
           key={i}
           className="absolute h-[2px] w-[2px] rounded-full bg-amber-400/30"
-          style={{
-            top: `${Math.random() * 100}%`,
-            left: `${Math.random() * 100}%`,
-            animation: `float ${5 + Math.random() * 10}s ease-in-out infinite`,
-            animationDelay: `${Math.random() * 5}s`,
-          }}
+          style={particle}
         />
       ))}
 
       <div className="relative z-10 w-full flex items-center justify-center p-4 sm:p-8">
-        <div className={`w-full max-w-[420px] transition-all duration-700 ${mounted ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}>
+        <div className="w-full max-w-[420px] animate-in fade-in-0 slide-in-from-bottom-4 duration-700">
           {/* Brand */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center gap-3 mb-6">

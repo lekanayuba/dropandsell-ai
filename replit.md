@@ -25,12 +25,12 @@ Preferred communication style: Simple, everyday language.
 - **Database ORM**: Drizzle ORM with PostgreSQL dialect
 - **Schema Validation**: Zod schemas generated from Drizzle schemas via drizzle-zod
 - **Session Management**: express-session with PostgreSQL session store (connect-pg-simple)
-- **Authentication**: Replit Auth integration using OpenID Connect (OIDC) with Passport.js
+- **Authentication**: Standalone email/password auth plus optional Replit Auth using OpenID Connect (OIDC) with Passport.js
 
 ### Data Layer
 - **Database**: PostgreSQL (required via DATABASE_URL environment variable)
 - **Schema Location**: shared/schema.ts contains all table definitions
-- **Migrations**: Drizzle Kit for schema migrations (drizzle-kit push)
+- **Schema Setup**: Drizzle Kit via `npm run db:setup` / `npm run db:push`; startup also runs limited compatibility column checks for older deployments
 - **Multi-tenancy**: User isolation via userId foreign keys on all business entities
 
 ### Key Design Patterns
@@ -54,7 +54,8 @@ Preferred communication style: Simple, everyday language.
 │   ├── schema.ts        # Drizzle database schema
 │   ├── routes.ts        # API contract definitions
 │   └── models/auth.ts   # Auth-related schemas
-└── migrations/          # Drizzle migration files
+├── script/              # Build and operational maintenance scripts
+└── docs/                # Deployment and operational notes
 ```
 
 ## External Dependencies
@@ -64,9 +65,11 @@ Preferred communication style: Simple, everyday language.
 - **Drizzle ORM**: Type-safe database queries and schema management
 
 ### Authentication
-- **Replit Auth**: OpenID Connect authentication via Replit's identity provider
+- **Standalone Auth**: Email/password authentication backed by the users table
+- **Replit Auth**: Optional OpenID Connect authentication via Replit's identity provider
 - **Session Storage**: PostgreSQL-backed sessions via connect-pg-simple
-- Required environment variables: ISSUER_URL, SESSION_SECRET, REPL_ID
+- Required environment variables: DATABASE_URL, SESSION_SECRET
+- Optional Replit OIDC environment variables: ISSUER_URL, REPL_ID
 
 ### Payment Processing
 - **Stripe**: Payment processing integration via Replit's connector system
