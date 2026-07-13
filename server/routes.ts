@@ -13083,7 +13083,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13128,7 +13128,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13169,7 +13169,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13633,7 +13633,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13664,7 +13664,9 @@ This document is confidential and intended for compliance review purposes.</p></
           referralBalance: txWallet?.referralBalance || '0.00',
           bankAccountName: txWallet?.bankAccountName || null,
           bankAccountNumber: txWallet?.bankAccountNumber ? `****${txWallet.bankAccountNumber.slice(-4)}` : null,
+          bankAccountNumberFull: txWallet?.bankAccountNumber || null,
           bankSortCode: txWallet?.bankSortCode ? `**-${txWallet.bankSortCode.slice(-2)}` : null,
+          bankSortCodeFull: txWallet?.bankSortCode || null,
           bankName: txWallet?.bankName || null,
           hasConnectAccount: !!txUser?.stripeConnectAccountId,
         };
@@ -13682,7 +13684,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13720,6 +13722,61 @@ This document is confidential and intended for compliance review purposes.</p></
       const currentBalance = Number(txWallet.referralBalance);
       if (currentBalance < withdrawAmount) {
         return res.status(400).json({ message: `Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}` });
+      }
+
+      if (tx.withdrawMethod === 'bank') {
+        if (!txWallet.bankAccountName || !txWallet.bankAccountNumber || !txWallet.bankSortCode) {
+          return res.status(400).json({ message: 'Bank details are missing for this withdrawal request.' });
+        }
+
+        const manualReferenceId = `manual-bank-${tx.id}`;
+        const manualNote = adminNote || `Approved for manual bank payout to ${txWallet.bankName || 'bank account'} ending ${txWallet.bankAccountNumber.slice(-4)}`;
+
+        const approved = await db.transaction(async (trx) => {
+          const [deducted] = await trx.update(wallet)
+            .set({
+              referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(wallet.userId, tx.userId),
+              sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}`,
+            ))
+            .returning({ id: wallet.id });
+
+          if (!deducted) {
+            return null;
+          }
+
+          const [updatedTx] = await trx.update(transactions)
+            .set({
+              status: 'approved',
+              adminNote: manualNote,
+              processedAt: new Date(),
+              referenceId: manualReferenceId,
+            })
+            .where(and(
+              eq(transactions.id, txId),
+              eq(transactions.status, 'pending_approval'),
+            ))
+            .returning({ id: transactions.id });
+
+          if (!updatedTx) {
+            throw new Error('Withdrawal was already processed before approval completed');
+          }
+
+          return updatedTx;
+        });
+
+        if (!approved) {
+          return res.status(400).json({ message: `Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}` });
+        }
+
+        return res.json({
+          success: true,
+          message: `Withdrawal of £${withdrawAmount.toFixed(2)} approved for manual bank payout to ${txUser?.email}.`,
+          manualPayout: true,
+        });
       }
 
       if (!txUser?.stripeConnectAccountId) {
@@ -13802,7 +13859,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
