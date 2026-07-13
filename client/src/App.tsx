@@ -19,6 +19,7 @@ import Wallet from "@/pages/Wallet";
 import Subscription from "@/pages/Subscription";
 import Automation from "@/pages/Automation";
 import Login from "@/pages/Login";
+import AdminLogin from "@/pages/AdminLogin";
 import Onboarding from "@/pages/Onboarding";
 import FAQ from "@/pages/FAQ";
 import Policies from "@/pages/Policies";
@@ -127,6 +128,42 @@ function PublicPolicyRoute({ component: Component }: { component: React.Componen
   );
 }
 
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || user?.role !== "admin") {
+    return <Redirect to="/admin/login" />;
+  }
+
+  return <Component />;
+}
+
+function AdminLoginRoute() {
+  const { isLoading, user } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user?.role === "admin") {
+    return <Redirect to="/admin" />;
+  }
+
+  return <AdminLogin />;
+}
+
 function Router() {
   return (
     <Switch>
@@ -163,8 +200,9 @@ function Router() {
       <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
       <Route path="/addon-catalog" component={() => <ProtectedRoute component={AddonCatalog} />} />
       <Route path="/temu" component={() => <ProtectedRoute component={TemuIntegration} />} />      
-      <Route path="/admin/support" component={() => <ProtectedRoute component={AdminSupport} />} />
-      <Route path="/admin" component={() => <AdminDashboard />} />
+      <Route path="/admin/login" component={AdminLoginRoute} />
+      <Route path="/admin/support" component={() => <AdminRoute component={AdminSupport} />} />
+      <Route path="/admin" component={() => <AdminRoute component={AdminDashboard} />} />
       <Route path="/manual" component={() => <ProtectedRoute component={Manual} />} />
       <Route path="/drosell-auto-listing" component={() => <ProtectedRoute component={DrosellAutoListing} />} />
       <Route path="/suggestions" component={() => <ProtectedRoute component={Suggestions} />} />

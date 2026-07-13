@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { orders } from "@shared/schema";
-import { eq, and, inArray, lte, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, lte, isNotNull, isNull, or } from "drizzle-orm";
 import { updateEbayOrderStatus } from "./platforms/ebay";
 import { storage } from "./storage";
 import { sendTrackingUpdate } from "./email";
@@ -112,7 +112,7 @@ export async function monitorTracking(): Promise<void> {
       and(
         isNotNull(orders.trackingNumber),
         inArray(orders.trackingStatus, ["pending", "in_transit"]),
-        lte(orders.trackingUpdatedAt ?? new Date(0), oneHourAgo),
+        or(isNull(orders.trackingUpdatedAt), lte(orders.trackingUpdatedAt, oneHourAgo)),
       ),
     );
 

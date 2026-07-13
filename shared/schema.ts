@@ -111,6 +111,47 @@ export const productVariations = pgTable("product_variations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Product Vendor Sources - supports multi-vendor stock tracking per product
+export const productVendorSources = pgTable("product_vendor_sources", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  productId: integer("product_id").notNull().references(() => products.id),
+  vendorId: integer("vendor_id").notNull().references(() => vendors.id),
+  vendorSku: text("vendor_sku"),
+  sourceUrl: text("source_url"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  priority: integer("priority").notNull().default(0),
+  stockQuantity: integer("stock_quantity").notNull().default(0),
+  stockStatus: text("stock_status").notNull().default("unknown"), // 'in_stock', 'out_of_stock', 'unknown'
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastError: text("last_error"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  uniqueProductVendorSource: unique("uq_product_vendor_source").on(table.productId, table.vendorId),
+}));
+
+// Product Stock Rules - product-level OOS and restock settings
+export const productStockRules = pgTable("product_stock_rules", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  productId: integer("product_id").notNull().references(() => products.id),
+  oosThreshold: integer("oos_threshold").notNull().default(0),
+  oosAutomationEnabled: boolean("oos_automation_enabled").notNull().default(true),
+  autoSwitchSupplier: boolean("auto_switch_supplier").notNull().default(false),
+  restockAutomationEnabled: boolean("restock_automation_enabled").notNull().default(false),
+  restockThreshold: integer("restock_threshold").notNull().default(1),
+  restockQuantity: integer("restock_quantity").notNull().default(1),
+  restockMode: text("restock_mode").notNull().default("fixed"), // 'fixed' | 'top_up_to'
+  pinnedVendorSourceId: integer("pinned_vendor_source_id").references(() => productVendorSources.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  uniqueProductStockRule: unique("uq_product_stock_rule").on(table.productId),
+}));
+
 // Marketplace Listings (Link internal products to store listings)
 export const marketplaceListings = pgTable("marketplace_listings", {
   id: serial("id").primaryKey(),
@@ -122,6 +163,26 @@ export const marketplaceListings = pgTable("marketplace_listings", {
   stockStatus: text("stock_status").default("in_stock"), // 'in_stock', 'out_of_stock', 'unknown'
   outOfStockAt: timestamp("out_of_stock_at"),
   lastSync: timestamp("last_sync"),
+});
+
+// Stock Sync Events - audit log for vendor stock and listing state changes
+export const stockSyncEvents = pgTable("stock_sync_events", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  productId: integer("product_id").notNull().references(() => products.id),
+  vendorId: integer("vendor_id").references(() => vendors.id),
+  vendorSourceId: integer("vendor_source_id").references(() => productVendorSources.id),
+  storeId: integer("store_id").references(() => stores.id),
+  marketplaceListingId: integer("marketplace_listing_id").references(() => marketplaceListings.id),
+  oldQuantity: integer("old_quantity"),
+  newQuantity: integer("new_quantity"),
+  oldStatus: text("old_status"),
+  newStatus: text("new_status"),
+  action: text("action").notNull(), // 'vendor_stock_update' | 'listing_oos' | 'listing_restored' | 'restock_blocked'
+  reason: text("reason"),
+  triggeredBy: text("triggered_by").notNull().default("system"), // 'system' | 'user' | 'webhook' | 'api'
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Orders
@@ -165,6 +226,26 @@ export const transactions = pgTable("transactions", {
   referenceId: text("reference_id"), // Order ID or external transaction ID
   status: text("status").notNull().default("completed"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const referralWithdrawals = pgTable("referral_withdrawals", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  walletId: integer("wallet_id").notNull().references(() => wallet.id),
+  transactionId: integer("transaction_id").notNull().references(() => transactions.id),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: text("currency").notNull().default("GBP"),
+  accountHolderName: text("account_holder_name").notNull(),
+  bankName: text("bank_name").notNull(),
+  bankCountry: text("bank_country").notNull().default("United Kingdom"),
+  accountNumberLast4: text("account_number_last4").notNull(),
+  sortCodeLast2: text("sort_code_last2"),
+  bankDetails: jsonb("bank_details").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending', 'processing', 'completed', 'rejected'
+  adminNotes: text("admin_notes"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Subscriptions (Stripe mapping)
@@ -372,7 +453,33 @@ export const storesRelations = relations(stores, ({ one, many }) => ({
 export const productsRelations = relations(products, ({ one, many }) => ({
   user: one(users, { fields: [products.userId], references: [users.id] }),
   vendor: one(vendors, { fields: [products.vendorId], references: [vendors.id] }),
+  stockSources: many(productVendorSources),
+  stockRule: one(productStockRules, { fields: [products.id], references: [productStockRules.productId] }),
   listings: many(marketplaceListings),
+  stockEvents: many(stockSyncEvents),
+}));
+
+export const productVendorSourcesRelations = relations(productVendorSources, ({ one, many }) => ({
+  user: one(users, { fields: [productVendorSources.userId], references: [users.id] }),
+  product: one(products, { fields: [productVendorSources.productId], references: [products.id] }),
+  vendor: one(vendors, { fields: [productVendorSources.vendorId], references: [vendors.id] }),
+  stockRules: many(productStockRules),
+  stockEvents: many(stockSyncEvents),
+}));
+
+export const productStockRulesRelations = relations(productStockRules, ({ one }) => ({
+  user: one(users, { fields: [productStockRules.userId], references: [users.id] }),
+  product: one(products, { fields: [productStockRules.productId], references: [products.id] }),
+  pinnedVendorSource: one(productVendorSources, { fields: [productStockRules.pinnedVendorSourceId], references: [productVendorSources.id] }),
+}));
+
+export const stockSyncEventsRelations = relations(stockSyncEvents, ({ one }) => ({
+  user: one(users, { fields: [stockSyncEvents.userId], references: [users.id] }),
+  product: one(products, { fields: [stockSyncEvents.productId], references: [products.id] }),
+  vendor: one(vendors, { fields: [stockSyncEvents.vendorId], references: [vendors.id] }),
+  vendorSource: one(productVendorSources, { fields: [stockSyncEvents.vendorSourceId], references: [productVendorSources.id] }),
+  store: one(stores, { fields: [stockSyncEvents.storeId], references: [stores.id] }),
+  marketplaceListing: one(marketplaceListings, { fields: [stockSyncEvents.marketplaceListingId], references: [marketplaceListings.id] }),
 }));
 
 export const ordersRelations = relations(orders, ({ one }) => ({
@@ -402,6 +509,21 @@ export const insertProductVariationSchema = createInsertSchema(productVariations
 export type InsertProductVariation = z.infer<typeof insertProductVariationSchema>;
 export type ProductVariation = typeof productVariations.$inferSelect;
 
+// Product Vendor Sources
+export const insertProductVendorSourceSchema = createInsertSchema(productVendorSources).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
+export type InsertProductVendorSource = z.infer<typeof insertProductVendorSourceSchema>;
+export type ProductVendorSource = typeof productVendorSources.$inferSelect;
+
+// Product Stock Rules
+export const insertProductStockRuleSchema = createInsertSchema(productStockRules).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
+export type InsertProductStockRule = z.infer<typeof insertProductStockRuleSchema>;
+export type ProductStockRule = typeof productStockRules.$inferSelect;
+
+// Stock Sync Events
+export const insertStockSyncEventSchema = createInsertSchema(stockSyncEvents).omit({ id: true, createdAt: true });
+export type InsertStockSyncEvent = z.infer<typeof insertStockSyncEventSchema>;
+export type StockSyncEvent = typeof stockSyncEvents.$inferSelect;
+
 // Orders
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, userId: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
@@ -412,6 +534,20 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({ i
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type Wallet = typeof wallet.$inferSelect;
+
+export const insertReferralWithdrawalSchema = createInsertSchema(referralWithdrawals).omit({
+  id: true,
+  userId: true,
+  walletId: true,
+  transactionId: true,
+  status: true,
+  adminNotes: true,
+  processedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertReferralWithdrawal = z.infer<typeof insertReferralWithdrawalSchema>;
+export type ReferralWithdrawal = typeof referralWithdrawals.$inferSelect;
 
 // Subscriptions
 export type Subscription = typeof subscriptions.$inferSelect;

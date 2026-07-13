@@ -7,9 +7,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, CreditCard, Users, Coins, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+
+type ReferralWithdrawal = {
+  id: number;
+  amount: string;
+  currency: string;
+  accountHolderName: string;
+  bankName: string;
+  bankCountry: string;
+  accountNumberLast4: string;
+  status: string;
+  adminNotes?: string | null;
+  processedAt?: string | null;
+  createdAt?: string | null;
+};
 
 export default function Wallet() {
   const { toast } = useToast();
@@ -21,19 +35,58 @@ export default function Wallet() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [convertOpen, setConvertOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [accountHolderName, setAccountHolderName] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankCountry, setBankCountry] = useState("United Kingdom");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [sortCode, setSortCode] = useState("");
+  const [iban, setIban] = useState("");
+  const [swift, setSwift] = useState("");
+  const [payoutNotes, setPayoutNotes] = useState("");
   const [convertPoints, setConvertPoints] = useState("");
 
   const { data: fullWallet } = useFullWallet();
+  const { data: referralWithdrawals = [] } = useQuery<ReferralWithdrawal[]>({
+    queryKey: ["/api/wallet/referral-withdrawals"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/wallet/referral-withdrawals");
+      return res.json();
+    },
+  });
+
+  const resetWithdrawalForm = () => {
+    setWithdrawAmount("");
+    setAccountHolderName("");
+    setBankName("");
+    setBankCountry("United Kingdom");
+    setAccountNumber("");
+    setSortCode("");
+    setIban("");
+    setSwift("");
+    setPayoutNotes("");
+  };
+
   const withdrawMutation = useMutation({
-    mutationFn: async (amt: number) => {
-      return apiRequest("POST", "/api/wallet/withdraw-referral", { amount: amt }).then(res => res.json());
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/wallet/withdraw-referral", {
+        amount: Number(withdrawAmount),
+        accountHolderName,
+        bankName,
+        bankCountry,
+        accountNumber,
+        sortCode,
+        iban,
+        swift,
+        payoutNotes,
+      }).then(res => res.json());
     },
     onSuccess: () => {
-      toast({ title: "Withdrawal requested", description: "Your request is pending approval" });
+      toast({ title: "Withdrawal requested", description: "Your bank payout request is pending approval" });
       setWithdrawOpen(false);
-      setWithdrawAmount("");
+      resetWithdrawalForm();
       refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/full"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/wallet/referral-withdrawals"] });
     },
     onError: (err: any) => {
       toast({ title: "Withdrawal failed", description: err.message, variant: "destructive" });
@@ -66,6 +119,21 @@ export default function Wallet() {
 
   const referralBalance = fullWallet?.referralBalance || 0;
   const points = fullWallet?.points || 0;
+  const withdrawalAmount = Number(withdrawAmount);
+  const canRequestWithdrawal =
+    withdrawalAmount > 0 &&
+    withdrawalAmount <= referralBalance &&
+    accountHolderName.trim().length >= 2 &&
+    bankName.trim().length >= 2 &&
+    bankCountry.trim().length >= 2 &&
+    accountNumber.trim().length >= 4;
+
+  const formatTransactionAmount = (type: string, amountValue: string | number) => {
+    const amountNumber = Number(amountValue);
+    const isCredit = ['deposit', 'referral_bonus'].includes(type);
+    const sign = isCredit ? '+' : '-';
+    return `${sign}£${Math.abs(amountNumber).toFixed(2)}`;
+  };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -168,6 +236,83 @@ export default function Wallet() {
                       max={referralBalance}
                       data-testid="input-withdraw-amount"
                     />
+                    {withdrawalAmount > referralBalance && (
+                      <p className="text-xs text-destructive">Amount cannot exceed your referral balance.</p>
+                    )}
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Account holder name</label>
+                      <Input
+                        value={accountHolderName}
+                        onChange={(e) => setAccountHolderName(e.target.value)}
+                        placeholder="Name on bank account"
+                        data-testid="input-withdraw-account-name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Bank name</label>
+                      <Input
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        placeholder="Bank name"
+                        data-testid="input-withdraw-bank-name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Country</label>
+                      <Input
+                        value={bankCountry}
+                        onChange={(e) => setBankCountry(e.target.value)}
+                        placeholder="United Kingdom"
+                        data-testid="input-withdraw-bank-country"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Account number</label>
+                      <Input
+                        value={accountNumber}
+                        onChange={(e) => setAccountNumber(e.target.value)}
+                        placeholder="Account number or local account ID"
+                        data-testid="input-withdraw-account-number"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Sort code / routing code</label>
+                      <Input
+                        value={sortCode}
+                        onChange={(e) => setSortCode(e.target.value)}
+                        placeholder="Optional"
+                        data-testid="input-withdraw-sort-code"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">IBAN</label>
+                      <Input
+                        value={iban}
+                        onChange={(e) => setIban(e.target.value)}
+                        placeholder="Optional"
+                        data-testid="input-withdraw-iban"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">SWIFT / BIC</label>
+                      <Input
+                        value={swift}
+                        onChange={(e) => setSwift(e.target.value)}
+                        placeholder="Optional"
+                        data-testid="input-withdraw-swift"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Payout note</label>
+                    <Input
+                      value={payoutNotes}
+                      onChange={(e) => setPayoutNotes(e.target.value)}
+                      placeholder="Optional note for admin"
+                      data-testid="input-withdraw-note"
+                    />
                   </div>
                 </div>
                 <DialogFooter>
@@ -175,8 +320,8 @@ export default function Wallet() {
                     Cancel
                   </Button>
                   <Button 
-                    onClick={() => withdrawMutation.mutate(Number(withdrawAmount))}
-                    disabled={withdrawMutation.isPending || !withdrawAmount || Number(withdrawAmount) <= 0}
+                    onClick={() => withdrawMutation.mutate()}
+                    disabled={withdrawMutation.isPending || !canRequestWithdrawal}
                     data-testid="button-confirm-withdraw"
                   >
                     {withdrawMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -278,6 +423,32 @@ export default function Wallet() {
             </Button>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Referral Payout Requests</CardTitle>
+            <CardDescription>Track bank withdrawals from referral earnings</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {referralWithdrawals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No referral payout requests yet.</p>
+            ) : (
+              referralWithdrawals.slice(0, 5).map((request) => (
+                <div key={request.id} className="flex items-center justify-between gap-3 p-3 border rounded-lg">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">£{Number(request.amount).toFixed(2)} to {request.bankName}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {request.accountHolderName} • ending {request.accountNumberLast4}
+                    </p>
+                  </div>
+                  <Badge variant={request.status === 'completed' ? 'default' : request.status === 'rejected' ? 'destructive' : 'secondary'} className="capitalize shrink-0">
+                    {request.status}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -314,7 +485,7 @@ export default function Wallet() {
                     <TableCell className={`text-right font-medium ${
                       ['deposit', 'referral_bonus'].includes(tx.type) ? 'text-green-600' : 'text-foreground'
                     }`}>
-                      {['deposit', 'referral_bonus'].includes(tx.type) ? '+' : '-'}£{Number(tx.amount).toFixed(2)}
+                      {formatTransactionAmount(tx.type, tx.amount)}
                     </TableCell>
                   </TableRow>
                 ))

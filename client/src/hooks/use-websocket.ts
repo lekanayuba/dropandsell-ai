@@ -1,5 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
-import { useAuth } from "./use-auth";
+import { useEffect, useCallback } from "react";
 import { queryClient } from "@/lib/queryClient";
 
 type EventHandler = (data: any) => void;
@@ -7,7 +6,6 @@ type EventHandler = (data: any) => void;
 const listeners = new Map<string, Set<EventHandler>>();
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let userId: number | null = null;
 
 function connect() {
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
@@ -19,15 +17,16 @@ function connect() {
     socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
-      if (userId) {
-        socket?.send(JSON.stringify({ type: "auth", userId }));
-      }
-      subscribeToChannels();
+      // The server authenticates the socket from the existing session cookie.
     };
 
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        if (msg.type === "authenticated" && msg.authenticated) {
+          subscribeToChannels();
+        }
+
         const handlers = listeners.get(msg.type);
         if (handlers) {
           handlers.forEach((fn) => fn(msg));
@@ -82,20 +81,6 @@ function handleAutoInvalidation(msg: any) {
 }
 
 export function useWebSocket() {
-  const { user } = useAuth();
-  const prevUserId = useRef<number | null>(null);
-
-  useEffect(() => {
-    const uid = Number(user?.id);
-    if (uid && uid !== prevUserId.current) {
-      userId = uid;
-      prevUserId.current = uid;
-      if (socket?.readyState === WebSocket.OPEN) {
-        if (user) socket.send(JSON.stringify({ type: "auth", userId: user.id }));
-      }
-    }
-  }, [user?.id]);
-
   useEffect(() => {
     connect();
     return () => {

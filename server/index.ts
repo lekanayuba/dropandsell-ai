@@ -10,7 +10,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { setupWebSocket, broadcast, notifyUser } from "./websocket";
 import { checkAndFulfillPendingOrders } from "./auto-fulfillment";
-import { runMigrations } from "./db";
+import { runCompatibilityMigrations } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,7 +70,7 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await runMigrations();
+  await runCompatibilityMigrations();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

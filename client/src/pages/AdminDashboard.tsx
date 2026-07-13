@@ -118,6 +118,32 @@ interface SystemStatus {
   [key: string]: any;
 }
 
+interface ReferralWithdrawalAdmin {
+  id: number;
+  userId: string;
+  amount: string;
+  currency: string;
+  accountHolderName: string;
+  bankName: string;
+  bankCountry: string;
+  accountNumberLast4: string;
+  sortCodeLast2?: string | null;
+  bankDetails?: {
+    accountNumber?: string;
+    sortCode?: string;
+    iban?: string;
+    swift?: string;
+    payoutNotes?: string;
+  };
+  status: string;
+  adminNotes?: string | null;
+  processedAt?: string | null;
+  createdAt?: string | null;
+  userEmail?: string | null;
+  userFirstName?: string | null;
+  userLastName?: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function LoadingRows({ rows = 3 }: { rows?: number }) {
@@ -190,6 +216,16 @@ function EmptyState({ icon: Icon, title, desc }: { icon: React.ElementType; titl
       <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs">{desc}</p>
     </div>
   );
+}
+
+async function fetchAdminJson(url: string, fallback: any) {
+  const response = await fetch(url, { credentials: "include" });
+  if (response.status === 401 || response.status === 403) {
+    window.location.href = "/admin/login";
+    return fallback;
+  }
+  if (!response.ok) return fallback;
+  return response.json();
 }
 
 // ─── Chart Components ────────────────────────────────────────────────────────
@@ -277,14 +313,15 @@ function DoughnutChart({ data, colors = ["#f59e0b", "#3b82f6", "#10b981", "#8b5c
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   const r = 60;
   const circumference = 2 * Math.PI * r;
-  let offset = 0;
-  const segments = data.map((d, i) => {
+  const segments = data.reduce<{
+    items: { color: string; length: number; offset: number; pct: number }[];
+    offset: number;
+  }>((acc, d, i) => {
     const pct = d.value / total;
     const len = circumference * pct;
-    const seg = { color: colors[i % colors.length], length: len, offset, pct };
-    offset += len;
-    return seg;
-  });
+    const seg = { color: colors[i % colors.length], length: len, offset: acc.offset, pct };
+    return { items: [...acc.items, seg], offset: acc.offset + len };
+  }, { items: [], offset: 0 }).items;
 
   return (
     <div className="flex flex-col items-center">
@@ -510,62 +547,88 @@ export default function AdminDashboard() {
 
   const { data: stats } = useQuery({
     queryKey: ["/api/admin/stats"],
-    queryFn: async () => { const r = await fetch("/api/admin/stats", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/stats", {}),
     refetchInterval: 30000,
   });
 
   const { data: detailedStats } = useQuery({
     queryKey: ["/api/admin/detailed-stats"],
-    queryFn: async () => { const r = await fetch("/api/admin/detailed-stats", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/detailed-stats", {}),
     refetchInterval: 30000,
   });
 
   const { data: users } = useQuery({
     queryKey: ["/api/admin/users"],
-    queryFn: async () => { const r = await fetch("/api/admin/users", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/users", []),
     refetchInterval: 15000,
   });
 
   const { data: recentOrders } = useQuery({
     queryKey: ["/api/admin/recent-orders"],
-    queryFn: async () => { const r = await fetch("/api/admin/recent-orders", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/recent-orders", []),
     refetchInterval: 15000,
   });
 
   const { data: vendorOverview } = useQuery({
     queryKey: ["/api/admin/vendor-overview"],
-    queryFn: async () => { const r = await fetch("/api/admin/vendor-overview", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/vendor-overview", []),
     refetchInterval: 30000,
   });
 
   const { data: revenueHistory } = useQuery({
     queryKey: ["/api/admin/revenue-history"],
-    queryFn: async () => { const r = await fetch("/api/admin/revenue-history", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/revenue-history", {}),
     refetchInterval: 30000,
   });
 
   const { data: serverMetrics } = useQuery<ServerMetrics>({
     queryKey: ["/api/admin/server-metrics"],
-    queryFn: async () => { const r = await fetch("/api/admin/server-metrics", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/server-metrics", {}),
     refetchInterval: 15000,
   });
 
   const { data: serviceStatus } = useQuery<ServiceStatus>({
     queryKey: ["/api/admin/service-status"],
-    queryFn: async () => { const r = await fetch("/api/admin/service-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/service-status", {}),
     refetchInterval: 15000,
   });
 
   const { data: systemStatus } = useQuery<SystemStatus>({
     queryKey: ["/api/admin/system-status"],
-    queryFn: async () => { const r = await fetch("/api/admin/system-status", { credentials: "include" }); if (!r.ok) return {}; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/system-status", {}),
     refetchInterval: 30000,
   });
 
   const { data: recentRegistrations } = useQuery({
     queryKey: ["/api/admin/recent-registrations"],
-    queryFn: async () => { const r = await fetch("/api/admin/recent-registrations", { credentials: "include" }); if (!r.ok) return []; return r.json(); },
+    queryFn: () => fetchAdminJson("/api/admin/recent-registrations", []),
     refetchInterval: 15000,
+  });
+
+  const { data: referralWithdrawals = [] } = useQuery<ReferralWithdrawalAdmin[]>({
+    queryKey: ["/api/admin/referral-withdrawals"],
+    queryFn: () => fetchAdminJson("/api/admin/referral-withdrawals", []),
+    refetchInterval: 15000,
+  });
+
+  const withdrawalStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "processing" | "completed" | "rejected" }) => {
+      const r = await fetch(`/api/admin/referral-withdrawals/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("Failed to update payout request");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/referral-withdrawals"] });
+      toast({ title: "Payout request updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    },
   });
 
   // ── Derived Data ──
@@ -579,6 +642,7 @@ export default function AdminDashboard() {
   const totalCommissions = detailedStats?.totalCommissions ?? 0;
   const weeklyGrowth = detailedStats?.weeklyGrowth ?? 0;
   const pendingOrders = detailedStats?.pendingOrders ?? 0;
+  const pendingReferralWithdrawals = referralWithdrawals.filter((request) => ['pending', 'processing'].includes(request.status)).length;
 
   const dailyRevenue = revenueHistory?.dailyRevenue || revenueHistory?.daily || [];
   const orderStatusData = revenueHistory?.orderStatusBreakdown || [
@@ -634,10 +698,21 @@ export default function AdminDashboard() {
     { title: "Products", value: productCount, icon: Package, subtitle: "Across all stores", color: "bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400" },
     { title: "Pending Orders", value: pendingOrders, icon: AlertTriangle, subtitle: "Requires attention", color: "bg-orange-50 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400" },
     { title: "Commissions", value: `$${(totalCommissions || 0).toLocaleString()}`, icon: Percent, subtitle: "Total earned", color: "bg-cyan-50 text-cyan-600 dark:bg-cyan-950/20 dark:text-cyan-400" },
+    { title: "Payout Requests", value: pendingReferralWithdrawals, icon: Wallet, subtitle: "Referral withdrawals", color: "bg-lime-50 text-lime-600 dark:bg-lime-950/20 dark:text-lime-400" },
     { title: "Subscribers", value: stats?.subscribers || 0, icon: Bell, subtitle: "Email subscribers", color: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/20 dark:text-indigo-400" },
   ];
 
   const stores = users?.flatMap((u: any) => u.stores || []) || [];
+
+  const updateWithdrawalStatus = (id: number, status: "processing" | "completed" | "rejected") => {
+    if (status === "completed" && !window.confirm("Mark this referral payout as completed after the bank transfer has been sent?")) {
+      return;
+    }
+    if (status === "rejected" && !window.confirm("Reject this payout request and return the amount to the user's referral balance?")) {
+      return;
+    }
+    withdrawalStatusMutation.mutate({ id, status });
+  };
 
   // ── Render ──
 
@@ -707,6 +782,7 @@ export default function AdminDashboard() {
                 { id: "orders", label: "Orders", icon: ShoppingCart },
                 { id: "stores", label: "Stores", icon: Store },
                 { id: "users", label: "Users", icon: Users },
+                { id: "payouts", label: "Payouts", icon: Wallet },
                 { id: "vendors", label: "Vendors", icon: Package },
                 { id: "system", label: "System", icon: Server },
                 { id: "support", label: "Support", icon: MessageSquare },
@@ -854,6 +930,97 @@ export default function AdminDashboard() {
             <div className="overflow-hidden rounded-xl border border-border/40">
               <UsersTable users={users || []} />
             </div>
+          </TabsContent>
+
+          {/* ════════════════ Payouts Tab ════════════════ */}
+          <TabsContent value="payouts" className="mt-4">
+            <SectionCard title="Referral Payout Requests" icon={Wallet}>
+              {!referralWithdrawals.length ? (
+                <EmptyState icon={Wallet} title="No payout requests" desc="Referral withdrawal requests will appear here." />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border/40 text-left">
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground">User</th>
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground">Bank Details</th>
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground">Status</th>
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground">Requested</th>
+                        <th className="py-2 px-3 text-xs font-medium text-muted-foreground text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referralWithdrawals.map((request) => (
+                        <tr key={request.id} className="border-b border-border/10 hover:bg-muted/20">
+                          <td className="py-3 px-3 min-w-[180px]">
+                            <p className="text-sm font-medium truncate">
+                              {[request.userFirstName, request.userLastName].filter(Boolean).join(" ") || "User"}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">{request.userEmail || request.userId}</p>
+                          </td>
+                          <td className="py-3 px-3 text-sm font-semibold tabular-nums">
+                            £{Number(request.amount).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3 min-w-[260px]">
+                            <p className="text-sm font-medium truncate">{request.accountHolderName} • {request.bankName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {request.bankCountry} • Account {request.bankDetails?.accountNumber || `ending ${request.accountNumberLast4}`}
+                            </p>
+                            {(request.bankDetails?.sortCode || request.bankDetails?.iban || request.bankDetails?.swift) && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {[request.bankDetails?.sortCode && `Sort/Routing ${request.bankDetails.sortCode}`, request.bankDetails?.iban && `IBAN ${request.bankDetails.iban}`, request.bankDetails?.swift && `SWIFT ${request.bankDetails.swift}`].filter(Boolean).join(" • ")}
+                              </p>
+                            )}
+                            {request.bankDetails?.payoutNotes && (
+                              <p className="text-xs text-muted-foreground truncate">Note: {request.bankDetails.payoutNotes}</p>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <Badge variant={request.status === "completed" ? "default" : request.status === "rejected" ? "destructive" : "secondary"} className="capitalize">
+                              {request.status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-3 text-xs text-muted-foreground">
+                            {request.createdAt ? new Date(request.createdAt).toLocaleString() : "-"}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                disabled={withdrawalStatusMutation.isPending || !["pending", "processing"].includes(request.status)}
+                                onClick={() => updateWithdrawalStatus(request.id, "processing")}
+                              >
+                                Processing
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                disabled={withdrawalStatusMutation.isPending || !["pending", "processing"].includes(request.status)}
+                                onClick={() => updateWithdrawalStatus(request.id, "rejected")}
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs"
+                                disabled={withdrawalStatusMutation.isPending || !["pending", "processing"].includes(request.status)}
+                                onClick={() => updateWithdrawalStatus(request.id, "completed")}
+                              >
+                                Complete
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </SectionCard>
           </TabsContent>
 
           {/* ════════════════ Vendors Tab ════════════════ */}

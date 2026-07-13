@@ -8,6 +8,7 @@ interface EbayAuthToken {
 }
 
 let tokenCache: EbayAuthToken | null = null;
+const storeTokenCache = new Map<string, EbayAuthToken>();
 
 const SCOPES = "https://api.ebay.com/oauth/api_scope/sell.fulfillment https://api.ebay.com/oauth/api_scope/sell.inventory";
 
@@ -51,15 +52,16 @@ export async function getEbayAppSettings(): Promise<{ clientId: string; clientSe
 }
 
 export async function getAccessToken(storeRefreshToken?: string): Promise<string> {
-  if (tokenCache && tokenCache.expiresAt > Date.now()) {
-    return tokenCache.accessToken;
-  }
-
   const { clientId, clientSecret } = await getEbayAppSettings();
   const refreshToken = storeRefreshToken || process.env.EBAY_REFRESH_TOKEN;
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("eBay API not configured. Admin must set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET, and store must have a refresh token.");
+  }
+
+  const cached = storeRefreshToken ? storeTokenCache.get(refreshToken) : tokenCache;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.accessToken;
   }
 
   const res = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
@@ -81,11 +83,18 @@ export async function getAccessToken(storeRefreshToken?: string): Promise<string
   }
 
   const data = await res.json();
-  tokenCache = {
+  const token = {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000 - 60_000,
   };
-  return tokenCache.accessToken;
+
+  if (storeRefreshToken) {
+    storeTokenCache.set(refreshToken, token);
+  } else {
+    tokenCache = token;
+  }
+
+  return token.accessToken;
 }
 
 async function getStoreRefreshToken(storeId: number): Promise<string | null> {
@@ -99,6 +108,38 @@ async function getStoreRefreshToken(storeId: number): Promise<string | null> {
 function getMarketplaceForCredentials(creds: any): { marketplaceId: string; siteUrl: string; currency: string; siteId: string } {
   const locale = (creds.marketplaceId || creds.marketplace || "uk").toLowerCase().replace("ebay_", "");
   return MARKETPLACE_MAP[locale] || MARKETPLACE_MAP.uk;
+}
+
+async function findSkuForListing(ebayItemId: string, token: string, storeId?: number): Promise<string | null> {
+  if (storeId) {
+    const listings = await db.select({
+      productId: marketplaceListings.productId,
+    }).from(marketplaceListings)
+      .where(and(eq(marketplaceListings.externalId, ebayItemId), eq(marketplaceListings.storeId, storeId)))
+      .limit(1);
+
+    if (listings.length) {
+      const product = await db.select({ sku: products.sku })
+        .from(products)
+        .where(eq(products.id, listings[0].productId))
+        .limit(1);
+      if (product.length && product[0].sku) {
+        return product[0].sku;
+      }
+    }
+  }
+
+  const offersRes = await fetch(
+    `https://api.ebay.com/sell/inventory/v1/offer?listing_id=${ebayItemId}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+
+  if (!offersRes.ok) {
+    return null;
+  }
+
+  const offersData = await offersRes.json();
+  return (offersData.offers || [])[0]?.sku || null;
 }
 
 function buildHtmlDescription(title: string, description: string): string {
@@ -260,73 +301,57 @@ export async function createEbayListing(args: {
 
 export async function endEbayListing(ebayItemId: string, storeId?: number): Promise<void> {
   try {
-    const refreshToken = storeId ? await getStoreRefreshToken(storeId) : undefined;
-    const token = await getAccessToken(refreshToken || undefined);
-
-    // Look up the product SKU from the marketplace listing
-    let sku: string | null = null;
-    if (storeId) {
-      const listings = await db.select({
-        productId: marketplaceListings.productId,
-      }).from(marketplaceListings)
-        .where(and(eq(marketplaceListings.externalId, ebayItemId), eq(marketplaceListings.storeId, storeId)))
-        .limit(1);
-
-      if (listings.length) {
-        const product = await db.select({ sku: products.sku })
-          .from(products)
-          .where(eq(products.id, listings[0].productId))
-          .limit(1);
-        if (product.length && product[0].sku) {
-          sku = product[0].sku;
-        }
-      }
-    }
-
-    if (!sku) {
-      console.warn(`[eBay] No SKU found for listing ${ebayItemId}, trying offer-based end`);
-      // Try to find offers associated with this listing
-      const offersRes = await fetch(
-        `https://api.ebay.com/sell/inventory/v1/offer?listing_id=${ebayItemId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (offersRes.ok) {
-        const offersData = await offersRes.json();
-        for (const offer of (offersData.offers || [])) {
-          sku = offer.sku;
-          break;
-        }
-      }
-    }
-
-    if (sku) {
-      // Set inventory quantity to 0
-      const getRes = await fetchWithRetry(
-        `https://api.ebay.com/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`,
-        { method: "GET", headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (getRes.ok) {
-        const item = await getRes.json();
-        item.availability = item.availability || {};
-        item.availability.shipToLocationAvailability = item.availability.shipToLocationAvailability || {};
-        item.availability.shipToLocationAvailability.quantity = 0;
-
-        await fetchWithRetry(
-          `https://api.ebay.com/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify(item),
-          }
-        );
-        console.log(`[eBay] Listing ${ebayItemId} ended (quantity set to 0 via SKU: ${sku})`);
-        return;
-      }
-    }
-
-    console.warn(`[eBay] Could not end listing ${ebayItemId} — no SKU or product found`);
+    const updated = await updateEbayListingQuantity(ebayItemId, 0, storeId);
+    if (!updated) console.warn(`[eBay] Could not end listing ${ebayItemId} — no SKU or product found`);
   } catch (err) {
     console.error(`[eBay] Error ending listing ${ebayItemId}:`, err);
+  }
+}
+
+export async function updateEbayListingQuantity(ebayItemId: string, quantity: number, storeId?: number): Promise<boolean> {
+  try {
+    const refreshToken = storeId ? await getStoreRefreshToken(storeId) : undefined;
+    const token = await getAccessToken(refreshToken || undefined);
+    const sku = await findSkuForListing(ebayItemId, token, storeId);
+
+    if (!sku) {
+      console.warn(`[eBay] No SKU found for listing ${ebayItemId}`);
+      return false;
+    }
+
+    const safeQuantity = Math.max(0, Math.min(Math.floor(quantity), 999));
+    const inventoryUrl = `https://api.ebay.com/sell/inventory/v1/inventory_item/${encodeURIComponent(sku)}`;
+    const getRes = await fetchWithRetry(inventoryUrl, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!getRes.ok) {
+      console.warn(`[eBay] Could not read inventory item for ${sku}: ${getRes.status} ${await getRes.text()}`);
+      return false;
+    }
+
+    const item = await getRes.json();
+    item.availability = item.availability || {};
+    item.availability.shipToLocationAvailability = item.availability.shipToLocationAvailability || {};
+    item.availability.shipToLocationAvailability.quantity = safeQuantity;
+
+    const updateRes = await fetchWithRetry(inventoryUrl, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(item),
+    });
+
+    if (!updateRes.ok) {
+      console.warn(`[eBay] Could not update quantity for ${sku}: ${updateRes.status} ${await updateRes.text()}`);
+      return false;
+    }
+
+    console.log(`[eBay] Listing ${ebayItemId} quantity set to ${safeQuantity} via SKU ${sku}`);
+    return true;
+  } catch (err) {
+    console.error(`[eBay] Error updating listing ${ebayItemId} quantity:`, err);
+    return false;
   }
 }
 

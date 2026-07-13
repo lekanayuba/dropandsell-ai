@@ -29,7 +29,7 @@ export async function autoFulfillOrder(orderId: number): Promise<FulfillmentResu
       orderId,
     });
 
-    notifyUser(Number(order.userId), "order_fulfilled", { orderId, needsTracking: true });
+    notifyUser(order.userId, "order_fulfilled", { orderId, needsTracking: true });
 
     return {
       success: true,

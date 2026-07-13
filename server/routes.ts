@@ -12,7 +12,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integra
 import { getUncachableStripeClient, getStripePublishableKey, getStripeSync } from "./stripeClient";
 import { db, pool, STORE_COLUMNS } from "./db";
 import { sql, eq, and, inArray, desc, lte, gt, or, isNotNull } from "drizzle-orm";
-import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, adminSettings, orders, appSettings } from "@shared/schema";
+import { stores, vendors, marketplaceListings, restockLogs, products, productVariations, productVendorSources, adminSettings, orders, appSettings, notifications, referralWithdrawals, wallet, transactions } from "@shared/schema";
 import { conversations, messages } from "@shared/models/chat";
 import { users } from "@shared/models/auth";
 import OpenAI from "openai";
@@ -20,7 +20,7 @@ import crypto from "crypto";
 import { registerChatRoutes } from "./chat";
 import { rateLimiter } from "./middleware/rateLimiter";
 import { getTrackingUrlForOrder, monitorTracking, detectCarrier } from "./tracking-monitor";
-import { updateEbayOrderStatus, endEbayListing, createEbayListing, getEbayAppSettings, getAccessToken, fetchEbayStoreInventory } from "./platforms/ebay";
+import { updateEbayOrderStatus, createEbayListing, getEbayAppSettings, getAccessToken, fetchEbayStoreInventory, updateEbayListingQuantity } from "./platforms/ebay";
 import { fetchShopifyStoreInventory } from "./platforms/shopify";
 import { fetchAmazonStoreInventory } from "./platforms/amazon";
 import { fetchWooCommerceStoreInventory } from "./platforms/woocommerce";
@@ -28,6 +28,48 @@ import { fetchJumiaStoreInventory } from "./platforms/jumia";
 import { broadcast, notifyUser } from "./websocket";
 import { getPriceRecommendations } from "./ai-price-optimizer";
 import { autoFulfillOrder, checkAndFulfillPendingOrders } from "./auto-fulfillment";
+import {
+  applyStockEvaluationToProduct,
+  evaluateProductStock,
+  evaluateProductStockForProduct,
+  getProductStockEvents,
+  getProductStockRuleForApi,
+  getProductStockSources,
+  upsertProductStockRule,
+  upsertProductVendorSource,
+  updateProductVendorSource,
+} from "./stock-engine";
+
+const referralWithdrawalRequestSchema = z.object({
+  amount: z.coerce.number().finite().positive().max(100_000),
+  accountHolderName: z.string().trim().min(2).max(120),
+  bankName: z.string().trim().min(2).max(120),
+  bankCountry: z.string().trim().min(2).max(80).default("United Kingdom"),
+  accountNumber: z.string().trim().min(4).max(34).regex(/^[A-Za-z0-9 -]+$/, "Account number can only contain letters, numbers, spaces, and hyphens"),
+  sortCode: z.string().trim().max(20).optional().default(""),
+  iban: z.string().trim().max(34).optional().default(""),
+  swift: z.string().trim().max(20).optional().default(""),
+  payoutNotes: z.string().trim().max(500).optional().default(""),
+});
+
+const referralWithdrawalStatusSchema = z.object({
+  status: z.enum(["processing", "completed", "rejected"]),
+  adminNotes: z.string().trim().max(500).optional(),
+});
+
+function onlyDigits(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function accountLast4(value: string) {
+  const compact = value.replace(/[^A-Za-z0-9]/g, "");
+  return compact.slice(-4);
+}
+
+function maskReferralWithdrawal(withdrawal: typeof referralWithdrawals.$inferSelect) {
+  const { bankDetails: _bankDetails, ...safeWithdrawal } = withdrawal;
+  return safeWithdrawal;
+}
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -187,6 +229,7 @@ export async function registerRoutes(
       
       // Set session
       (req.session as any).userId = user.id;
+      (req.session as any).isAdmin = user.role === 'admin';
       
       res.json({ 
         success: true, 
@@ -360,6 +403,31 @@ export async function registerRoutes(
     return user?.subscriptionStatus === 'active';
   }
 
+  const stockStatusSchema = z.enum(['in_stock', 'out_of_stock', 'unknown']);
+  const stockSourceInputSchema = z.object({
+    vendorId: z.coerce.number().int().positive(),
+    vendorSku: z.string().trim().optional().nullable(),
+    sourceUrl: z.string().trim().url().optional().nullable(),
+    isPrimary: z.boolean().optional(),
+    isEnabled: z.boolean().optional(),
+    priority: z.coerce.number().int().optional(),
+    stockQuantity: z.coerce.number().int().min(0).optional(),
+    stockStatus: stockStatusSchema.optional(),
+    lastError: z.string().trim().optional().nullable(),
+    metadata: z.record(z.unknown()).optional().nullable(),
+  });
+  const stockSourceUpdateSchema = stockSourceInputSchema.partial().omit({ vendorId: true });
+  const stockRuleInputSchema = z.object({
+    oosThreshold: z.coerce.number().int().min(0).optional(),
+    oosAutomationEnabled: z.boolean().optional(),
+    autoSwitchSupplier: z.boolean().optional(),
+    restockAutomationEnabled: z.boolean().optional(),
+    restockThreshold: z.coerce.number().int().min(0).optional(),
+    restockQuantity: z.coerce.number().int().min(1).optional(),
+    restockMode: z.enum(['fixed', 'top_up_to']).optional(),
+    pinnedVendorSourceId: z.coerce.number().int().positive().optional().nullable(),
+  });
+
   // Track which stores are currently being synced (prevents duplicate syncs)
   const syncingStores: Map<number, Promise<void>> = new Map();
 
@@ -384,67 +452,60 @@ export async function registerRoutes(
       const productsMap = new Map<number, typeof products.$inferSelect>();
       const fetched = productIds.length > 0 ? await storage.getProductsByIds(productIds, userId) : [];
       for (const p of fetched) productsMap.set(p.id, p);
+      const stockEvaluationMap = new Map<number, Awaited<ReturnType<typeof evaluateProductStockForProduct>>>();
 
       for (const listing of listings) {
         const product = productsMap.get(listing.productId);
         if (!product) continue;
 
-        const isOutOfStock = product.quantity <= 0;
+        let stockEvaluation = stockEvaluationMap.get(product.id);
+        if (!stockEvaluation) {
+          stockEvaluation = await evaluateProductStockForProduct(product);
+          stockEvaluationMap.set(product.id, stockEvaluation);
+        }
+        const isOutOfStock = stockEvaluation.shouldMarkOutOfStock;
+        const shouldRestoreStock = !stockEvaluation.rawOutOfStock;
+        const effectiveQuantity = stockEvaluation.effectiveQuantity;
 
         if (isOutOfStock && listing.stockStatus !== 'out_of_stock') {
           await db.update(marketplaceListings)
             .set({ stockStatus: 'out_of_stock', outOfStockAt: new Date(), lastSync: new Date() })
             .where(eq(marketplaceListings.id, listing.id));
 
+          if (store.platform === 'ebay' && listing.externalId && (store.autoPauseListings || store.autoMarkOutOfStock)) {
+            await updateEbayListingQuantity(listing.externalId, 0, store.id);
+          }
+
           if (store.autoPauseListings) {
             await storage.updateMarketplaceListingStatus(listing.id, 'ended');
-
-            // Actually end the listing on the marketplace via API
-            if (store.platform === 'ebay' && listing.externalId) {
-              endEbayListing(listing.externalId);
-            }
           }
 
           if (listing.stockStatus === 'in_stock') {
             await db.insert(restockLogs).values({
               storeId, productId: listing.productId,
-              previousQuantity: Number(product.quantity), newQuantity: 0,
+              previousQuantity: effectiveQuantity, newQuantity: 0,
               marketplaceListingId: listing.id, triggeredBy: 'auto',
             });
           }
           outOfStockCount++;
-        } else if (!isOutOfStock && listing.stockStatus !== 'in_stock') {
+        } else if (shouldRestoreStock && listing.stockStatus !== 'in_stock') {
           await db.update(marketplaceListings)
             .set({ stockStatus: 'in_stock', outOfStockAt: null, lastSync: new Date() })
             .where(eq(marketplaceListings.id, listing.id));
 
           await db.insert(restockLogs).values({
             storeId, productId: listing.productId,
-            previousQuantity: 0, newQuantity: Number(product.quantity),
+            previousQuantity: 0, newQuantity: effectiveQuantity,
             marketplaceListingId: listing.id, triggeredBy: 'auto',
           });
 
           // Auto-restock: re-activate the listing if autoRestock is enabled
           if (store.autoRestock && (listing.status === 'ended' || listing.status === 'paused')) {
             await storage.updateMarketplaceListingStatus(listing.id, 'active');
+          }
 
-            // Re-list on eBay if quantity was set to 0
-            if (store.platform === 'ebay' && listing.externalId) {
-              try {
-                const { createEbayListing } = await import("./platforms/ebay");
-                await createEbayListing({
-                  sku: product.sku || `SKU-${product.id}`,
-                  title: product.title,
-                  description: product.description || product.title,
-                  price: Number(product.sellingPrice) || 0,
-                  quantity: Number(product.quantity) || 1,
-                  storeCredentials: (store.credentials || {}) as any,
-                });
-                console.log(`[AutoRestock] Re-listed ${listing.externalId} on eBay with qty ${product.quantity}`);
-              } catch (err: any) {
-                console.error(`[AutoRestock] Failed to re-list ${listing.externalId}:`, err.message);
-              }
-            }
+          if (store.platform === 'ebay' && listing.externalId && (store.autoRestock || store.autoMarkOutOfStock)) {
+            await updateEbayListingQuantity(listing.externalId, effectiveQuantity || 1, store.id);
           }
 
           inStockCount++;
@@ -555,6 +616,7 @@ export async function registerRoutes(
         ? await db.select({
             id: stores.id, platform: stores.platform, userId: stores.userId,
             autoPauseListings: stores.autoPauseListings,
+            autoMarkOutOfStock: stores.autoMarkOutOfStock,
           }).from(stores).where(inArray(stores.id, storeIds))
         : [];
       const storeMap = new Map(storeRows.map(s => [s.id, s]));
@@ -573,11 +635,12 @@ export async function registerRoutes(
         });
 
         const store = storeMap.get(listing.storeId);
+        if (store?.platform === 'ebay' && listing.externalId && (store.autoPauseListings || store.autoMarkOutOfStock)) {
+          await updateEbayListingQuantity(listing.externalId, 0, store.id);
+        }
+
         if (store?.autoPauseListings) {
           await storage.updateMarketplaceListingStatus(listing.id, 'ended');
-          if (store.platform === 'ebay' && listing.externalId) {
-            endEbayListing(listing.externalId);
-          }
         }
         count++;
       }
@@ -724,7 +787,9 @@ export async function registerRoutes(
                 userId: store.userId, type: 'stock_alert', title,
                 message: 'eBay inventory had stock for products that were showing 0 locally — quantities have been restored.',
               }).onConflictDoNothing();
-            } catch (_) {}
+            } catch (err) {
+              console.warn(`[eBaySync] Failed to create stock notification for store ${store.id}:`, err);
+            }
             await syncStore(store.id, store.userId);
           }
         } catch (err) {
@@ -742,13 +807,13 @@ export async function registerRoutes(
     fetchInventory: (credentials?: Record<string, any>) => Promise<Map<string, number>>,
   ): Promise<void> {
     try {
-      const stores = await db.select({
+      const platformStores = await db.select({
         id: stores.id,
         userId: stores.userId,
         credentials: stores.credentials,
       }).from(stores).where(eq(stores.platform, platformName));
 
-      for (const store of stores) {
+      for (const store of platformStores) {
         try {
           const creds = store.credentials as Record<string, any> | undefined;
           const inventory = await fetchInventory(creds);
@@ -805,7 +870,9 @@ export async function registerRoutes(
                 userId: store.userId, type: 'stock_alert', title,
                 message: `${platformName} inventory had stock for products that were showing 0 locally — quantities have been restored.`,
               }).onConflictDoNothing();
-            } catch (_) {}
+            } catch (err) {
+              console.warn(`[${platformName}Sync] Failed to create stock notification for store ${store.id}:`, err);
+            }
             await syncStore(store.id, store.userId);
           }
         } catch (err) {
@@ -1498,6 +1565,158 @@ export async function registerRoutes(
       return res.status(404).json({ message: 'Product not found' });
     }
     res.json(product);
+  });
+
+  protectedApi.get('/products/:id/stock-sources', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      const sources = await getProductStockSources(userId, productId);
+      res.json(sources);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch stock sources' });
+    }
+  });
+
+  protectedApi.post('/products/:id/stock-sources', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      const input = stockSourceInputSchema.parse(req.body);
+      const [vendor] = await db.select().from(vendors)
+        .where(and(
+          eq(vendors.id, input.vendorId),
+          or(
+            eq(vendors.userId, userId),
+            and(eq(vendors.isGlobal, true), eq(vendors.verificationStatus, 'verified')),
+          ),
+        ))
+        .limit(1);
+
+      if (!vendor) {
+        return res.status(400).json({ message: 'Vendor not found or unavailable for this product' });
+      }
+
+      const source = await upsertProductVendorSource(userId, productId, input);
+      const { applied, evaluation } = await applyStockEvaluationToProduct(userId, productId);
+      syncProductAcrossStores(productId, userId).catch(err =>
+        console.error('[StockEngine] Product stock-source sync failed:', err)
+      );
+
+      res.status(201).json({ source, evaluation, productStockUpdated: applied });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: err.message || 'Failed to save stock source' });
+    }
+  });
+
+  protectedApi.put('/products/:id/stock-sources/:sourceId', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const sourceId = Number(req.params.sourceId);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      const input = stockSourceUpdateSchema.parse(req.body);
+      const source = await updateProductVendorSource(userId, productId, sourceId, input);
+      if (!source) return res.status(404).json({ message: 'Stock source not found' });
+
+      const { applied, evaluation } = await applyStockEvaluationToProduct(userId, productId);
+      syncProductAcrossStores(productId, userId).catch(err =>
+        console.error('[StockEngine] Product stock-source sync failed:', err)
+      );
+
+      res.json({ source, evaluation, productStockUpdated: applied });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: err.message || 'Failed to update stock source' });
+    }
+  });
+
+  protectedApi.get('/products/:id/stock-rule', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      const rule = await getProductStockRuleForApi(userId, productId);
+      res.json(rule);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch stock rule' });
+    }
+  });
+
+  protectedApi.put('/products/:id/stock-rule', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+
+      const input = stockRuleInputSchema.parse(req.body);
+      if (input.pinnedVendorSourceId) {
+        const [source] = await db.select().from(productVendorSources)
+          .where(and(
+            eq(productVendorSources.id, input.pinnedVendorSourceId),
+            eq(productVendorSources.userId, userId),
+            eq(productVendorSources.productId, productId),
+          ))
+          .limit(1);
+        if (!source) {
+          return res.status(400).json({ message: 'Pinned vendor source must belong to this product' });
+        }
+      }
+
+      const rule = await upsertProductStockRule(userId, productId, input);
+      const { applied, evaluation } = await applyStockEvaluationToProduct(userId, productId);
+      syncProductAcrossStores(productId, userId).catch(err =>
+        console.error('[StockEngine] Product stock-rule sync failed:', err)
+      );
+
+      res.json({ rule, evaluation, productStockUpdated: applied });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.errors[0].message });
+      }
+      res.status(500).json({ message: err.message || 'Failed to update stock rule' });
+    }
+  });
+
+  protectedApi.get('/products/:id/stock-evaluation', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const evaluation = await evaluateProductStock(userId, productId);
+      if (!evaluation) return res.status(404).json({ message: 'Product not found' });
+      res.json(evaluation);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to evaluate stock' });
+    }
+  });
+
+  protectedApi.get('/products/:id/stock-events', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const productId = Number(req.params.id);
+      const product = await storage.getProduct(productId, userId);
+      if (!product) return res.status(404).json({ message: 'Product not found' });
+      const events = await getProductStockEvents(userId, productId);
+      res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to fetch stock events' });
+    }
   });
 
   protectedApi.post('/products', async (req: any, res) => {
@@ -3244,6 +3463,16 @@ Guidelines:
     }
   });
 
+  protectedApi.get('/wallet/referral-withdrawals', async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const withdrawals = await storage.getReferralWithdrawals(userId);
+      res.json(withdrawals.map(maskReferralWithdrawal));
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to get referral withdrawal requests' });
+    }
+  });
+
   protectedApi.post('/wallet/deposit', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -3297,15 +3526,40 @@ Guidelines:
   protectedApi.post('/wallet/withdraw-referral', async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { amount } = req.body;
+      const parsed = referralWithdrawalRequestSchema.parse(req.body);
+      const { amount, accountHolderName, bankName, bankCountry, accountNumber, sortCode, iban, swift, payoutNotes } = parsed;
       
-      if (!amount || amount <= 0) {
-        return res.status(400).json({ message: 'Invalid amount' });
+      if (!accountLast4(accountNumber)) {
+        return res.status(400).json({ message: 'Invalid bank account number' });
       }
       
-      const transaction = await storage.withdrawReferralBalance(userId, amount);
-      res.json({ success: true, transaction });
+      const result = await storage.withdrawReferralBalance(userId, amount, {
+        accountHolderName,
+        bankName,
+        bankCountry,
+        accountNumberLast4: accountLast4(accountNumber),
+        sortCodeLast2: sortCode ? onlyDigits(sortCode).slice(-2) : null,
+        bankDetails: {
+          accountHolderName,
+          bankName,
+          bankCountry,
+          accountNumber,
+          sortCode,
+          iban,
+          swift,
+          payoutNotes,
+        },
+      });
+
+      res.json({
+        success: true,
+        transaction: result.transaction,
+        withdrawal: maskReferralWithdrawal(result.withdrawal),
+      });
     } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.issues[0]?.message || 'Invalid withdrawal request' });
+      }
       res.status(400).json({ message: err.message || 'Failed to withdraw referral balance' });
     }
   });
@@ -4015,28 +4269,23 @@ Guidelines:
   });
 
   // === ADMIN AUTH ===
-  const ADMIN_USERNAME = "Dropandsell";
-  const ADMIN_PASSWORD = "Olalekan25#";
-
-  app.post('/api/admin/login', async (req, res) => {
+  app.post('/api/admin/login', rateLimiter(10, 60_000), async (req, res) => {
     try {
-      const { username, password } = req.body;
-      if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+      const { email, username, password } = req.body;
+      const login = String(email || username || '').trim().toLowerCase();
+
+      if (!login || !password) {
         return res.status(401).json({ message: 'Invalid admin credentials' });
       }
 
-      // Upsert admin user in DB
-      let adminUser = await storage.getUserByEmail('admin@dropandsell.ai');
-      if (!adminUser) {
-        adminUser = await storage.createUser({
-          email: 'admin@dropandsell.ai',
-          password: await bcrypt.hash(ADMIN_PASSWORD, 10),
-          firstName: 'Admin',
-          lastName: 'DropandSell',
-        });
-        await storage.updateUser(adminUser.id, { role: 'admin', emailVerified: new Date(), onboardingCompleted: new Date(), policiesAccepted: new Date() });
-      } else if (adminUser.role !== 'admin') {
-        await storage.updateUser(adminUser.id, { role: 'admin' });
+      const adminUser = await storage.getUserByEmail(login);
+      if (!adminUser || adminUser.role !== 'admin' || !adminUser.password) {
+        return res.status(401).json({ message: 'Invalid admin credentials' });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, adminUser.password);
+      if (!passwordMatch) {
+        return res.status(401).json({ message: 'Invalid admin credentials' });
       }
 
       (req.session as any).userId = adminUser.id;
@@ -4050,6 +4299,9 @@ Guidelines:
 
   app.post('/api/admin/logout', (req, res) => {
     req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Failed to logout' });
+      }
       res.json({ success: true });
     });
   });
@@ -4059,14 +4311,14 @@ Guidelines:
 
   adminApi.use(async (req: any, res, next) => {
     const userId = (req.session as any)?.userId;
-    const isAdmin = (req.session as any)?.isAdmin;
-    if (!userId || !isAdmin) {
+    if (!userId) {
       return res.status(401).json({ message: 'Admin access required' });
     }
     const user = await storage.getUser(userId);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ message: 'Admin access denied' });
     }
+    (req.session as any).isAdmin = true;
     req.user = { claims: { sub: userId } };
     next();
   });
@@ -4108,6 +4360,102 @@ Guidelines:
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  adminApi.get('/admin/referral-withdrawals', async (req: any, res) => {
+    try {
+      const rows = await db.select({
+        id: referralWithdrawals.id,
+        userId: referralWithdrawals.userId,
+        amount: referralWithdrawals.amount,
+        currency: referralWithdrawals.currency,
+        accountHolderName: referralWithdrawals.accountHolderName,
+        bankName: referralWithdrawals.bankName,
+        bankCountry: referralWithdrawals.bankCountry,
+        accountNumberLast4: referralWithdrawals.accountNumberLast4,
+        sortCodeLast2: referralWithdrawals.sortCodeLast2,
+        bankDetails: referralWithdrawals.bankDetails,
+        status: referralWithdrawals.status,
+        adminNotes: referralWithdrawals.adminNotes,
+        processedAt: referralWithdrawals.processedAt,
+        createdAt: referralWithdrawals.createdAt,
+        updatedAt: referralWithdrawals.updatedAt,
+        userEmail: users.email,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+      })
+        .from(referralWithdrawals)
+        .leftJoin(users, eq(referralWithdrawals.userId, users.id))
+        .orderBy(desc(referralWithdrawals.createdAt));
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || 'Failed to load referral withdrawals' });
+    }
+  });
+
+  adminApi.put('/admin/referral-withdrawals/:id/status', async (req: any, res) => {
+    try {
+      const withdrawalId = Number(req.params.id);
+      if (!Number.isInteger(withdrawalId)) {
+        return res.status(400).json({ message: 'Invalid withdrawal id' });
+      }
+
+      const { status, adminNotes } = referralWithdrawalStatusSchema.parse(req.body);
+      const [existing] = await db.select().from(referralWithdrawals).where(eq(referralWithdrawals.id, withdrawalId)).limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ message: 'Withdrawal request not found' });
+      }
+
+      if (existing.status === 'completed' && status !== 'completed') {
+        return res.status(400).json({ message: 'Completed withdrawals cannot be changed' });
+      }
+
+      if (existing.status === 'rejected' && status !== 'rejected') {
+        return res.status(400).json({ message: 'Rejected withdrawals cannot be changed' });
+      }
+
+      const updated = await db.transaction(async (tx) => {
+        if (status === 'rejected' && existing.status !== 'rejected') {
+          await tx.update(wallet)
+            .set({
+              referralBalance: sql`${wallet.referralBalance} + ${Number(existing.amount)}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(wallet.id, existing.walletId));
+
+          await tx.update(transactions)
+            .set({ status: 'failed' })
+            .where(eq(transactions.id, existing.transactionId));
+        }
+
+        if (status === 'completed') {
+          await tx.update(transactions)
+            .set({ status: 'completed' })
+            .where(eq(transactions.id, existing.transactionId));
+        }
+
+        const [updatedWithdrawal] = await tx.update(referralWithdrawals)
+          .set({
+            status,
+            adminNotes,
+            processedAt: ['completed', 'rejected'].includes(status) ? new Date() : existing.processedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(referralWithdrawals.id, withdrawalId))
+          .returning();
+
+        return updatedWithdrawal;
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.issues[0]?.message || 'Invalid withdrawal status' });
+      }
+      res.status(500).json({ message: err.message || 'Failed to update referral withdrawal' });
     }
   });
 
