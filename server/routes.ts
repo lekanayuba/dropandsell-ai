@@ -13828,6 +13828,9 @@ This document is confidential and intended for compliance review purposes.</p></
       }
 
       const currentBalance = Number(txWallet.referralBalance);
+      if (!Number.isFinite(currentBalance)) {
+        return res.status(400).json({ message: 'User referral balance is invalid. Please contact support before approving this withdrawal.' });
+      }
       if (currentBalance < withdrawAmount) {
         return res.status(400).json({ message: `Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}` });
       }
@@ -13843,12 +13846,12 @@ This document is confidential and intended for compliance review purposes.</p></
         const approved = await db.transaction(async (trx) => {
           const [deducted] = await trx.update(wallet)
             .set({
-              referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
+              referralBalance: sql`GREATEST(0::numeric, ${wallet.referralBalance}::numeric - ${withdrawAmount}::numeric)`,
               updatedAt: new Date(),
             })
             .where(and(
               eq(wallet.userId, tx.userId),
-              sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}`,
+              sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}::numeric`,
             ))
             .returning({ id: wallet.id });
 
@@ -13916,12 +13919,12 @@ This document is confidential and intended for compliance review purposes.</p></
 
         const [deducted] = await trx.update(wallet)
           .set({
-            referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
+            referralBalance: sql`GREATEST(0::numeric, ${wallet.referralBalance}::numeric - ${withdrawAmount}::numeric)`,
             updatedAt: new Date(),
           })
           .where(and(
             eq(wallet.userId, tx.userId),
-            sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}`,
+            sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}::numeric`,
           ))
           .returning({ id: wallet.id });
 
@@ -13964,7 +13967,7 @@ This document is confidential and intended for compliance review purposes.</p></
         await db.transaction(async (trx) => {
           await trx.update(wallet)
             .set({
-              referralBalance: sql`${wallet.referralBalance} + ${withdrawAmount}::numeric`,
+              referralBalance: sql`${wallet.referralBalance}::numeric + ${withdrawAmount}::numeric`,
               updatedAt: new Date(),
             })
             .where(eq(wallet.userId, tx.userId));
