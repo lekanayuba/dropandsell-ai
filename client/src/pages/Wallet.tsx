@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, CreditCard, Users, Coins, Loader2, Building2, Plus, CheckCircle2, ExternalLink, ShieldCheck, AlertCircle, Clock } from "lucide-react";
+import { Wallet as WalletIcon, ArrowUpRight, ArrowDownLeft, CreditCard, Users, Coins, Loader2, Building2, Plus, CheckCircle2, ExternalLink, ShieldCheck, AlertCircle, Clock, RefreshCw } from "lucide-react";
 import { PageRefreshButton } from "@/components/PageRefreshButton";
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -65,10 +65,15 @@ export default function Wallet() {
 
   type StripeConnectStatus = {
     connected: boolean;
-    status: 'not_started' | 'incomplete' | 'under_review' | 'verified' | 'pending';
+    status: 'not_started' | 'incomplete' | 'under_review' | 'restricted' | 'verified' | 'pending' | 'error';
+    message?: string;
     payoutsEnabled?: boolean;
     chargesEnabled?: boolean;
     detailsSubmitted?: boolean;
+    transfersActive?: boolean;
+    transfersStatus?: string | null;
+    requirementsDueCount?: number;
+    disabledReason?: string | null;
     accountId?: string;
   };
 
@@ -203,7 +208,7 @@ export default function Wallet() {
       if (data.withdrawMethod === 'bank') {
         toast({ title: "Withdrawal submitted", description: "Your funds will be deposited manually into your bank within 5–10 working days after admin approval. A confirmation email is on its way." });
       } else {
-        toast({ title: "Withdrawal submitted", description: "Your withdrawal to saved card has been submitted for admin approval. You'll be notified once it's processed." });
+        toast({ title: "Withdrawal submitted", description: "Your Stripe payout request has been submitted for admin approval. Stripe will send it to your connected bank account once approved." });
       }
       setWithdrawOpen(false);
       setWithdrawAmount("");
@@ -353,7 +358,7 @@ export default function Wallet() {
   const canWithdraw = () => {
     if (!withdrawAmount || Number(withdrawAmount) <= 0) return false;
     if (!withdrawMethod) return false;
-    if (withdrawMethod === 'card' && !subscriptionCard) return false;
+    if (withdrawMethod === 'card' && connectStatus?.status !== 'verified') return false;
     if (withdrawMethod === 'bank') {
       const haveSaved = bankDetails.hasBankDetails && !showBankForm;
       const haveInline = bankAccountName.trim().length >= 2 && /^\d{6,8}$/.test(bankAccountNumber.replace(/\s/g, '')) && /^\d{6}$/.test(bankSortCode.replace(/[-\s]/g, ''));
@@ -374,7 +379,7 @@ export default function Wallet() {
     withdrawMutation.mutate({
       amt: Number(withdrawAmount),
       method: withdrawMethod,
-      pmId: subscriptionCard?.id || undefined,
+      pmId: undefined,
       bank: bankPayload,
     });
   };
@@ -503,7 +508,7 @@ export default function Wallet() {
                       <SelectContent>
                         <SelectItem value="card">
                           <span className="flex items-center gap-2">
-                            <CreditCard className="w-4 h-4" /> Card
+                            <ShieldCheck className="w-4 h-4" /> Stripe Payout
                           </span>
                         </SelectItem>
                         <SelectItem value="bank">
@@ -517,50 +522,50 @@ export default function Wallet() {
 
                   {withdrawMethod === 'card' && (
                     <div className="space-y-3">
-                      {paymentLoading ? (
+                      {connectLoading ? (
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          Loading card details...
+                          Checking Stripe payout setup...
                         </div>
-                      ) : subscriptionCard ? (
-                        <div className="flex items-center gap-3 p-3 border rounded-lg bg-muted/50">
+                      ) : connectStatus?.status === 'verified' ? (
+                        <div className="flex items-center gap-3 p-3 border rounded-lg bg-green-500/10 border-green-500/30">
                           <div className="p-2 bg-background rounded-md shadow-sm">
-                            <CreditCard className="w-5 h-5 text-primary" />
+                            <ShieldCheck className="w-5 h-5 text-green-600" />
                           </div>
                           <div className="flex-1">
-                            <p className="font-medium text-sm" data-testid="text-subscription-card">
-                              {subscriptionCard.brand.charAt(0).toUpperCase() + subscriptionCard.brand.slice(1)} ending in {subscriptionCard.last4}
-                            </p>
-                            {subscriptionCard.expMonth && subscriptionCard.expYear && (
-                              <p className="text-xs text-muted-foreground">Expires {subscriptionCard.expMonth}/{subscriptionCard.expYear}</p>
-                            )}
+                            <p className="font-medium text-sm" data-testid="text-stripe-payout-ready">Stripe payout account ready</p>
+                            <p className="text-xs text-muted-foreground">Admin approval will send this withdrawal through Stripe Connect.</p>
                           </div>
                           <CheckCircle2 className="w-5 h-5 text-green-500" />
                         </div>
-                      ) : hasSubscription ? (
-                        <div className="p-4 border border-dashed rounded-lg text-center space-y-2">
+                      ) : connectStatus?.status === 'under_review' || connectStatus?.status === 'restricted' ? (
+                        <div className="p-4 border border-amber-500/30 rounded-lg text-center space-y-3 bg-amber-500/10">
                           <div className="flex justify-center">
-                            <div className="p-3 bg-muted rounded-full">
-                              <CreditCard className="w-6 h-6 text-muted-foreground" />
+                            <div className="p-3 bg-background rounded-full">
+                              <Clock className="w-6 h-6 text-amber-600" />
                             </div>
                           </div>
-                          <p className="text-sm font-medium">Card not available</p>
-                          <p className="text-xs text-muted-foreground">Your subscription card could not be retrieved. Please try again later or contact support.</p>
+                          <p className="text-sm font-medium">Stripe payout not ready yet</p>
+                          <p className="text-xs text-muted-foreground">{connectStatus?.message || "Stripe is still reviewing your payout account."}</p>
+                          <Button variant="outline" size="sm" onClick={() => refetchConnect()} data-testid="button-refresh-withdraw-stripe-connect">
+                            <RefreshCw className="w-4 h-4 mr-1" />
+                            Refresh Status
+                          </Button>
                         </div>
                       ) : (
                         <div className="p-4 border border-dashed rounded-lg text-center space-y-3">
                           <div className="flex justify-center">
                             <div className="p-3 bg-muted rounded-full">
-                              <CreditCard className="w-6 h-6 text-muted-foreground" />
+                              <ShieldCheck className="w-6 h-6 text-muted-foreground" />
                             </div>
                           </div>
                           <div>
-                            <p className="text-sm font-medium">No payment method</p>
-                            <p className="text-xs text-muted-foreground mt-1">Subscribe to a plan to add a payment card</p>
+                            <p className="text-sm font-medium">Stripe payout setup required</p>
+                            <p className="text-xs text-muted-foreground mt-1">Complete Stripe Connect setup before requesting an automatic payout.</p>
                           </div>
-                          <Button variant="outline" size="sm" onClick={() => setLocation('/subscription')} data-testid="button-add-payment-method">
-                            <Plus className="w-4 h-4 mr-1" />
-                            Add Payment Method
+                          <Button variant="outline" size="sm" onClick={() => onboardConnectMutation.mutate()} disabled={onboardConnectMutation.isPending} data-testid="button-setup-withdraw-stripe-connect">
+                            {onboardConnectMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ExternalLink className="w-4 h-4 mr-1" />}
+                            Set Up Stripe Payouts
                           </Button>
                         </div>
                       )}
@@ -847,8 +852,8 @@ export default function Wallet() {
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Payment Methods</CardTitle>
-            <CardDescription>Your saved payment methods for withdrawals</CardDescription>
+            <CardTitle>Payment & Payout Methods</CardTitle>
+            <CardDescription>Cards are used for subscriptions. Stripe payout and bank details are used for withdrawals.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {paymentLoading ? (
@@ -937,7 +942,7 @@ export default function Wallet() {
               Your Withdrawal Requests
             </CardTitle>
             <CardDescription>
-              Approved withdrawals are deposited manually into your bank within 5–10 working days.
+              Stripe payout requests are sent through Stripe after admin approval. Bank transfer requests are deposited manually within 5–10 working days.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -947,7 +952,7 @@ export default function Wallet() {
                   <TableHead>Date</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Bank details on file</TableHead>
+                  <TableHead>Payout details</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -961,7 +966,7 @@ export default function Wallet() {
                       </TableCell>
                       <TableCell className="font-medium">{fc(Math.abs(Number(r.amount)))}</TableCell>
                       <TableCell>
-                        <Badge variant={isPending ? 'secondary' : r.status === 'approved' ? 'default' : 'destructive'} className="capitalize">
+                        <Badge variant={isPending || r.status === 'processing' ? 'secondary' : r.status === 'approved' ? 'default' : 'destructive'} className="capitalize">
                           {r.status.replace('_', ' ')}
                         </Badge>
                       </TableCell>

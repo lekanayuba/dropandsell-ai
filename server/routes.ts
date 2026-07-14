@@ -52,6 +52,72 @@ function getStoreLimitForPlan(planName: string | null | undefined, subscriptionS
   return (plan?.storeLimit || 2) + bonus + legacyBonus + SERVICE_DISRUPTION_BONUS;
 }
 
+function getStripeConnectPayoutReadiness(account: any) {
+  const transfersStatus = account?.capabilities?.transfers || null;
+  const currentlyDue = account?.requirements?.currently_due || [];
+  const pastDue = account?.requirements?.past_due || [];
+  const disabledReason = account?.requirements?.disabled_reason || null;
+  const requirementsDueCount = currentlyDue.length + pastDue.length;
+
+  if (!account?.details_submitted) {
+    return {
+      ready: false,
+      status: 'incomplete',
+      label: 'Setup incomplete',
+      message: 'User needs to complete Stripe payout setup from their Wallet page.',
+      transfersStatus,
+      disabledReason,
+      requirementsDueCount,
+    };
+  }
+
+  if (disabledReason || pastDue.length > 0) {
+    return {
+      ready: false,
+      status: 'restricted',
+      label: 'Stripe needs info',
+      message: 'Stripe needs more information before payouts can be enabled.',
+      transfersStatus,
+      disabledReason,
+      requirementsDueCount,
+    };
+  }
+
+  if (transfersStatus && transfersStatus !== 'active') {
+    return {
+      ready: false,
+      status: 'under_review',
+      label: 'Stripe under review',
+      message: 'Stripe has not activated transfers for this payout account yet.',
+      transfersStatus,
+      disabledReason,
+      requirementsDueCount,
+    };
+  }
+
+  if (!account?.payouts_enabled) {
+    return {
+      ready: false,
+      status: 'under_review',
+      label: 'Stripe under review',
+      message: 'Stripe has not enabled payouts for this account yet.',
+      transfersStatus,
+      disabledReason,
+      requirementsDueCount,
+    };
+  }
+
+  return {
+    ready: true,
+    status: 'verified',
+    label: 'Stripe ready',
+    message: 'Stripe Connect payouts are ready.',
+    transfersStatus,
+    disabledReason,
+    requirementsDueCount,
+  };
+}
+
 // Helper to derive vendor name from hostname
 function deriveVendorNameFromHostname(hostname: string): string {
   // Known vendor mappings
@@ -10030,31 +10096,23 @@ Guidelines:
       }
 
       if (!withdrawMethod || !['card', 'bank'].includes(withdrawMethod)) {
-        return res.status(400).json({ message: 'Please select a withdrawal method (card or bank account)' });
+        return res.status(400).json({ message: 'Please select a withdrawal method (Stripe payout or bank account)' });
       }
 
       const user = await storage.getUser(userId);
       let description = 'Referral withdrawal';
 
       if (withdrawMethod === 'card') {
-        if (!user?.stripeCustomerId) {
-          return res.status(400).json({ message: 'No subscription card on file. Please subscribe to a plan first.' });
+        if (!user?.stripeConnectAccountId) {
+          return res.status(400).json({ message: 'Please set up Stripe payouts from your Wallet page before requesting an automatic payout.' });
         }
         const stripe = await getUncachableStripeClient();
-        if (paymentMethodId) {
-          const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-          if (pm.customer !== user.stripeCustomerId) {
-            return res.status(400).json({ message: 'Selected payment method does not belong to your account' });
-          }
-          description = `Referral withdrawal to ${pm.card?.brand || 'card'} ending ${pm.card?.last4 || '****'}`;
-        } else {
-          const methods = await stripe.paymentMethods.list({ customer: user.stripeCustomerId, type: 'card' });
-          if (methods.data.length === 0) {
-            return res.status(400).json({ message: 'No card on file. Please subscribe to a plan first.' });
-          }
-          const card = methods.data[0];
-          description = `Referral withdrawal to ${card.card?.brand || 'card'} ending ${card.card?.last4 || '****'}`;
+        const account = await stripe.accounts.retrieve(user.stripeConnectAccountId);
+        const readiness = getStripeConnectPayoutReadiness(account);
+        if (!readiness.ready) {
+          return res.status(400).json({ message: readiness.message });
         }
+        description = 'Stripe Connect payout to verified payout account';
       } else {
         // MANUAL BANK PAYOUT FLOW
         // Accept bank details inline so the user can update them right at the
@@ -10121,6 +10179,15 @@ Guidelines:
           const resend = new Resend(apiKey);
           const fname = (user.firstName && user.firstName.trim()) || user.email.split('@')[0];
           const updateLink = `https://dropandsell.online/wallet?update_request=${transaction.id}`;
+          const isStripePayout = withdrawMethod === 'card';
+          const payoutCopyHtml = isStripePayout
+            ? `<p>After admin approval, your funds will be sent through <strong>Stripe Connect</strong> to the bank account on your Stripe payout profile.</p>`
+            : `<p>Your funds will be deposited <strong>manually into your bank account</strong> after admin approval. Please allow <strong>5 to 10 working days</strong> for the deposit to reflect in your account.</p>
+              <p>If you need to change the bank details on this request, you can update them here:</p>
+              <p style="text-align:center;margin:18px 0;"><a href="${updateLink}" style="background:#285261;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block;">Update bank details</a></p>`;
+          const payoutCopyText = isStripePayout
+            ? `After admin approval, your funds will be sent through Stripe Connect to the bank account on your Stripe payout profile.`
+            : `Your funds will be deposited manually into your bank account after admin approval. Please allow 5 to 10 working days for the deposit to reflect.\n\nIf you need to update the bank details on this request: ${updateLink}`;
           await resend.emails.send({
             from: 'DropandSell Automation App <noreply@dropandsell.online>',
             to: user.email,
@@ -10130,13 +10197,11 @@ Guidelines:
               <div style="background:#285261;color:#fff;display:inline-block;padding:8px 16px;border-radius:8px;font-weight:700;">DropandSell</div>
               <h2 style="color:#285261;margin:18px 0 10px;">Hi ${fname}, your withdrawal request is in</h2>
               <p>We've received your request to withdraw <strong>£${Number(amount).toFixed(2)}</strong> from your referral balance.</p>
-              <p>Your funds will be deposited <strong>manually into your bank account</strong> after admin approval. Please allow <strong>5 to 10 working days</strong> for the deposit to reflect in your account.</p>
-              <p>If you need to change the bank details on this request, you can update them here:</p>
-              <p style="text-align:center;margin:18px 0;"><a href="${updateLink}" style="background:#285261;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block;">Update bank details</a></p>
+              ${payoutCopyHtml}
               <p style="font-size:13px;color:#52525b;">Questions? Just reply to this email.</p>
               <p style="font-size:13px;color:#52525b;">— The DropandSell team</p>
             </div>`,
-            text: `Hi ${fname},\n\nWe've received your request to withdraw £${Number(amount).toFixed(2)} from your referral balance.\n\nYour funds will be deposited manually into your bank account after admin approval. Please allow 5 to 10 working days for the deposit to reflect.\n\nIf you need to update the bank details on this request: ${updateLink}\n\n— The DropandSell team`,
+            text: `Hi ${fname},\n\nWe've received your request to withdraw £${Number(amount).toFixed(2)} from your referral balance.\n\n${payoutCopyText}\n\n— The DropandSell team`,
           });
         }
       } catch (mailErr) {
@@ -10147,7 +10212,9 @@ Guidelines:
         success: true,
         transaction,
         withdrawMethod,
-        message: 'Withdrawal request submitted. Funds will be deposited manually into your bank within 5–10 working days after admin approval.',
+        message: withdrawMethod === 'card'
+          ? 'Withdrawal request submitted. After admin approval, Stripe will send the payout to your connected bank account.'
+          : 'Withdrawal request submitted. Funds will be deposited manually into your bank within 5–10 working days after admin approval.',
       });
     } catch (err: any) {
       res.status(400).json({ message: err.message || 'Failed to withdraw referral balance' });
@@ -13083,7 +13150,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13128,7 +13195,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13169,7 +13236,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13477,22 +13544,19 @@ This document is confidential and intended for compliance review purposes.</p></
       const chargesEnabled = account.charges_enabled;
       const payoutsEnabled = account.payouts_enabled;
       const detailsSubmitted = account.details_submitted;
-
-      let status = 'pending';
-      if (payoutsEnabled && detailsSubmitted) {
-        status = 'verified';
-      } else if (detailsSubmitted && !payoutsEnabled) {
-        status = 'under_review';
-      } else {
-        status = 'incomplete';
-      }
+      const readiness = getStripeConnectPayoutReadiness(account);
 
       res.json({
         connected: true,
-        status,
+        status: readiness.status,
+        message: readiness.message,
         payoutsEnabled,
         chargesEnabled,
         detailsSubmitted,
+        transfersActive: readiness.transfersStatus === 'active',
+        transfersStatus: readiness.transfersStatus,
+        requirementsDueCount: readiness.requirementsDueCount,
+        disabledReason: readiness.disabledReason,
         accountId: user.stripeConnectAccountId,
       });
     } catch (err: any) {
@@ -13633,7 +13697,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13654,9 +13718,53 @@ This document is confidential and intended for compliance review purposes.</p></
         .where(eq(transactions.type, 'referral_withdrawal'))
         .orderBy(desc(transactions.createdAt));
 
+      let stripeForStatus: any | null = null;
+      const stripeStatusCache = new Map<string, Promise<any>>();
+      const getStripeStatus = async (accountId: string) => {
+        if (!stripeStatusCache.has(accountId)) {
+          stripeStatusCache.set(accountId, (async () => {
+            try {
+              stripeForStatus = stripeForStatus || await getUncachableStripeClient();
+              const account = await stripeForStatus.accounts.retrieve(accountId);
+              const readiness = getStripeConnectPayoutReadiness(account);
+              return {
+                hasConnectAccount: true,
+                stripePayoutReady: readiness.ready,
+                stripeConnectStatus: readiness.status,
+                stripeConnectLabel: readiness.label,
+                stripeConnectMessage: readiness.message,
+                stripeTransfersStatus: readiness.transfersStatus,
+                stripeRequirementsDueCount: readiness.requirementsDueCount,
+              };
+            } catch (stripeErr: any) {
+              console.warn('[Admin] Stripe Connect status check failed:', stripeErr.message);
+              return {
+                hasConnectAccount: true,
+                stripePayoutReady: false,
+                stripeConnectStatus: 'error',
+                stripeConnectLabel: 'Stripe check failed',
+                stripeConnectMessage: stripeErr.message || 'Could not check Stripe payout status.',
+              };
+            }
+          })());
+        }
+        return stripeStatusCache.get(accountId)!;
+      };
+
       const enriched = await Promise.all(allWithdrawals.map(async (w) => {
         const txUser = await storage.getUser(w.userId);
         const txWallet = await storage.getWallet(w.userId);
+        const stripeStatus = w.withdrawMethod !== 'bank' && txUser?.stripeConnectAccountId
+          ? await getStripeStatus(txUser.stripeConnectAccountId)
+          : {
+              hasConnectAccount: !!txUser?.stripeConnectAccountId,
+              stripePayoutReady: false,
+              stripeConnectStatus: txUser?.stripeConnectAccountId ? 'unchecked' : 'not_started',
+              stripeConnectLabel: txUser?.stripeConnectAccountId ? 'Stripe account on file' : 'Not set up',
+              stripeConnectMessage: txUser?.stripeConnectAccountId
+                ? 'Stripe payout status was not checked for this request.'
+                : 'User needs to complete Stripe payout setup from their Wallet page.',
+            };
         return {
           ...w,
           userEmail: txUser?.email || '',
@@ -13664,9 +13772,11 @@ This document is confidential and intended for compliance review purposes.</p></
           referralBalance: txWallet?.referralBalance || '0.00',
           bankAccountName: txWallet?.bankAccountName || null,
           bankAccountNumber: txWallet?.bankAccountNumber ? `****${txWallet.bankAccountNumber.slice(-4)}` : null,
+          bankAccountNumberFull: txWallet?.bankAccountNumber || null,
           bankSortCode: txWallet?.bankSortCode ? `**-${txWallet.bankSortCode.slice(-2)}` : null,
+          bankSortCodeFull: txWallet?.bankSortCode || null,
           bankName: txWallet?.bankName || null,
-          hasConnectAccount: !!txUser?.stripeConnectAccountId,
+          ...stripeStatus,
         };
       }));
 
@@ -13682,7 +13792,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 
@@ -13722,26 +13832,120 @@ This document is confidential and intended for compliance review purposes.</p></
         return res.status(400).json({ message: `Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}` });
       }
 
+      if (tx.withdrawMethod === 'bank') {
+        if (!txWallet.bankAccountName || !txWallet.bankAccountNumber || !txWallet.bankSortCode) {
+          return res.status(400).json({ message: 'Bank details are missing for this withdrawal request.' });
+        }
+
+        const manualReferenceId = `manual-bank-${tx.id}`;
+        const manualNote = adminNote || `Approved for manual bank payout to ${txWallet.bankName || 'bank account'} ending ${txWallet.bankAccountNumber.slice(-4)}`;
+
+        const approved = await db.transaction(async (trx) => {
+          const [deducted] = await trx.update(wallet)
+            .set({
+              referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(wallet.userId, tx.userId),
+              sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}`,
+            ))
+            .returning({ id: wallet.id });
+
+          if (!deducted) {
+            return null;
+          }
+
+          const [updatedTx] = await trx.update(transactions)
+            .set({
+              status: 'approved',
+              adminNote: manualNote,
+              processedAt: new Date(),
+              referenceId: manualReferenceId,
+            })
+            .where(and(
+              eq(transactions.id, txId),
+              eq(transactions.status, 'pending_approval'),
+            ))
+            .returning({ id: transactions.id });
+
+          if (!updatedTx) {
+            throw new Error('Withdrawal was already processed before approval completed');
+          }
+
+          return updatedTx;
+        });
+
+        if (!approved) {
+          return res.status(400).json({ message: `Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}` });
+        }
+
+        return res.json({
+          success: true,
+          message: `Withdrawal of £${withdrawAmount.toFixed(2)} approved for manual bank payout to ${txUser?.email}.`,
+          manualPayout: true,
+        });
+      }
+
       if (!txUser?.stripeConnectAccountId) {
         return res.status(400).json({ message: `User ${txUser?.email} has not set up their Stripe Connect payout account. They need to complete onboarding from their Wallet page first.` });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const account = await stripe.accounts.retrieve(txUser.stripeConnectAccountId);
+      const readiness = getStripeConnectPayoutReadiness(account);
+      if (!readiness.ready) {
+        return res.status(400).json({ message: `${txUser.email}'s Stripe payout account is not ready: ${readiness.message}` });
+      }
+
+      const reserved = await db.transaction(async (trx) => {
+        const [updatedTx] = await trx.update(transactions)
+          .set({
+            status: 'processing',
+            adminNote: adminNote || 'Stripe payout is being sent.',
+          })
+          .where(and(
+            eq(transactions.id, txId),
+            eq(transactions.status, 'pending_approval'),
+          ))
+          .returning({ id: transactions.id });
+
+        if (!updatedTx) {
+          return null;
+        }
+
+        const [deducted] = await trx.update(wallet)
+          .set({
+            referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(wallet.userId, tx.userId),
+            sql`${wallet.referralBalance}::numeric >= ${withdrawAmount}`,
+          ))
+          .returning({ id: wallet.id });
+
+        if (!deducted) {
+          throw new Error(`Insufficient balance. User has £${currentBalance.toFixed(2)} but withdrawal is £${withdrawAmount.toFixed(2)}`);
+        }
+
+        return updatedTx;
+      });
+
+      if (!reserved) {
+        return res.status(400).json({ message: 'Withdrawal was already processed before approval completed' });
       }
 
       let stripePayoutId: string | null = null;
       let stripeError: string | null = null;
 
       try {
-        const stripe = await getUncachableStripeClient();
-
-        const account = await stripe.accounts.retrieve(txUser.stripeConnectAccountId);
-        if (!account.payouts_enabled) {
-          return res.status(400).json({ message: `User ${txUser.email}'s Stripe Connect account is not fully verified yet. Payouts are not enabled.` });
-        }
-
         const transfer = await stripe.transfers.create({
           amount: Math.round(withdrawAmount * 100),
           currency: 'gbp',
           destination: txUser.stripeConnectAccountId,
           description: `Referral withdrawal for ${txUser.email}`,
+          transfer_group: `referral-withdrawal-${tx.id}`,
           metadata: {
             transactionId: String(tx.id),
             userId: tx.userId,
@@ -13757,38 +13961,45 @@ This document is confidential and intended for compliance review purposes.</p></
       }
 
       if (!stripePayoutId) {
-        await db.update(transactions)
-          .set({
-            status: 'payout_failed',
-            adminNote: adminNote || `Stripe payout failed: ${stripeError || 'Unknown error'}`,
-            processedAt: new Date(),
-          })
-          .where(eq(transactions.id, txId));
+        await db.transaction(async (trx) => {
+          await trx.update(wallet)
+            .set({
+              referralBalance: sql`${wallet.referralBalance} + ${withdrawAmount}::numeric`,
+              updatedAt: new Date(),
+            })
+            .where(eq(wallet.userId, tx.userId));
+
+          await trx.update(transactions)
+            .set({
+              status: 'pending_approval',
+              adminNote: `Stripe payout failed: ${stripeError || 'Unknown error'}. Balance was restored; retry after fixing Stripe.`,
+            })
+            .where(and(
+              eq(transactions.id, txId),
+              eq(transactions.status, 'processing'),
+            ));
+        });
 
         return res.status(400).json({
-          message: `Stripe payout failed: ${stripeError || 'Unknown error'}. User balance was NOT deducted. The request has been marked as failed — the user can submit a new one.`,
+          message: `Stripe payout failed: ${stripeError || 'Unknown error'}. The request is still pending and the user's balance was restored.`,
         });
       }
-
-      await db.update(wallet)
-        .set({
-          referralBalance: sql`GREATEST(0, ${wallet.referralBalance} - ${withdrawAmount}::numeric)`,
-          updatedAt: new Date(),
-        })
-        .where(eq(wallet.userId, tx.userId));
 
       await db.update(transactions)
         .set({
           status: 'approved',
-          adminNote: adminNote || `Approved. Stripe payout: ${stripePayoutId}`,
+          adminNote: adminNote || `Approved. Stripe transfer: ${stripePayoutId}`,
           processedAt: new Date(),
           referenceId: stripePayoutId,
         })
-        .where(eq(transactions.id, txId));
+        .where(and(
+          eq(transactions.id, txId),
+          eq(transactions.status, 'processing'),
+        ));
 
       res.json({
         success: true,
-        message: `Withdrawal of £${withdrawAmount.toFixed(2)} approved for ${txUser?.email}. Stripe payout: ${stripePayoutId}`,
+        message: `Withdrawal of £${withdrawAmount.toFixed(2)} approved for ${txUser?.email}. Stripe transfer: ${stripePayoutId}`,
         stripePayoutId,
       });
     } catch (err: any) {
@@ -13802,7 +14013,7 @@ This document is confidential and intended for compliance review purposes.</p></
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       const freeAccess = user?.email ? FREE_ACCESS_EMAILS[user.email.toLowerCase()] : null;
-      if (!freeAccess?.isAdmin) {
+      if (user?.isAdmin !== 'true' && !freeAccess?.isAdmin) {
         return res.status(403).json({ message: 'Admin access required' });
       }
 

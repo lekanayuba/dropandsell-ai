@@ -1439,7 +1439,7 @@ export default function AdminSubscribers() {
                   <Badge variant="destructive" className="ml-2">{pendingWithdrawals.length} Pending</Badge>
                 )}
               </CardTitle>
-              <CardDescription>Review and approve referral withdrawal requests. Approved funds will be deducted from the user's referral balance and sent via Stripe.</CardDescription>
+              <CardDescription>Review referral withdrawal requests. Stripe payouts are sent automatically on approval; bank withdrawals are paid manually using the details shown here.</CardDescription>
             </CardHeader>
             <CardContent>
               {withdrawalsLoading ? (
@@ -1480,19 +1480,43 @@ export default function AdminSubscribers() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs capitalize">
-                              {w.withdrawMethod === 'bank' ? 'Bank Transfer' : 'Card'}
+                              {w.withdrawMethod === 'bank' ? 'Bank Transfer' : 'Stripe Payout'}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {w.hasConnectAccount ? (
+                            {w.withdrawMethod === 'bank' ? (
+                              w.bankAccountName && w.bankAccountNumberFull && w.bankSortCodeFull ? (
+                                <div className="space-y-1 text-xs">
+                                  <p className="font-medium">{w.bankAccountName}</p>
+                                  {w.bankName && <p className="text-muted-foreground">{w.bankName}</p>}
+                                  <p className="font-mono">Sort: {w.bankSortCodeFull}</p>
+                                  <p className="font-mono">Acct: {w.bankAccountNumberFull}</p>
+                                </div>
+                              ) : (
+                                <Badge className="bg-red-500/10 text-red-600 border-red-500/20 text-xs">
+                                  <X className="w-3 h-3 mr-1" />
+                                  Missing bank details
+                                </Badge>
+                              )
+                            ) : w.stripePayoutReady ? (
                               <Badge className="bg-green-500/10 text-green-600 border-green-500/20 text-xs">
                                 <Check className="w-3 h-3 mr-1" />
-                                Stripe Connected
+                                Stripe Ready
                               </Badge>
+                            ) : w.hasConnectAccount ? (
+                              <div className="space-y-1">
+                                <Badge className="bg-amber-500/10 text-amber-700 border-amber-500/20 text-xs">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {w.stripeConnectLabel || 'Stripe Pending'}
+                                </Badge>
+                                {w.stripeConnectMessage && (
+                                  <p className="text-[11px] text-muted-foreground max-w-[220px]">{w.stripeConnectMessage}</p>
+                                )}
+                              </div>
                             ) : (
                               <Badge className="bg-red-500/10 text-red-600 border-red-500/20 text-xs">
                                 <X className="w-3 h-3 mr-1" />
-                                Not Set Up
+                                Stripe Not Set Up
                               </Badge>
                             )}
                           </TableCell>
@@ -1520,6 +1544,11 @@ export default function AdminSubscribers() {
                                 <X className="w-3 h-3 mr-1" />
                                 Payout Failed
                               </Badge>
+                            ) : w.status === 'processing' ? (
+                              <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                Processing
+                              </Badge>
                             ) : (
                               <Badge variant="outline">{w.status}</Badge>
                             )}
@@ -1539,9 +1568,17 @@ export default function AdminSubscribers() {
                                 <Button
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700 text-white"
-                                  disabled={approveWithdrawal.isPending}
+                                  disabled={
+                                    approveWithdrawal.isPending ||
+                                    (w.withdrawMethod === 'bank' && (!w.bankAccountName || !w.bankAccountNumberFull || !w.bankSortCodeFull)) ||
+                                    (w.withdrawMethod !== 'bank' && !w.stripePayoutReady)
+                                  }
+                                  title={w.withdrawMethod !== 'bank' && !w.stripePayoutReady ? (w.stripeConnectMessage || 'User must complete Stripe payout setup first') : undefined}
                                   onClick={() => {
-                                    if (window.confirm(`Approve withdrawal of ${fc(Math.abs(Number(w.amount)))} for ${w.userEmail}? This will deduct from their referral balance and initiate the Stripe payout.`)) {
+                                    const action = w.withdrawMethod === 'bank'
+                                      ? 'This will deduct from their referral balance and mark the manual bank payout as approved.'
+                                      : 'This will reserve their referral balance and send a Stripe Connect transfer to their payout account.';
+                                    if (window.confirm(`Approve withdrawal of ${fc(Math.abs(Number(w.amount)))} for ${w.userEmail}? ${action}`)) {
                                       approveWithdrawal.mutate({ id: w.id });
                                     }
                                   }}
